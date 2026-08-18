@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """Flask 主入口：注册蓝图 + 启动服务。"""
-import logging, os
+import logging, os, signal
 from datetime import datetime
 from flask import Flask, jsonify, render_template
 
@@ -83,5 +83,32 @@ def create_app():
 
 
 if __name__ == "__main__":
+    import tornado.wsgi
+    import tornado.httpserver
+    import tornado.ioloop
+
     app = create_app()
-    app.run(host=Config.HOST, port=Config.PORT, debug=Config.DEBUG)
+    # 用 Tornado 托管 Flask WSGI，替代 Flask 自带(werkzeug)开发服务器
+    container = tornado.wsgi.WSGIContainer(app)
+    http_server = tornado.httpserver.HTTPServer(container)
+    http_server.listen(Config.PORT, Config.HOST)
+
+    io_loop = tornado.ioloop.IOLoop.current()
+
+    def _shutdown(signum, frame):
+        logging.getLogger(__name__).info("收到信号 %s，停止 Tornado 服务...", signum)
+        http_server.stop()
+        io_loop.add_callback_from_signal(io_loop.stop)
+
+    signal.signal(signal.SIGINT, _shutdown)
+    try:
+        signal.signal(signal.SIGTERM, _shutdown)
+    except (ValueError, OSError):
+        pass
+
+    logging.getLogger(__name__).info(
+        "Tornado 托管 Flask WSGI 启动: http://%s:%d (DEBUG=%s)",
+        Config.HOST, Config.PORT, Config.DEBUG,
+    )
+    print("Tornado serving Flask WSGI at http://%s:%d" % (Config.HOST, Config.PORT))
+    io_loop.start()
