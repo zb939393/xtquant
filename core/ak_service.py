@@ -877,6 +877,54 @@ _PYTDX_SERVERS = [
 ]
 
 
+# ============================================================================
+# PyTDX 线程级连接池：复用持久连接，失效自动重连 + 轮换服务器
+#   消除 _cb_fetch_rt_pytdx / get_kline_pytdx 每次调用都 new api / connect / disconnect 的握手开销
+#   每个工作线程持有一个独立连接（threading.local），通过 _pytdx_get_api() 获取/复用
+# ============================================================================
+import random as _rnd_pool
+_PYTDX_POOL = threading.local()
+
+
+def _pytdx_is_alive(api):
+    """判断 PyTDX 连接是否仍存活（socket 已连且未断开）"""
+    if api is None:
+        return False
+    try:
+        c = getattr(api, "client", None)
+        return c is not None and getattr(c, "is_connected", lambda: False)()
+    except Exception:
+        return False
+
+
+def _pytdx_get_api():
+    """返回当前线程复用的 PyTDX 连接；失效则重连（随机轮换服务器）。返回 api 或 None。"""
+    if not _PYTDX_OK:
+        return None
+    api = getattr(_PYTDX_POOL, "api", None)
+    if _pytdx_is_alive(api):
+        return api
+    # 连接失效（或首次）：先断开旧连接再重连
+    if api is not None:
+        try:
+            api.disconnect()
+        except Exception:
+            pass
+        _PYTDX_POOL.api = None
+    servers = list(_PYTDX_SERVERS)
+    _rnd_pool.shuffle(servers)
+    for host, port in servers:
+        try:
+            a = _TdxHq(raise_exception=False)
+            if a.connect(host, port, time_out=3):
+                _PYTDX_POOL.api = a
+                _PYTDX_POOL.host = (host, port)
+                return a
+        except Exception:
+            continue
+    return None
+
+
 def _pytdx_market_and_code6(code_with_suffix):
     """'113697.SH' -> (market_id, '113697')
     market_id: 1=上证A股  0=深证A股  11=上证转债/债  12=深证转债/债
@@ -931,20 +979,21 @@ def _cb_fetch_rt_pytdx(bond_codes, stock_codes, threads=40, max_age=3):
     bond_list = list(dict.fromkeys([str(c) for c in bond_codes if str(c).strip()]))
     stock_list = list(dict.fromkeys([str(c) for c in stock_codes if str(c).strip()]))
     all_codes = [(c, "B") for c in bond_list] + [(c, "S") for c in stock_list]
-    # 服务器池：轮流分配
-    import random as _rnd
-    _rnd.shuffle(_PYTDX_SERVERS)
-    # worker：连一次，拉一批（避免反复握手开销）
-    def _worker_chunk(chunk_items, server_idx=0):
-        api = _TdxHq(raise_exception=False)
+    # worker：复用当前线程的持久连接（由 _pytdx_get_api 提供），避免反复握手
+    #   连接中途失效时自动重连 + 整体重试一次
+    def _worker_chunk(chunk_items):
+        api = _pytdx_get_api()
+        if api is None:
+            return {"__err__": "no-pytdx-conn"}
+        chunk_out = {}
         last_err = None
-        # 尝试最多3台服务器
-        for off in range(min(3, len(_PYTDX_SERVERS))):
-            host, port = _PYTDX_SERVERS[(server_idx + off) % len(_PYTDX_SERVERS)]
+        for _round in range(2):
             try:
-                if not api.connect(host, port, time_out=3):
-                    last_err = "connect-fail-%s:%d" % (host, port); continue
-                chunk_out = {}
+                if not _pytdx_is_alive(api):
+                    api = _pytdx_get_api()
+                    if api is None:
+                        return {"__err__": "reconnect-fail-%s" % last_err}
+                conn_died = False
                 for code_full, side in chunk_items:
                     mkt, c6 = _pytdx_market_and_code6(code_full)
                     if mkt is None or not c6:
@@ -953,7 +1002,12 @@ def _cb_fetch_rt_pytdx(bond_codes, stock_codes, threads=40, max_age=3):
                         bars = api.get_security_bars(9, mkt, c6, 0, 2)
                     except Exception as _be:
                         last_err = str(_be)
-                        chunk_out[(code_full, side)] = None; continue
+                        # 连接级异常：断开后整体重连重试一次
+                        try: api.disconnect()
+                        except: pass
+                        _PYTDX_POOL.api = None
+                        conn_died = True
+                        break
                     if not bars or len(bars) < 1:
                         chunk_out[(code_full, side)] = None; continue
                     b0 = bars[0]
@@ -974,16 +1028,21 @@ def _cb_fetch_rt_pytdx(bond_codes, stock_codes, threads=40, max_age=3):
                         }
                     except Exception:
                         chunk_out[(code_full, side)] = None
-                # 成功就返回
-                try: api.disconnect()
-                except: pass
-                return chunk_out
+                if not conn_died:
+                    return chunk_out
+                # 连接中途失效：重连后下一轮整体重试
+                api = _pytdx_get_api()
+                if api is None:
+                    return {"__err__": "reconnect-fail-%s" % last_err}
             except Exception as _ce:
-                last_err = "server-%s:%d-%s" % (host, port, _ce)
+                last_err = "server-exc-%s" % _ce
                 try: api.disconnect()
                 except: pass
-                continue
-        return {"__err__": last_err or "all-server-fail"}
+                _PYTDX_POOL.api = None
+                api = _pytdx_get_api()
+                if api is None:
+                    return {"__err__": last_err}
+        return {"__err__": last_err or "all-round-fail"}
 
     # 分 chunk：每 chunk 30 个请求（避免单连接服务器侧断）
     CHUNK = 30
@@ -991,7 +1050,7 @@ def _cb_fetch_rt_pytdx(bond_codes, stock_codes, threads=40, max_age=3):
     # 线程池
     results_all = {}
     with _futures.ThreadPoolExecutor(max_workers=max(1, min(threads, len(chunks)))) as ex:
-        futs = [ex.submit(_worker_chunk, ch, i % len(_PYTDX_SERVERS))
+        futs = [ex.submit(_worker_chunk, ch)
                 for i, ch in enumerate(chunks)]
         for fu in _futures.as_completed(futs):
             try:
@@ -1065,15 +1124,16 @@ def get_kline_pytdx(code, count=120, ttl=120, batch=800, max_bars=5000):
     cached = _KL_CACHE.get(key)
     if cached and (time.time() - cached[1]) < ttl:
         return cached[0]
-    import random as _rnd
-    servers = list(_PYTDX_SERVERS); _rnd.shuffle(servers)
     out = []
-    for off in range(min(3, len(servers))):
-        host, port = servers[off]
-        api = _TdxHq(raise_exception=False)
+    api = _pytdx_get_api()
+    for _round in range(2):
+        if api is None:
+            break
         try:
-            if not api.connect(host, port, time_out=3):
-                continue
+            if not _pytdx_is_alive(api):
+                api = _pytdx_get_api()
+                if api is None:
+                    break
             # PyTDX 单次 get_security_bars 上限约 800 根；count 较大时循环 start 偏移分批拉全量
             allbars = []
             need = cnt
@@ -1089,8 +1149,12 @@ def get_kline_pytdx(code, count=120, ttl=120, batch=800, max_bars=5000):
                 need -= got
                 if got < take:
                     break
-            api.disconnect()
             if not allbars:
+                # 空结果可能因连接失效：重连后重试一次
+                try: api.disconnect()
+                except: pass
+                _PYTDX_POOL.api = None
+                api = _pytdx_get_api()
                 continue
             for b in allbars:
                 try:
@@ -1106,11 +1170,12 @@ def get_kline_pytdx(code, count=120, ttl=120, batch=800, max_bars=5000):
                     })
                 except Exception:
                     continue
-            if out:
-                break
+            break
         except Exception:
             try: api.disconnect()
             except Exception: pass
+            _PYTDX_POOL.api = None
+            api = _pytdx_get_api()
     if out:
         out.sort(key=lambda x: x["date"])
         _KL_CACHE[key] = (out, time.time())
@@ -1249,7 +1314,7 @@ def _cb_rt_bridge_coverage_ok(meta, bond_map, stock_map, df):
 
 
 
-def _cb_merge_rt_qmt_bridge(df):
+def _cb_merge_rt_qmt_bridge(df, overwrite_if_filled=True):
     """和 _cb_merge_rt_pytdx 完全同语义（都往 df 写 bond_price/stock_price/... 覆盖列），
     数据源走 /cb_rt_snapshot 返回的 bond_map/stock_map。返回 df（不修改实参内存时copy）。"""
     if df is None or len(df) == 0:
@@ -1272,7 +1337,7 @@ def _cb_merge_rt_qmt_bridge(df):
             df[col] = np.nan
         return df
 
-    def _set_if_blank(df, idx, col, val, overwrite_if_numeric_filled=False):
+    def _set_if_blank(df, idx, col, val):
         if val is None:
             return False
         try:
@@ -1280,7 +1345,7 @@ def _cb_merge_rt_qmt_bridge(df):
         except Exception:
             return False
         try:
-            if not overwrite_if_numeric_filled:
+            if not overwrite_if_filled:
                 cur = df.at[idx, col]
                 if isinstance(cur, float) and not pd.isna(cur):
                     return False
@@ -1302,14 +1367,14 @@ def _cb_merge_rt_qmt_bridge(df):
         idx = df.index[i]
         p = bond_map.get(bc_arr[i])
         if not isinstance(p, dict): continue
-        if _set_if_blank(df, idx, "bond_chg_pct",    p.get("bond_chg_pct"),    overwrite_if_numeric_filled=True): fills_b.add("bond_chg_pct")
-        if _set_if_blank(df, idx, "amplitude_pct",   p.get("amplitude_pct"),   overwrite_if_numeric_filled=True): fills_b.add("amplitude_pct")
-        if _set_if_blank(df, idx, "bond_price",      p.get("bond_price"),      overwrite_if_numeric_filled=True): fills_b.add("bond_price")
-        if _set_if_blank(df, idx, "high",            p.get("high"),            overwrite_if_numeric_filled=True): fills_b.add("high")
-        if _set_if_blank(df, idx, "low",             p.get("low"),             overwrite_if_numeric_filled=True): fills_b.add("low")
-        if _set_if_blank(df, idx, "open",            p.get("open"),            overwrite_if_numeric_filled=True): fills_b.add("open")
-        if _set_if_blank(df, idx, "volume_zhang",    p.get("vol"),             overwrite_if_numeric_filled=True): fills_b.add("volume_zhang")
-        if _set_if_blank(df, idx, "amount_yuan",     p.get("amount"),          overwrite_if_numeric_filled=True): fills_b.add("amount_yuan")
+        if _set_if_blank(df, idx, "bond_chg_pct",    p.get("bond_chg_pct"),    ): fills_b.add("bond_chg_pct")
+        if _set_if_blank(df, idx, "amplitude_pct",   p.get("amplitude_pct"),   ): fills_b.add("amplitude_pct")
+        if _set_if_blank(df, idx, "bond_price",      p.get("bond_price"),      ): fills_b.add("bond_price")
+        if _set_if_blank(df, idx, "high",            p.get("high"),            ): fills_b.add("high")
+        if _set_if_blank(df, idx, "low",             p.get("low"),             ): fills_b.add("low")
+        if _set_if_blank(df, idx, "open",            p.get("open"),            ): fills_b.add("open")
+        if _set_if_blank(df, idx, "volume_zhang",    p.get("vol"),             ): fills_b.add("volume_zhang")
+        if _set_if_blank(df, idx, "amount_yuan",     p.get("amount"),          ): fills_b.add("amount_yuan")
     import logging as _lgg
     _lgg.getLogger(__name__).info("[bridge rt 转债] 合并列: %s", sorted(fills_b))
 
@@ -1324,14 +1389,14 @@ def _cb_merge_rt_qmt_bridge(df):
             idx = df.index[i]
             p = stock_map.get(sc_arr[i])
             if not isinstance(p, dict): continue
-            if _set_if_blank(df, idx, "stock_chg_pct",        p.get("stock_chg_pct"),   overwrite_if_numeric_filled=True): fills_s.add("stock_chg_pct")
-            if _set_if_blank(df, idx, "stock_amplitude",     p.get("stock_amplitude"), overwrite_if_numeric_filled=True): fills_s.add("stock_amplitude")
-            if _set_if_blank(df, idx, "stock_price",         p.get("stock_price"),      overwrite_if_numeric_filled=True): fills_s.add("stock_price")
-            if _set_if_blank(df, idx, "stock_high",          p.get("stock_high"),      overwrite_if_numeric_filled=True): fills_s.add("stock_high")
-            if _set_if_blank(df, idx, "stock_low",           p.get("stock_low"),       overwrite_if_numeric_filled=True): fills_s.add("stock_low")
-            if _set_if_blank(df, idx, "stock_open",          p.get("stock_open"),      overwrite_if_numeric_filled=True): fills_s.add("stock_open")
-            if _set_if_blank(df, idx, "stock_volume_zhang",  p.get("stock_vol"),       overwrite_if_numeric_filled=True): fills_s.add("stock_volume_zhang")
-            if _set_if_blank(df, idx, "stock_amount_yuan",   p.get("stock_amount"),    overwrite_if_numeric_filled=True): fills_s.add("stock_amount_yuan")
+            if _set_if_blank(df, idx, "stock_chg_pct",        p.get("stock_chg_pct"),   ): fills_s.add("stock_chg_pct")
+            if _set_if_blank(df, idx, "stock_amplitude",     p.get("stock_amplitude"), ): fills_s.add("stock_amplitude")
+            if _set_if_blank(df, idx, "stock_price",         p.get("stock_price"),      ): fills_s.add("stock_price")
+            if _set_if_blank(df, idx, "stock_high",          p.get("stock_high"),      ): fills_s.add("stock_high")
+            if _set_if_blank(df, idx, "stock_low",           p.get("stock_low"),       ): fills_s.add("stock_low")
+            if _set_if_blank(df, idx, "stock_open",          p.get("stock_open"),      ): fills_s.add("stock_open")
+            if _set_if_blank(df, idx, "stock_volume_zhang",  p.get("stock_vol"),       ): fills_s.add("stock_volume_zhang")
+            if _set_if_blank(df, idx, "stock_amount_yuan",   p.get("stock_amount"),    ): fills_s.add("stock_amount_yuan")
         _lgg.getLogger(__name__).info("[bridge rt 正股] 合并列: %s", sorted(fills_s))
 
     if meta:
@@ -1821,26 +1886,27 @@ def cb_full_metrics(ttl = None, static_ttl = None):
     if static_ttl is None: static_ttl = Config.AK_CACHE_TTL
     df = _cb_full_static_snapshot(ttl=static_ttl)
     # ============== 实时行情全列（转债/正股 价格/涨跌幅/振幅/量/额） ==============
-    # 优先路径 A：QMT HTTP 桥 v3 /cb_rt_snapshot（iQuant 内部批量拉，单次HTTP <500ms）
-    # 路径 B：PyTDX（通达信原生协议，封IP风险极低，3秒轮询没问题）
+    # PyTDX 第一优先级（通达信原生协议，3秒轮询不封IP，与 /kline 同源）
+    # QMT HTTP 桥 v3 /cb_rt_snapshot 兜底：仅补充 PyTDX 未覆盖的空白
     # 备用：58600 RPC（交易时段 getMarketData 非空）
     try:
-        df = _cb_merge_rt_qmt_bridge(df)
+        df = _cb_merge_rt_pytdx(df)          # PyTDX 第一：全量覆盖实时列
     except Exception as e:
-        logging.getLogger(__name__).warning("_cb_merge_rt_qmt_bridge fail: %s", e)
-    # 覆盖率是否达标：桥命中且转债覆盖≥90% 则信任桥结果；否则 PyTDX 覆盖补全
-    _rt_meta = (df.attrs or {}).get("__rt_src_meta__") or {}
-    _bridge_hit = _rt_meta.get("_src") == "qmt_bridge_v3" and _rt_meta.get("bond_cnt_ret", 0) > 0
-    _bridge_bond_ratio = 0.0
-    if _bridge_hit and int(_rt_meta.get("bond_cnt_req") or 0) > 0:
-        _bridge_bond_ratio = _rt_meta.get("bond_cnt_ret", 0) / _rt_meta.get("bond_cnt_req", 1)
-    if not _bridge_hit or _bridge_bond_ratio < 0.90:
-        if _bridge_hit:
-            logging.getLogger(__name__).info("[rt] 桥覆盖 %.0f%%<90%%，PyTDX 增量补齐", _bridge_bond_ratio * 100)
+        logging.getLogger(__name__).warning("_cb_merge_rt_pytdx fail: %s", e)
+    # 覆盖率是否达标：PyTDX 命中且转债覆盖≥90% 则信任 PyTDX；否则 QMT 桥兜底补空白
+    _pytdx_meta = (df.attrs or {}).get("__pytdx_meta__") or {}
+    _pytdx_hit = _pytdx_meta.get("ok") is True and (
+        _pytdx_meta.get("bonds_chg_ok", 0) > 0 or _pytdx_meta.get("stocks_chg_ok", 0) > 0)
+    _pytdx_bond_ratio = 0.0
+    if _pytdx_hit and int(_pytdx_meta.get("distinct_bonds") or 0) > 0:
+        _pytdx_bond_ratio = _pytdx_meta.get("bonds_chg_ok", 0) / _pytdx_meta.get("distinct_bonds", 1)
+    if not _pytdx_hit or _pytdx_bond_ratio < 0.90:
+        if _pytdx_hit:
+            logging.getLogger(__name__).info("[rt] PyTDX 覆盖 %.0f%%<90%%，QMT 桥兜底补齐空白", _pytdx_bond_ratio * 100)
         try:
-            df = _cb_merge_rt_pytdx(df)
+            df = _cb_merge_rt_qmt_bridge(df, overwrite_if_filled=False)   # 仅补 PyTDX 空白
         except Exception as e:
-            logging.getLogger(__name__).warning("_cb_merge_rt_pytdx fail: %s", e)
+            logging.getLogger(__name__).warning("_cb_merge_rt_qmt_bridge fail: %s", e)
             try:
                 from core import qmt_detail_service as qsvc
                 if hasattr(qsvc, "augment_rt_codes"):
@@ -1852,13 +1918,16 @@ def cb_full_metrics(ttl = None, static_ttl = None):
     # 先抓取实时来源元信息：_cb_merge_rt_* 把 __rt_src_meta__ / __pytdx_meta__ 写入 df.attrs，
     # 但随后 _add_derived / _merge_qmt 内部的 merge/filter 会丢弃 attrs，故此处先缓存。
     _rt_src_meta = dict((df.attrs or {}).get("__rt_src_meta__") or {})
-    _pytdx_meta = dict((df.attrs or {}).get("__pytdx_meta__") or {})
+    _pytdx_meta_final = dict((df.attrs or {}).get("__pytdx_meta__") or {})
     df = _add_derived(df)
     df = _merge_qmt(df)
     # 还原实时来源元信息：确保前端 /cb/full 的 qmt.meta 能拿到 _src 与覆盖率
     _final_rt = {}
     _final_rt.update(_rt_src_meta)
-    _final_rt.update(_pytdx_meta)
+    _final_rt.update(_pytdx_meta_final)
+    if _pytdx_hit:
+        _final_rt["_src"] = "pytdx_first"
+        _final_rt["_pytdx_bond_ratio"] = round(_pytdx_bond_ratio, 4)
     if _final_rt:
         df.attrs["__rt_src_meta__"] = _final_rt
     return df
