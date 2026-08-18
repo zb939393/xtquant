@@ -183,6 +183,11 @@
         <span class="cb-mini-item"><b>转债振幅</b><i v-text="fmtPctV(popup.row && popup.row.amplitude_pct)"></i></span>
         <span class="cb-mini-item"><b>成交额</b><i v-text="fmtWanV(popup.row && popup.row.amount_yuan)"></i></span>
       </div>
+      <div class="cb-kline-ctrl">
+        <el-button size="mini" :disabled="kline.bond.show<=20" @click="adjustKlineAll(-20)">减少</el-button>
+        <span class="cb-kline-cnt">显示 [# kline.bond.show #] / 共 [# kline.bond.total #] 根</span>
+        <el-button size="mini" :disabled="kline.bond.show>=kline.bond.total" @click="adjustKlineAll(20)">增加</el-button>
+      </div>
       <div class="cb-chart-title">转债日K <span class="muted" v-text="kline.bond.src ? ('('+kline.bond.src+')') : ''"></span></div>
       <cb-chart ref="bondChart"></cb-chart>
       <div class="cb-chart-title">正股日K</div>
@@ -291,7 +296,7 @@ new Vue({
       allCols:COLUMNS,
       showCols:COLUMNS.map(c=>c.prop).filter(p=>!['coupon_sum_estimate','maturity_days_left','put_trigger_pct','adjust_trigger_pct','adjust_status','premium_decomp_bond_pct','remaining_ratio','high','low','amount_yuan','volume_zhang'].includes(p)),
       popup:{ visible:false, row:null, x:0, y:0, tab:'kline' },
-      kline:{ bond:{ data:[], src:'' }, stock:{ data:[], src:'' } },
+      kline:{ bond:{ data:[], src:'', full:[], show:120, total:0 }, stock:{ data:[], src:'', full:[], show:120, total:0 } },
     };
   },
   computed:{
@@ -382,14 +387,31 @@ new Vue({
     },
     async loadKline(code, which){
       try{
-        const res = await fetch('/market/kline/' + encodeURIComponent(code) + '?period=1d&count=120&_=' + Date.now(), {cache:'no-store'});
+        const res = await fetch('/market/kline/' + encodeURIComponent(code) + '?period=1d&count=5000&_=' + Date.now(), {cache:'no-store'});
         const js = await res.json();
-        const data = (js && js.data) || [];
-        this.kline[which] = { data: data, src: (js && js.src) || (js && js.ok ? 'ok' : '') };
+        const full = (js && js.data) || [];
+        const total = full.length;
+        const show = Math.min(120, total);
+        const data = full.slice(-show);
+        this.kline[which] = { data: data, src: (js && js.src) || (js && js.ok ? 'ok' : ''), full: full, show: show, total: total };
         this.$nextTick(() => { this.renderChart(which, data); });
       }catch(e){
-        this.kline[which] = { data: [], src: 'err' };
+        this.kline[which] = { data: [], src: 'err', full: [], show: 120, total: 0 };
       }
+    },
+    adjustKline(which, delta){
+      const k = this.kline[which];
+      const total = k.full ? k.full.length : 0;
+      if(!total) return;
+      let show = (k.show || 120) + delta;
+      show = Math.max(20, Math.min(total, show));
+      const data = k.full.slice(-show);
+      this.kline[which] = Object.assign({}, k, { show: show, data: data });
+      this.$nextTick(() => { this.renderChart(which, data); });
+    },
+    adjustKlineAll(delta){
+      this.adjustKline('bond', delta);
+      this.adjustKline('stock', delta);
     },
     renderChart(which, data){
       const cmp = which === 'bond' ? this.$refs.bondChart : this.$refs.stockChart;
@@ -615,6 +637,8 @@ new Vue({
   .cb-k{color:#909399;}
   .cb-v{font-weight:600;font-variant-numeric:tabular-nums;}
   .cb-chart-title{font-weight:600;margin:6px 0 2px;color:#606266;}
+  .cb-kline-ctrl{display:flex;align-items:center;gap:10px;margin:2px 0 6px;}
+  .cb-kline-cnt{font-size:12px;color:#606266;font-variant-numeric:tabular-nums;}
   .cb-chart{width:100%;height:200px;}
   .cb-trigger{cursor:pointer;}
   .up{color:#e74c3c;} .down{color:#27ae60;} .flat{color:#95a5a6;}

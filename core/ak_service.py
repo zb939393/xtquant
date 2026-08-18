@@ -1049,14 +1049,19 @@ def _cb_fetch_rt_pytdx(bond_codes, stock_codes, threads=40, max_age=3):
 _KL_CACHE = {}
 
 
-def get_kline_pytdx(code, count=120, ttl=120):
-    """PyTDX 日K（最可靠路径：与 /cb/full 实时同源，无需登录 miniQMT）。"""
+def get_kline_pytdx(code, count=120, ttl=120, batch=800, max_bars=5000):
+    """PyTDX 日K（最可靠路径：与 /cb/full 实时同源，无需登录 miniQMT）。
+
+    count 较大时（超过 PyTDX 单次 get_security_bars 上限约 800 根）自动循环
+    start 偏移分批拉取，从而支持「全量」历史 K 线。
+    """
     if not _PYTDX_OK:
         return []
     mkt, c6 = _pytdx_market_and_code6(code)
     if mkt is None or not c6:
         return []
-    key = "kline_%s_%d" % (code, int(count))
+    cnt = min(int(count), max_bars)
+    key = "kline_%s_%d" % (code, cnt)
     cached = _KL_CACHE.get(key)
     if cached and (time.time() - cached[1]) < ttl:
         return cached[0]
@@ -1069,11 +1074,25 @@ def get_kline_pytdx(code, count=120, ttl=120):
         try:
             if not api.connect(host, port, time_out=3):
                 continue
-            bars = api.get_security_bars(9, mkt, c6, 0, int(count))
+            # PyTDX 单次 get_security_bars 上限约 800 根；count 较大时循环 start 偏移分批拉全量
+            allbars = []
+            need = cnt
+            start = 0
+            while need > 0:
+                take = min(batch, need)
+                bars = api.get_security_bars(9, mkt, c6, start, take)
+                if not bars:
+                    break
+                allbars.extend(bars)
+                got = len(bars)
+                start += got
+                need -= got
+                if got < take:
+                    break
             api.disconnect()
-            if not bars:
+            if not allbars:
                 continue
-            for b in bars:
+            for b in allbars:
                 try:
                     dt = str(b.get("datetime") or b.get("date") or "")[:10]
                     out.append({
