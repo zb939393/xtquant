@@ -1209,7 +1209,7 @@ def _cb_fetch_rt_pytdx(bond_codes, stock_codes, threads=None, max_age=3):
 def _pytdx_quote_market_and_code6(code_with_suffix):
     """get_security_quotes 用的市场映射（交易所级）：SH->1, SZ->0。
     与 _pytdx_market_and_code6（债券用 11/12）不同：quotes 接口对债券价格会按品种缩放、
-    且 servertime 乱码，故本函数仅用于股票，债券一律走 get_security_bars。"""
+    且 servertime 乱码，故本函数仅用于股票与可转债(CB)；其余债券走 get_security_bars。"""
     s = str(code_with_suffix).strip().upper()
     if not s:
         return None, ""
@@ -1222,6 +1222,58 @@ def _pytdx_quote_market_and_code6(code_with_suffix):
     if exch == "SZ":
         return 0, code6
     return None, code6
+
+
+def _is_convertible_bond(code_with_suffix):
+    """判断是否为可转债(CB)代码。
+    上证：110/111/113/118 开头；深证：123/127/128 开头。
+    返回 True 表示走 get_security_quotes（价格需 /100，vol 单位为手需 *10）。
+    """
+    s = str(code_with_suffix).strip().upper()
+    if not s:
+        return False
+    parts = s.split(".")
+    code6 = parts[0][-6:] if parts else s[-6:]
+    if len(code6) < 3:
+        return False
+    if code6[:3] in ("110", "111", "113", "118"):
+        return True
+    if code6[:3] in ("123", "127", "128"):
+        return True
+    return False
+
+
+def _cb_rt_one_bars_bond(code_full):
+    """单支债券用 get_security_bars 兜底（quotes 异常/缺失时），返回 bond_map 条目或 None。
+    债券市场号走 11/12，价格干净(factor=1)，vol 单位为张、amount 单位为元，均直接可用。"""
+    mkt, c6 = _pytdx_market_and_code6(code_full)
+    if mkt is None or not c6:
+        return None
+    api = _pytdx_get_api()
+    if api is None:
+        return None
+    try:
+        bars = api.get_security_bars(9, mkt, c6, 0, 2)
+    except Exception:
+        return None
+    if not bars or len(bars) < 1:
+        return None
+    b0 = bars[0]
+    try:
+        opn = float(b0.get("open") or float("nan"))
+        hi = float(b0.get("high") or float("nan"))
+        lo = float(b0.get("low") or float("nan"))
+        close = float(b0.get("close") or float("nan"))
+        lc = float(bars[1].get("close") or float("nan")) if len(bars) >= 2 else float("nan")
+        chg = round((close - lc) / lc * 100, 3) if (lc and close and lc > 0 and not (lc != lc or close != close)) else float("nan")
+        amp = round((hi - lo) / lc * 100, 3) if (lc and hi and lo and lc > 0 and not (lc != lc or hi != hi or lo != lo)) else float("nan")
+        return {
+            "bond_price": close, "bond_chg_pct": chg, "amplitude_pct": amp,
+            "high": hi, "low": lo, "open": opn, "pre_close_rt": lc,
+            "vol": b0.get("vol"), "amount": b0.get("amount"),
+        }
+    except Exception:
+        return None
 
 
 def _cb_rt_one_bars_stock(code_full):
@@ -1365,53 +1417,192 @@ def _cb_fetch_rt_pytdx_quotes(stock_codes, threads=None, max_age=3):
     return stock_map, meta
 
 
-def _cb_rt_combine(bars_rt, quotes_rt):
-    """合并 债券bars路由 与 股票quotes路由 的结果。
-    bars_rt   = (bond_map, stock_map_from_bars, meta_bars)
-    quotes_rt = (stock_map_from_quotes, meta_quotes)
-    股票以 quotes 为准（已验证干净），quotes 缺失/回退时由 bars 的股票结果兜底。
+def _cb_fetch_rt_pytdx_quotes_cb(cb_codes, threads=None, max_age=3):
+    """批量 get_security_quotes 拉可转债(CB)实时报价（单批 <=80 条，PyTDX 协议硬上限）。
+    CB 在 quotes 协议下价格被放大 100 倍（整数传输防浮点误差），故 open/high/low/price/last_close 均 /100 还原；
+    涨跌幅/振幅为比值，与缩放无关，天然正确；amount(元) 直接真实可用，vol(手) 需 *10 换算为张
+    （列 volume_zhang 以张计，与 akshare 同口径）。
+    任一 CB 缺失则回退单支 get_security_bars（价格已正确、vol 为张、amount 为元，无需换算），保证零回归。
+    注意：PyTDX get_security_quotes 批次中混入任一无效代码会使整批返回空（批次毒化），故整批为空时
+    二分重试隔离无效码，使有效码仍各自走 quotes 主路径，避免整批回退到错误的 bars 部分量/额。
+    返回 (bond_map, meta)；bond_map schema 与 _cb_fetch_rt_pytdx 的债券分支完全一致。
+    """
+    log = logging.getLogger(__name__)
+    if not _PYTDX_OK:
+        return {}, {"ok": False, "reason": "pytdx 未安装或 import 失败"}
+    cache_key = "pytdx_q_cb_v1_" + "|".join(sorted(set(str(c) for c in cb_codes)))[:80]
+    cached = _cache_get_inner(cache_key, max_age)
+    if isinstance(cached, tuple) and len(cached) == 2:
+        log.debug("[pytdx quotes cb] cache hit: cb=%d", len(cached[0]))
+        return cached
+    t0 = time.time()
+    cb_list = list(dict.fromkeys([str(c) for c in cb_codes if str(c).strip()]))
+    bond_map = {}
+    req_total = 0
+    req_ok = 0
+    BATCH = 80  # PyTDX get_security_quotes 单批硬上限
+    api = _pytdx_get_api()
+
+    def _process(tuples):
+        # 单批（<=80）处理；若整批为空（批次毒化：含无效码）则二分重试隔离无效码，
+        # 使有效码各自仍走 quotes 主路径，避免整批回退到错误的 bars 部分量/额。
+        nonlocal req_total, req_ok
+        if not tuples:
+            return
+        req_total += 1
+        resp = []
+        try:
+            resp = api.get_security_quotes([(mkt, c6) for mkt, c6, _ in tuples])
+        except Exception:
+            resp = []
+        if not resp:
+            if len(tuples) == 1:
+                _, _, cf = tuples[0]
+                rb = _cb_rt_one_bars_bond(cf)
+                if isinstance(rb, dict):
+                    bond_map[cf] = rb
+                    req_ok += 1
+                return
+            mid = len(tuples) // 2
+            _process(tuples[:mid])
+            _process(tuples[mid:])
+            return
+        by_code = {}
+        for r in resp:
+            try:
+                by_code[(int(r.get("market")), str(r.get("code")))] = r
+            except Exception:
+                pass
+        for mkt, c6, code_full in tuples:
+            r = by_code.get((mkt, c6))
+            if r is None:
+                rb = _cb_rt_one_bars_bond(code_full)
+                if isinstance(rb, dict):
+                    bond_map[code_full] = rb
+                    req_ok += 1
+                continue
+            try:
+                opn = float(r.get("open") or float("nan"))
+                hi = float(r.get("high") or float("nan"))
+                lo = float(r.get("low") or float("nan"))
+                pr = r.get("price")
+                close = float(pr if pr is not None else r.get("close") or float("nan"))
+                lc = float(r.get("last_close") or float("nan"))
+                vol = r.get("vol") or r.get("volume")
+                amount = r.get("amount") or r.get("turnover")
+                # CB：价格 /100 还原；vol 手->张 *10；amount 元直接
+                opn = (opn / 100.0) if opn == opn else opn
+                hi = (hi / 100.0) if hi == hi else hi
+                lo = (lo / 100.0) if lo == lo else lo
+                close = (close / 100.0) if close == close else close
+                lc = (lc / 100.0) if lc == lc else lc
+                if isinstance(vol, (int, float)):
+                    vol = vol * 10
+                chg = round((close - lc) / lc * 100, 3) if (lc and close and lc > 0 and not (lc != lc or close != close)) else float("nan")
+                amp = round((hi - lo) / lc * 100, 3) if (lc and hi and lo and lc > 0 and not (lc != lc or hi != hi or lo != lo)) else float("nan")
+                bond_map[code_full] = {
+                    "bond_price": close, "bond_chg_pct": chg, "amplitude_pct": amp,
+                    "high": hi, "low": lo, "open": opn, "pre_close_rt": lc,
+                    "vol": vol, "amount": amount,
+                }
+                if not (chg != chg):
+                    req_ok += 1
+            except Exception:
+                rb = _cb_rt_one_bars_bond(code_full)
+                if isinstance(rb, dict):
+                    bond_map[code_full] = rb
+                    req_ok += 1
+
+    for i in range(0, len(cb_list), BATCH):
+        batch = cb_list[i:i + BATCH]
+        tuples = []
+        for code_full in batch:
+            mkt, c6 = _pytdx_quote_market_and_code6(code_full)
+            if mkt is None or not c6:
+                continue
+            tuples.append((mkt, c6, code_full))
+        if not tuples:
+            continue
+        if api is None:
+            for _, _, cf in tuples:
+                rb = _cb_rt_one_bars_bond(cf)
+                if isinstance(rb, dict):
+                    bond_map[cf] = rb
+                    req_ok += 1
+            continue
+        _process(tuples)
+    meta = {
+        "ok": True,
+        "elapsed_ms": int((time.time() - t0) * 1000),
+        "route": "get_security_quotes(cb)",
+        "requests_total": req_total,
+        "requests_ok": req_ok,
+        "bonds_chg_ok": req_ok,
+        "distinct_bonds": len(cb_list),
+    }
+    log.info("[pytdx quotes cb] t=%dms cb=%d(%d ok) req=%d",
+             meta["elapsed_ms"], len(cb_list), req_ok, req_total)
+    _cache_put_inner(cache_key, max_age, (bond_map, meta))
+    return bond_map, meta
+
+
+def _cb_rt_combine(bars_rt, quotes_stock_rt, quotes_cb_rt=None):
+    """合并 非CB债券bars路由、股票quotes路由、可转债quotes路由 的结果。
+    bars_rt        = (bond_map_bars, stock_map_bars, meta_bars)     # 非可转债债券走 get_security_bars
+    quotes_stock_rt= (stock_map_quotes, meta_quotes)                # 股票走 get_security_quotes
+    quotes_cb_rt   = (bond_map_cb, meta_cb) | None                  # 可转债走 get_security_quotes(/100)
     返回统一的 (bond_map, stock_map, meta)，可直接喂给 _cb_merge_rt_pytdx。
     """
     if not isinstance(bars_rt, (tuple, list)) or len(bars_rt) < 3:
         bars_rt = ({}, {}, {})
     b_bond, b_stock, b_meta = (list(bars_rt) + [{}, {}, {}])[:3]
-    q_stock = quotes_rt[0] if isinstance(quotes_rt, (tuple, list)) and len(quotes_rt) >= 1 else {}
-    q_meta = quotes_rt[1] if isinstance(quotes_rt, (tuple, list)) and len(quotes_rt) >= 2 else {}
-    b_meta = b_meta or {}
-    q_meta = q_meta or {}
+    q_stock = quotes_stock_rt[0] if isinstance(quotes_stock_rt, (tuple, list)) and len(quotes_stock_rt) >= 1 else {}
+    q_meta = quotes_stock_rt[1] if isinstance(quotes_stock_rt, (tuple, list)) and len(quotes_stock_rt) >= 2 else {}
+    cb_bond = quotes_cb_rt[0] if isinstance(quotes_cb_rt, (tuple, list)) and len(quotes_cb_rt) >= 1 else {}
+    cb_meta = quotes_cb_rt[1] if isinstance(quotes_cb_rt, (tuple, list)) and len(quotes_cb_rt) >= 2 else {}
+    b_meta = b_meta or {}; q_meta = q_meta or {}; cb_meta = cb_meta or {}
+    # 可转债 bond_map 与非CB bond_map 由 split 路由保证互不重叠，直接合并
+    bond_map = dict(b_bond or {})
+    bond_map.update(cb_bond or {})
     # 股票：quotes 优先覆盖，bars 兜底
     stock_map = dict(b_stock or {})
     stock_map.update(q_stock or {})
     meta = {
-        "ok": bool(b_meta.get("ok")) or bool(q_meta.get("ok")),
-        "route": "split(bars_bonds+quotes_stocks)",
-        "elapsed_ms": max(int(b_meta.get("elapsed_ms") or 0), int(q_meta.get("elapsed_ms") or 0)),
-        "requests_total": int(b_meta.get("requests_total") or 0) + int(q_meta.get("requests_total") or 0),
-        "requests_ok": int(b_meta.get("requests_ok") or 0) + int(q_meta.get("requests_total") or 0),
-        "bonds_chg_ok": int(b_meta.get("bonds_chg_ok") or 0),
+        "ok": bool(b_meta.get("ok")) or bool(q_meta.get("ok")) or bool(cb_meta.get("ok")),
+        "route": "split(bars_bonds+quotes_stocks+quotes_cb)",
+        "elapsed_ms": max(int(b_meta.get("elapsed_ms") or 0), int(q_meta.get("elapsed_ms") or 0), int(cb_meta.get("elapsed_ms") or 0)),
+        "requests_total": int(b_meta.get("requests_total") or 0) + int(q_meta.get("requests_total") or 0) + int(cb_meta.get("requests_total") or 0),
+        "requests_ok": int(b_meta.get("requests_ok") or 0) + int(q_meta.get("requests_total") or 0) + int(cb_meta.get("requests_total") or 0),
+        "bonds_chg_ok": int(b_meta.get("bonds_chg_ok") or 0) + int(cb_meta.get("bonds_chg_ok") or 0),
         "stocks_chg_ok": int(b_meta.get("stocks_chg_ok") or 0) + int(q_meta.get("stocks_chg_ok") or 0),
-        "distinct_bonds": int(b_meta.get("distinct_bonds") or 0),
+        "distinct_bonds": int(b_meta.get("distinct_bonds") or 0) + int(cb_meta.get("distinct_bonds") or 0),
         "distinct_stocks": int(b_meta.get("distinct_stocks") or 0) + int(q_meta.get("distinct_stocks") or 0),
-        "bond_route": b_meta.get("route") or "get_security_bars",
+        "bond_route": (b_meta.get("route") or "get_security_bars") if not cb_bond else "get_security_quotes(cb)+bars(noncb)",
         "stock_route": q_meta.get("route") or "get_security_quotes",
     }
-    return b_bond or {}, stock_map, meta
+    return bond_map, stock_map, meta
 
 
 def _cb_fetch_rt_pytdx_split(bond_codes, stock_codes, threads=None, max_age=3):
-    """债券走 get_security_bars（价格已验证正确）、股票走批量 get_security_quotes（factor=1，干净）两路并行，
+    """三路并行：非可转债债券走 get_security_bars（价格已验证正确）、
+    股票走批量 get_security_quotes（factor=1，干净）、
+    可转债走批量 get_security_quotes（价格 /100、vol 手->张 *10、amount 元直接），
     再合并为统一 (bond_map, stock_map, meta)。对外接口与 _cb_fetch_rt_pytdx 一致，
     由 cb_full_metrics 调用以在保持正确性的前提下把股票请求从逐支 bars 降为 80/批 quotes。"""
     if not _PYTDX_OK:
         return {}, {}, {"ok": False, "reason": "pytdx 未安装或 import 失败"}
     bonds = list(dict.fromkeys([str(c) for c in (bond_codes or []) if str(c).strip()]))
     stocks = list(dict.fromkeys([str(c) for c in (stock_codes or []) if str(c).strip()]))
-    with _futures.ThreadPoolExecutor(max_workers=2) as ex:
-        fb = ex.submit(_cb_fetch_rt_pytdx, bonds, []) if bonds else None
+    cb_bonds = [c for c in bonds if _is_convertible_bond(c)]
+    non_cb_bonds = [c for c in bonds if not _is_convertible_bond(c)]
+    with _futures.ThreadPoolExecutor(max_workers=3) as ex:
+        fb = ex.submit(_cb_fetch_rt_pytdx, non_cb_bonds, []) if non_cb_bonds else None
         fq = ex.submit(_cb_fetch_rt_pytdx_quotes, stocks) if stocks else None
+        fcb = ex.submit(_cb_fetch_rt_pytdx_quotes_cb, cb_bonds) if cb_bonds else None
         bars_rt = fb.result() if fb is not None else ({}, {}, {"ok": True})
         quotes_rt = fq.result() if fq is not None else ({}, {"ok": True})
-    return _cb_rt_combine(bars_rt, quotes_rt)
+        cb_rt = fcb.result() if fcb is not None else ({}, {"ok": True})
+    return _cb_rt_combine(bars_rt, quotes_rt, cb_rt)
 
 
 
