@@ -143,7 +143,7 @@
   </div>
 
   <div v-if="popup.visible" class="cb-popup" :style="popupStyle" @mouseenter="onPopupEnter" @mouseleave="onPopupLeave">
-    <div class="cb-popup-head">
+    <div class="cb-popup-head" @mousedown="startDrag">
       <span class="cb-popup-code" v-text="popup.row && popup.row.bond_code"></span>
       <span class="cb-popup-name" v-text="popup.row && popup.row.bond_name"></span>
       <span class="cb-tabs">
@@ -184,14 +184,14 @@
         <span class="cb-mini-item"><b>成交额</b><i v-text="fmtWanV(popup.row && popup.row.amount_yuan)"></i></span>
       </div>
       <div class="cb-kline-ctrl">
-        <el-button size="mini" :disabled="kline.bond.show<=20" @click="adjustKlineAll(-20)">减少</el-button>
-        <span class="cb-kline-cnt">显示 [# kline.bond.show #] / 共 [# kline.bond.total #] 根</span>
-        <el-button size="mini" :disabled="kline.bond.show>=kline.bond.total" @click="adjustKlineAll(20)">增加</el-button>
+        <el-button size="mini" :disabled="kline.stock.show<=20" @click="adjustKlineAll(-20)">减少</el-button>
+        <span class="cb-kline-cnt">显示 [# kline.stock.show #] / 共 [# kline.stock.total #] 根</span>
+        <el-button size="mini" :disabled="kline.stock.show>=kline.stock.total" @click="adjustKlineAll(20)">增加</el-button>
       </div>
-      <div class="cb-chart-title">转债日K <span class="muted" v-text="kline.bond.src ? ('('+kline.bond.src+')') : ''"></span></div>
-      <cb-chart ref="bondChart"></cb-chart>
       <div class="cb-chart-title">正股日K</div>
       <cb-chart ref="stockChart"></cb-chart>
+      <div class="cb-chart-title">转债日K <span class="muted" v-text="kline.bond.src ? ('('+kline.bond.src+')') : ''"></span></div>
+      <cb-chart ref="bondChart"></cb-chart>
     </div>
   </div>
 
@@ -358,7 +358,36 @@ new Vue({
     },
     onCellLeave(){ this.scheduleHide(); },
     onPopupEnter(){ this.clearHideTimer(); },
-    onPopupLeave(){ this.scheduleHide(); },
+    onPopupLeave(){ if(this._dragging) return; this.scheduleHide(); },
+    startDrag(event){
+      if(this._dragging) return;
+      if(event.target && event.target.closest && event.target.closest('.cb-tabs')) return;
+      event.preventDefault();
+      this._dragging = true;
+      this._drag = { mx: event.clientX, my: event.clientY, x: this.popup.x, y: this.popup.y };
+      this.clearHideTimer();
+      this._onMove = (e) => this.onDragMove(e);
+      this._onUp = (e) => this.endDrag(e);
+      document.addEventListener('mousemove', this._onMove);
+      document.addEventListener('mouseup', this._onUp);
+    },
+    onDragMove(event){
+      if(!this._dragging) return;
+      const dx = event.clientX - this._drag.mx;
+      const dy = event.clientY - this._drag.my;
+      let nx = this._drag.x + dx, ny = this._drag.y + dy;
+      const maxX = window.innerWidth - 40, maxY = window.innerHeight - 40;
+      if(nx < 0) nx = 0; if(nx > maxX) nx = maxX;
+      if(ny < 0) ny = 0; if(ny > maxY) ny = maxY;
+      this.popup.x = nx; this.popup.y = ny;
+      this.clearHideTimer();
+    },
+    endDrag(event){
+      if(this._onMove) document.removeEventListener('mousemove', this._onMove);
+      if(this._onUp) document.removeEventListener('mouseup', this._onUp);
+      this._dragging = false; this._drag = null;
+      this.clearHideTimer();
+    },
     showTab(t){
       this.popup.tab = t;
       if(t === 'kline'){ this.$nextTick(() => { this.resizeCharts(); }); }
@@ -428,8 +457,14 @@ new Vue({
       const dates = data.map(d => d.date);
       const ohlc = data.map(d => [Number(d.open), Number(d.close), Number(d.low), Number(d.high)]);
       const vols = data.map(d => Number(d.vol));
-      const closes = data.map(d => Number(d.close));
-      const boll = this.calcBoll(closes, 20, 2);
+      // BOLL 用 K 线全量数据计算，再裁切对齐到当前显示窗口
+      const fullCloses = ((this.kline[which] && this.kline[which].full) || data).map(d => Number(d.close));
+      const fullBoll = this.calcBoll(fullCloses, 20, 2);
+      const boll = {
+        mid: fullBoll.mid.slice(-data.length),
+        upper: fullBoll.upper.slice(-data.length),
+        lower: fullBoll.lower.slice(-data.length),
+      };
       chart.setOption({
         backgroundColor: '#fff',
         animation: false,
@@ -620,7 +655,7 @@ new Vue({
 .cell-up   { color: #e74c3c !important; font-weight:600; }  /* 红涨 */
 .cell-down { color: #27ae60 !important; font-weight:600; }  /* 绿跌 */
   .cb-popup{position:fixed;z-index:3000;width:580px;max-width:92vw;background:#fff;border:1px solid #e4e7ed;border-radius:8px;box-shadow:0 6px 24px rgba(0,0,0,.18);padding:12px 14px;font-size:12px;color:#303133;}
-  .cb-popup-head{display:flex;align-items:center;border-bottom:1px solid #f0f0f0;padding-bottom:8px;margin-bottom:8px;}
+  .cb-popup-head{display:flex;align-items:center;border-bottom:1px solid #f0f0f0;padding-bottom:8px;margin-bottom:8px;cursor:move;}
   .cb-tabs{margin-left:auto;display:inline-flex;border:1px solid #dcdfe6;border-radius:4px;overflow:hidden;}
   .cb-tab{padding:2px 10px;font-size:12px;cursor:pointer;color:#606266;background:#fff;user-select:none;}
   .cb-tab.active{background:#409EFF;color:#fff;}
