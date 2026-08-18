@@ -1,0 +1,16 @@
+__pycache__/
+*.pyc
+logs/
+data/
+.venv/
+.env
+
+>>> local-aux-ignore <<<
+.workbuddy/
+backup/
+*.bak*
+.bak_*
+_probe_*.py
+_dbg.py
+_opt_cache.py
+_verify_cache2.py

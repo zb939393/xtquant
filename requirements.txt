@@ -1,0 +1,5 @@
+flask>=2.0
+akshare>=1.12
+xtquant
+pandas
+requests

@@ -1,0 +1,621 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<title>可转债全指标看板</title>
+<meta name="viewport" content="width=device-width,initial-scale=1.0" />
+<link rel="stylesheet" href="https://unpkg.com/element-ui/lib/theme-chalk/index.css" />
+<style>
+  html,body{margin:0;padding:0;height:100%;}
+  body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;background:#f5f7fa;color:#303133;}
+  #app{padding:14px 20px;box-sizing:border-box;min-height:100%;}
+  .topbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:10px;}
+  .topbar h2{margin:0;font-size:20px;}
+  .kpis{display:flex;gap:12px;flex-wrap:wrap;}
+  .kpi{background:#fff;padding:10px 16px;border-radius:6px;box-shadow:0 1px 3px rgba(0,0,0,.06);min-width:120px;}
+  .kpi .label{font-size:12px;color:#909399;}
+  .kpi .val{font-size:18px;font-weight:600;margin-top:2px;color:#303133;}
+  .kpi.warn .val{color:#E6A23C;}
+  .kpi.danger .val{color:#F56C6C;}
+  .kpi.ok .val{color:#67C23A;}
+  .filter-card{background:#fff;border-radius:6px;padding:12px 14px 4px;box-shadow:0 1px 3px rgba(0,0,0,.06);margin-bottom:12px;}
+  .el-form--inline .el-form-item{margin-bottom:8px;margin-right:16px;}
+  .table-card{background:#fff;border-radius:6px;padding:12px;box-shadow:0 1px 3px rgba(0,0,0,.06);}
+  .el-table{font-size:12px;}
+  .el-table th{background:#fafafa !important;color:#606266;font-weight:600;}
+  .num{font-variant-numeric:tabular-nums;text-align:right !important;font-family:"JetBrains Mono","Consolas",monospace;}
+  .tag-green{color:#67C23A;}
+  .tag-red{color:#F56C6C;}
+  .tag-gray{color:#909399;}
+  .hl{background:#fffbe6;}
+  .muted{color:#909399;font-size:12px;}
+  .foot{color:#909399;font-size:12px;margin-top:8px;text-align:right;}
+  .cell-gap{display:inline-block;min-width:10px;}
+</style>
+</head>
+<body>
+<div id="app">
+  <div class="topbar">
+    <h2>📊 可转债全指标看板</h2>
+    <div>
+      <el-button icon="el-icon-refresh" size="mini" :loading="loading" @click="reload">刷新数据</el-button>
+      <el-button size="mini" type="success" :disabled="!totalRaw" @click="exportCsv">导出 CSV</el-button>
+      <el-select v-model="refreshInterval" size="mini" style="width:138px;margin-left:10px;" clearable @change="applyRefreshInterval">
+        <el-option label="1秒自动刷新" :value="1000"></el-option>
+        <el-option label="3秒自动刷新" :value="3000"></el-option>
+        <el-option label="5秒自动刷新" :value="5000"></el-option>
+        <el-option label="10秒自动刷新" :value="10000"></el-option>
+        <el-option label="手动刷新" :value="0"></el-option>
+      </el-select>
+      <el-button icon="el-icon-date" size="mini" @click="toggleColCfg">列设置</el-button>
+    </div>
+  </div>
+
+  <div class="kpis">
+    <div class="kpi"><div class="label">可转债总数</div><div class="val">[# totalRaw #]</div></div>
+    <div class="kpi"><div class="label">筛选后</div><div class="val">[# totalFiltered #]</div></div>
+    <div class="kpi ok"><div class="label">双低中位数</div><div class="val">[# dualLowMed #]</div></div>
+    <div class="kpi warn"><div class="label">YTM 税前中位数</div><div class="val">[# ytmMed #]%</div></div>
+    <div class="kpi danger"><div class="label">强赎已触发</div><div class="val">[# callTriggeredCount #]/[# totalRaw #]</div></div>
+    <div class="kpi"><div class="label">数据更新</div><div class="val">[# updatedAt #]</div></div>
+  </div>
+
+  <div class="filter-card">
+    <el-form :inline="true" size="small" :model="f" label-width="78px">
+      <el-form-item label="转债名"><el-input v-model="f.bond_name_like" clearable placeholder="万讯" style="width:140px" /></el-form-item>
+      <el-form-item label="正股名"><el-input v-model="f.stock_name_like" clearable placeholder="宁德" style="width:140px" /></el-form-item>
+      <el-form-item label="代码前缀"><el-input v-model="f.bond_code_prefix" clearable placeholder="113/123" style="width:120px" /></el-form-item>
+      <el-form-item label="市场">
+        <el-select v-model="f.market" clearable placeholder="全部" style="width:110px">
+          <el-option label="沪市 .SH" value=".SH"></el-option>
+          <el-option label="深市 .SZ" value=".SZ"></el-option>
+        </el-select>
+      </el-form-item>
+      <el-form-item label="价格区间">
+        <el-input v-model="f.bond_price_ge" size="small" clearable placeholder="≥" style="width:100px" />
+        <span class="cell-gap"></span>
+        <el-input v-model="f.bond_price_le" size="small" clearable placeholder="≤" style="width:100px" />
+      </el-form-item>
+      <el-form-item label="溢价率 ≤"><el-input v-model="f.prem_le" size="small" clearable placeholder="%" style="width:100px" /></el-form-item>
+      <el-form-item label="转股价值 ≤"><el-input v-model="f.conv_value_le" size="small" clearable placeholder="≤" style="width:100px" /></el-form-item>
+      <el-form-item label="双低 ≤"><el-input v-model="f.dual_low_le" size="small" clearable placeholder="双低值" style="width:100px" /></el-form-item>
+      <el-form-item label="剩余年限 ≤"><el-input v-model="f.rem_le" size="small" clearable placeholder="年" style="width:100px" /></el-form-item>
+      <el-form-item label="剩余规模(亿) ≤"><el-input v-model="f.rem_size_le" size="small" clearable placeholder="≤" style="width:100px" /></el-form-item>
+      <el-form-item label="评级 ≥">
+        <el-select v-model="f.rating_ge" clearable placeholder="选择评级" style="width:120px">
+          <el-option v-for="r in ratings" :key="r" :label="r" :value="r"></el-option>
+        </el-select>
+      </el-form-item>
+      <el-form-item label="状态">
+        <el-checkbox v-model="f.exclude_callable">排除强赎中</el-checkbox>
+        <el-checkbox v-model="f.exclude_put">排除回售触发</el-checkbox>
+        <el-checkbox v-model="f.dual_low_under_130">只看双低≤130</el-checkbox>
+      </el-form-item>
+      <el-form-item label="排序">
+        <el-select v-model="sort.prop" placeholder="排序字段" style="width:150px">
+          <el-option v-for="c in sortableCols" :key="c.prop" :label="c.label" :value="c.prop"></el-option>
+        </el-select>
+        <el-radio-group v-model="sort.order" size="mini" style="margin-left:8px">
+          <el-radio-button label="ascending">升序</el-radio-button>
+          <el-radio-button label="descending">降序</el-radio-button>
+        </el-radio-group>
+      </el-form-item>
+      <el-form-item>
+        <el-button size="small" type="primary" icon="el-icon-search" :loading="loading" @click="apply">筛选</el-button>
+        <el-button size="small" icon="el-icon-refresh-left" @click="reset">重置</el-button>
+      </el-form-item>
+    </el-form>
+  </div>
+
+  <div class="table-card">
+    <el-table
+      :data="paged"
+      stripe
+      border
+      height="calc(100vh - 330px)"
+      :default-sort="{prop: 'dual_low_calc', order: 'ascending'}"
+      @sort-change="onSortChange"
+      @cell-mouse-enter="onCellEnter"
+      @cell-mouse-leave="onCellLeave"
+      :cell-class-name="cellClass"
+      v-loading="loading"
+      element-loading-text="加载中（首次 akshare 取集思录/东财数据约 3~10 秒）"
+    >
+      <el-table-column label="#" type="index" width="48" fixed="left" align="center"></el-table-column>
+      <el-table-column v-for="(c,i) in visibleCols" :key="c.prop"
+        :prop="c.prop" :label="c.label" :width="c.width" :min-width="c.minWidth"
+        :fixed="c.fixed" :align="c.num?'right':'left'" :sortable="c.sortable?'custom':false"
+        :formatter="fmt(c)" :class-name="(c.num?'num':'') + (c.prop==='bond_code'?' cb-trigger':'')" :show-overflow-tooltip="true">
+      </el-table-column>
+    </el-table>
+
+    <div class="foot">
+      显示第 [# pageOffset #] - [# pageEnd #] 条 / 筛选后 [# totalFiltered #] 条 / 全市场 [# totalRaw #] 条
+      <el-pagination
+        style="display:inline-flex;vertical-align:middle;margin-left:16px;"
+        background
+        layout="prev, pager, next"
+        :page-size="pageSize"
+        :current-page.sync="currentPage"
+        :total="totalFiltered">
+      </el-pagination>
+    </div>
+  </div>
+
+  <div v-if="popup.visible" class="cb-popup" :style="popupStyle" @mouseenter="onPopupEnter" @mouseleave="onPopupLeave">
+    <div class="cb-popup-head">
+      <span class="cb-popup-code" v-text="popup.row && popup.row.bond_code"></span>
+      <span class="cb-popup-name" v-text="popup.row && popup.row.bond_name"></span>
+      <span class="cb-tabs">
+        <span class="cb-tab" :class="{active: popup.tab==='kline'}" @click="showTab('kline')">K线行情</span>
+        <span class="cb-tab" :class="{active: popup.tab==='rt'}" @click="showTab('rt')">实时行情</span>
+      </span>
+    </div>
+    <div class="cb-popup-body" v-show="popup.tab==='rt'">
+      <div class="cb-block">
+        <div class="cb-block-title">可转债实时行情</div>
+        <div class="cb-grid">
+          <div class="cb-item"><span class="cb-k">转债价</span><span class="cb-v" :class="updownCls(popup.row && popup.row.bond_chg_pct)" v-text="fmtPrice(popup.row && popup.row.bond_price)"></span></div>
+          <div class="cb-item"><span class="cb-k">涨跌幅</span><span class="cb-v" :class="updownCls(popup.row && popup.row.bond_chg_pct)" v-text="fmtSignPct(popup.row && popup.row.bond_chg_pct)"></span></div>
+          <div class="cb-item"><span class="cb-k">振幅</span><span class="cb-v" v-text="fmtPctV(popup.row && popup.row.amplitude_pct)"></span></div>
+          <div class="cb-item"><span class="cb-k">最高</span><span class="cb-v" v-text="fmtPrice(popup.row && popup.row.high)"></span></div>
+          <div class="cb-item"><span class="cb-k">最低</span><span class="cb-v" v-text="fmtPrice(popup.row && popup.row.low)"></span></div>
+          <div class="cb-item"><span class="cb-k">成交量(万张)</span><span class="cb-v" v-text="fmtPlain(popup.row && popup.row.volume_zhang)"></span></div>
+          <div class="cb-item"><span class="cb-k">成交额</span><span class="cb-v" v-text="fmtWanV(popup.row && popup.row.amount_yuan)"></span></div>
+          <div class="cb-item"><span class="cb-k">换手率</span><span class="cb-v" v-text="fmtPctV(popup.row && popup.row.turnover_rate_calc)"></span></div>
+        </div>
+      </div>
+      <div class="cb-block">
+        <div class="cb-block-title">正股</div>
+        <div class="cb-grid">
+          <div class="cb-item"><span class="cb-k">代码</span><span class="cb-v" v-text="popup.row && popup.row.stock_code"></span></div>
+          <div class="cb-item"><span class="cb-k">名称</span><span class="cb-v" v-text="popup.row && popup.row.stock_name"></span></div>
+          <div class="cb-item"><span class="cb-k">股价</span><span class="cb-v" :class="updownCls(popup.row && popup.row.stock_chg_pct)" v-text="fmtPrice(popup.row && popup.row.stock_price)"></span></div>
+          <div class="cb-item"><span class="cb-k">涨跌幅</span><span class="cb-v" :class="updownCls(popup.row && popup.row.stock_chg_pct)" v-text="fmtSignPct(popup.row && popup.row.stock_chg_pct)"></span></div>
+          <div class="cb-item"><span class="cb-k">振幅</span><span class="cb-v" v-text="fmtPctV(popup.row && popup.row.stock_amplitude)"></span></div>
+        </div>
+      </div>
+    </div>
+    <div class="cb-charts" v-show="popup.tab==='kline'">
+      <div class="cb-mini">
+        <span class="cb-mini-item"><b>转债</b><i :class="updownCls(popup.row && popup.row.bond_chg_pct)" v-text="fmtPrice(popup.row && popup.row.bond_price)"></i><i :class="updownCls(popup.row && popup.row.bond_chg_pct)" v-text="fmtSignPct(popup.row && popup.row.bond_chg_pct)"></i></span>
+        <span class="cb-mini-item"><b>正股</b><i :class="updownCls(popup.row && popup.row.stock_chg_pct)" v-text="fmtPrice(popup.row && popup.row.stock_price)"></i><i :class="updownCls(popup.row && popup.row.stock_chg_pct)" v-text="fmtSignPct(popup.row && popup.row.stock_chg_pct)"></i></span>
+        <span class="cb-mini-item"><b>转债振幅</b><i v-text="fmtPctV(popup.row && popup.row.amplitude_pct)"></i></span>
+        <span class="cb-mini-item"><b>成交额</b><i v-text="fmtWanV(popup.row && popup.row.amount_yuan)"></i></span>
+      </div>
+      <div class="cb-chart-title">转债日K <span class="muted" v-text="kline.bond.src ? ('('+kline.bond.src+')') : ''"></span></div>
+      <cb-chart ref="bondChart"></cb-chart>
+      <div class="cb-chart-title">正股日K</div>
+      <cb-chart ref="stockChart"></cb-chart>
+    </div>
+  </div>
+
+  <el-dialog title="显示列设置" :visible.sync="colDlg" width="520px">
+    <el-checkbox-group v-model="showCols">
+      <div v-for="c in allCols" :key="c.prop" style="display:inline-block;width:220px;padding:4px 0;">
+        <el-checkbox :label="c.prop">[# c.label #]</el-checkbox>
+      </div>
+    </el-checkbox-group>
+    <span slot="footer">
+      <el-button size="small" @click="restoreCols">恢复默认</el-button>
+      <el-button size="small" type="primary" @click="colDlg=false">确定</el-button>
+    </span>
+  </el-dialog>
+</div>
+
+<script src="https://unpkg.com/vue@2.7.16/dist/vue.min.js"></script>
+<script src="https://unpkg.com/element-ui/lib/index.js"></script>
+<script src="https://unpkg.com/echarts@5.5.0/dist/echarts.min.js"></script>
+<script>
+const COLUMNS = [
+  {prop:'dual_low_rank', label:'双低排名', width:80, num:true, sortable:true, fixed:'left'},
+  {prop:'bond_code',  label:'代码',      width:100, fixed:'left'},
+  {prop:'bond_name',  label:'转债名称',  width:104, fixed:'left'},
+  {prop:'stock_name', label:'正股',      width:100, fixed:'left'},
+  {prop:'stock_code', label:'正股代码',  width:100},
+  {prop:'rating',     label:'评级',      width:80},{prop:'rating_agency', label:'评级公司', width:100, sortable:true, filter:true, filterType:'select'},{prop:'issuer_rating', label:'主体评级', width:92, sortable:true, filter:true, filterType:'select'},
+        
+  {prop:'list_date',  label:'上市日',    width:108},
+  {prop:'bond_price',    label:'转债价(元)', width:90, num:true, sortable:true},
+  {prop:'bond_chg_pct',  label:'转债涨跌幅%', width:102, num:true, sortable:true, fmt:'pctSign', updown:true},
+  {prop:'amplitude_pct', label:'转债振幅%',   width:96,  num:true, sortable:true, fmt:'pct'},
+  {prop:'stock_price',   label:'正股价',      width:86, num:true, sortable:true},
+  {prop:'stock_chg_pct', label:'正股涨跌幅%', width:102, num:true, sortable:true, fmt:'pctSign', updown:true},
+  {prop:'stock_amplitude', label:'正股振幅%', width:96,  num:true, sortable:true, fmt:'pct'},
+  {prop:'high',          label:'最高',        width:78, num:true},
+  {prop:'low',           label:'最低',        width:78, num:true},
+  {prop:'daily_amplitude_calc', label:'振幅%_calc', width:96, num:true, sortable:true, fmt:'pct', hidden_default:true},
+  {prop:'amount_yuan',   label:'成交额(万)', width:108, num:true, sortable:true, fmt:'wan'},
+  {prop:'volume_zhang',  label:'成交量(万张)', width:112, num:true},
+  {prop:'turnover_rate_calc', label:'换手率%', width:92, num:true, sortable:true, fmt:'pct'},
+  {prop:'conv_price',     label:'转股价',   width:88, num:true, sortable:true},
+  {prop:'conv_value_100', label:'转股价值', width:94, num:true, sortable:true},
+  {prop:'conv_premium_pct_calc', label:'溢价率%', width:96, num:true, sortable:true, fmt:'pctSign', updown:true},
+  {prop:'dual_low_calc',  label:'双低值',   width:88, num:true, sortable:true},
+  {prop:'premium_decomp_bond_pct', label:'纯债溢价%', width:104, num:true, sortable:true, fmt:'pct'},
+  {prop:'premium_decomp_conv_pct', label:'转股溢价分解%', width:124, num:true, sortable:true, fmt:'pct'},
+  {prop:'maturity_date',      label:'到期日',     width:108},
+  {prop:'maturity_years_left', label:'剩余年限',  width:96, num:true, sortable:true},
+  {prop:'maturity_days_left',  label:'剩余天数',  width:90, num:true, sortable:true},
+  {prop:'maturity_price',     label:'到期赎回价', width:104, num:true},
+  {prop:'coupon_pct',         label:'票息%',      width:80, num:true},
+  {prop:'coupon_sum_estimate', label:'票息累计估计%', width:120, num:true},
+  {prop:'coupon_avg_pct',      label:'平均票息%',   width:104, num:true, sortable:true, fmt:'pct'},
+  {prop:'coupon_first_pct',    label:'首年票息%',   width:104, num:true, sortable:true, fmt:'pct'},
+  {prop:'coupon_year_cnt',     label:'付息年数',    width:92,  num:true},
+  {prop:'ytm_before_tax_calc', label:'YTM税前%', width:100, num:true, sortable:true, fmt:'pctSign', updown:true},
+  {prop:'redemption_gain_pct', label:'到期总收益%', width:112, num:true, sortable:true, fmt:'pctSign', updown:true},
+  {prop:'call_status',        label:'强赎状态', width:124},
+  {prop:'call_trigger_price', label:'强赎触发价', width:108, num:true},
+  {prop:'call_trigger_pct',   label:'强赎触发%', width:108, num:true, sortable:true, fmt:'pctSign', updown:true},
+  {prop:'call_progress_pct',  label:'强赎进度%', width:108, num:true, sortable:true, fmt:'pct'},
+  {prop:'put_trigger_price',  label:'回售触发价', width:108, num:true},
+  {prop:'put_trigger_pct',    label:'回售触发%', width:108, num:true, sortable:true, fmt:'pctSign', updown:true},
+  {prop:'adjust_trigger_price', label:'下修触发价', width:108, num:true},
+  {prop:'adjust_trigger_pct', label:'下修触发%', width:108, num:true, sortable:true, fmt:'pctSign', updown:true},
+  {prop:'adjust_status',      label:'下修状态',  width:104},
+  {prop:'rem_size_yi',      label:'剩余规模(亿)', width:112, num:true, sortable:true},
+  {prop:'issue_size_yi',    label:'发行规模(亿)', width:112, num:true},
+  {prop:'remaining_ratio',  label:'剩余比%',     width:94,  num:true, sortable:true, fmt:'pct'},
+];
+
+function num(v){ if(v===null||v===undefined||v==='') return NaN; const n=parseFloat(v); return isNaN(n)?NaN:n; }
+function fmtNum(v,d=2){ const n=num(v); return isNaN(n)?'--':(n.toFixed(d)); }
+function fmtPct(v,d=2,signed=false){ const n=num(v); if(isNaN(n)) return '--'; const s=n.toFixed(d)+'%'; return signed&&n>0?('+'+s):s; }
+function fmtWan(v,d=0){ const n=num(v); if(isNaN(n)) return '--'; if(Math.abs(n)>=1e8) return (n/1e8).toFixed(2)+'亿'; if(Math.abs(n)>=1e4) return (n/1e4).toFixed(d)+'万'; return n.toFixed(d); }
+
+Vue.component('cb-chart', {
+  template: '<div class="cb-chart"></div>'
+});
+
+new Vue({
+  delimiters: ['[#', '#]'],
+  el:'#app',
+  data(){
+    const ratings=['AAA','AA+','AA','AA-','A+','A','A-','BBB+','BBB','BBB-'];
+    return {
+      loading:false, colDlg:false, ratings,
+      raw:[], rows:[], totalRaw:0, totalFiltered:0,
+      updatedAt:'--',
+      refreshInterval:3000,
+      _rtTimerId:null,
+      _rtLoadingSilent:false,
+      _rtInFlight:false,
+      f:{ bond_name_like:'', stock_name_like:'', bond_code_prefix:'', market:'',
+          bond_price_ge:'', bond_price_le:'',
+          prem_le:'', conv_value_le:'', dual_low_le:'',
+          rem_le:'', rem_size_le:'', rating_ge:null,
+          exclude_callable:false, exclude_put:false, dual_low_under_130:false },
+      sort:{ prop:'dual_low_calc', order:'ascending' },
+      pageSize:50, currentPage:1, pageOffset:1,
+      allCols:COLUMNS,
+      showCols:COLUMNS.map(c=>c.prop).filter(p=>!['coupon_sum_estimate','maturity_days_left','put_trigger_pct','adjust_trigger_pct','adjust_status','premium_decomp_bond_pct','remaining_ratio','high','low','amount_yuan','volume_zhang'].includes(p)),
+      popup:{ visible:false, row:null, x:0, y:0, tab:'kline' },
+      kline:{ bond:{ data:[], src:'' }, stock:{ data:[], src:'' } },
+    };
+  },
+  computed:{
+    pageEnd(){ return Math.min(this.pageOffset + this.pageSize - 1 + 1, this.totalFiltered); },
+    sortableCols(){ return COLUMNS.filter(c=>c.sortable).map(c=>({prop:c.prop,label:c.label})); },
+    visibleCols(){
+      const set=new Set(this.showCols);
+      return COLUMNS.filter(c=>set.has(c.prop));
+    },
+    paged(){
+      const off=(this.currentPage-1)*this.pageSize;
+      this.pageOffset=off+1;
+      return this.rows.slice(off, off+this.pageSize);
+    },
+    dualLowMed(){
+      const xs=this.rows.map(r=>num(r.dual_low_calc)).filter(n=>!isNaN(n)).sort((a,b)=>a-b);
+      if(!xs.length) return '--';
+      const m=(xs.length>>1);
+      return (xs.length%2?xs[m]:((xs[m-1]+xs[m])/2)).toFixed(2);
+    },
+    ytmMed(){
+      const xs=this.rows.map(r=>num(r.ytm_before_tax_calc)).filter(n=>!isNaN(n)).sort((a,b)=>a-b);
+      if(!xs.length) return '--';
+      const m=(xs.length>>1);
+      return (xs.length%2?xs[m]:((xs[m-1]+xs[m])/2)).toFixed(2);
+    },
+    popupStyle(){ return { left: this.popup.x + 'px', top: this.popup.y + 'px' }; },
+    callTriggeredCount(){
+      return this.raw.filter(r=>num(r.call_trigger_pct)>=0 && num(r.call_progress_pct)>=100).length;
+    },
+  },
+  methods:{
+    // 涨跌色：根据列配置 updown:true 决定正负色
+    cellClass({row, column, columnIndex}){
+      try{
+        var col = null;
+        for(var i=0;i<this.allCols.length;i++){
+          if(this.allCols[i].prop===column.property){ col=this.allCols[i]; break; }
+        }
+        if(!col || !col.updown) return '';
+        var v = parseFloat(row[column.property]);
+        if(isNaN(v)) return '';
+        if(v > 0) return 'cell-up';
+        if(v < 0) return 'cell-down';
+        return 'cell-flat';
+      }catch(e){ return ''; }
+    },
+
+    // ===== 悬浮窗：正股 / 可转债实时 / K线 =====
+    onCellEnter(row, column, cell, event){
+      const prop = column && column.property;
+      if(!prop || prop !== 'bond_code') return;
+      this.popup.row = row;
+      this.popup.tab = 'kline';
+      this.positionPopup(event);
+      this.popup.visible = true;
+      this.clearHideTimer();
+      this.fetchKlines(row);
+    },
+    onCellLeave(){ this.scheduleHide(); },
+    onPopupEnter(){ this.clearHideTimer(); },
+    onPopupLeave(){ this.scheduleHide(); },
+    showTab(t){
+      this.popup.tab = t;
+      if(t === 'kline'){ this.$nextTick(() => { this.resizeCharts(); }); }
+    },
+    resizeCharts(){
+      [this._bondChart, this._stockChart].forEach(c => { if(c && c.getDom() && c.getDom().isConnected){ try{ c.resize(); }catch(e){} } });
+    },
+    positionPopup(event){
+      const w = 580, h = 480;
+      const cx = event.clientX || 0, cy = event.clientY || 0;
+      let x = cx + 16, y = cy + 16;
+      if(x + w > window.innerWidth) x = cx - w - 16;
+      if(x < 8) x = 8;
+      if(y + h > window.innerHeight) y = window.innerHeight - h - 8;
+      if(y < 8) y = 8;
+      this.popup.x = x; this.popup.y = y;
+    },
+    scheduleHide(){
+      this.clearHideTimer();
+      this._hideTimer = setTimeout(() => { this.popup.visible = false; }, 200);
+    },
+    clearHideTimer(){ if(this._hideTimer){ try{ clearTimeout(this._hideTimer); }catch(e){} this._hideTimer = null; } },
+    async fetchKlines(row){
+      if(row.bond_code) this.loadKline(row.bond_code, 'bond');
+      if(row.stock_code) this.loadKline(row.stock_code, 'stock');
+    },
+    async loadKline(code, which){
+      try{
+        const res = await fetch('/market/kline/' + encodeURIComponent(code) + '?period=1d&count=120&_=' + Date.now(), {cache:'no-store'});
+        const js = await res.json();
+        const data = (js && js.data) || [];
+        this.kline[which] = { data: data, src: (js && js.src) || (js && js.ok ? 'ok' : '') };
+        this.$nextTick(() => { this.renderChart(which, data); });
+      }catch(e){
+        this.kline[which] = { data: [], src: 'err' };
+      }
+    },
+    renderChart(which, data){
+      const cmp = which === 'bond' ? this.$refs.bondChart : this.$refs.stockChart;
+      const ref = cmp && cmp.$el;
+      if(!ref) return;
+      let chart = which === 'bond' ? this._bondChart : this._stockChart;
+      if(chart && chart.getDom() && chart.getDom().isConnected){
+        // reuse existing instance
+      } else {
+        if(chart){ try{ chart.dispose(); }catch(e){} }
+        chart = echarts.init(ref);
+        if(which === 'bond') this._bondChart = chart; else this._stockChart = chart;
+      }
+      const dates = data.map(d => d.date);
+      const ohlc = data.map(d => [Number(d.open), Number(d.close), Number(d.low), Number(d.high)]);
+      const vols = data.map(d => Number(d.vol));
+      const closes = data.map(d => Number(d.close));
+      const boll = this.calcBoll(closes, 20, 2);
+      chart.setOption({
+        backgroundColor: '#fff',
+        animation: false,
+        legend: { data: ['BOLL', 'UB', 'LB'], top: 2, right: 8, itemWidth: 14, itemHeight: 8, textStyle: { fontSize: 10, color: '#909399' } },
+        grid: [{ left: 52, right: 14, top: 22, height: '52%' }, { left: 52, right: 14, top: '76%', height: '18%' }],
+        tooltip: { trigger: 'axis', axisPointer: { type: 'cross' } },
+        xAxis: [
+          { type: 'category', data: dates, axisLabel: { show: false }, axisLine: { lineStyle: { color: '#dcdfe6' } } },
+          { type: 'category', gridIndex: 1, data: dates, axisLabel: { show: false } }
+        ],
+        yAxis: [
+          { scale: true, splitLine: { lineStyle: { color: '#f2f2f2' } }, axisLabel: { color: '#909399' } },
+          { gridIndex: 1, scale: true, splitLine: { show: false }, axisLabel: { show: false } }
+        ],
+        series: [
+          { name: 'K', type: 'candlestick', data: ohlc, itemStyle: { color: '#e74c3c', color0: '#27ae60', borderColor: '#e74c3c', borderColor0: '#27ae60' } },
+          { name: 'VOL', type: 'bar', xAxisIndex: 1, yAxisIndex: 1, data: vols, itemStyle: { color: '#bcd4ef' } },
+          { name: 'BOLL', type: 'line', data: boll.mid, xAxisIndex: 0, yAxisIndex: 0, showSymbol: false, lineStyle: { width: 1, color: '#f5a623' }, z: 3 },
+          { name: 'UB', type: 'line', data: boll.upper, xAxisIndex: 0, yAxisIndex: 0, showSymbol: false, lineStyle: { width: 1, color: '#9aa0a6' }, z: 3 },
+          { name: 'LB', type: 'line', data: boll.lower, xAxisIndex: 0, yAxisIndex: 0, showSymbol: false, lineStyle: { width: 1, color: '#9aa0a6' }, z: 3 }
+        ]
+      });
+      chart.resize();
+    },
+    calcBoll(closes, period, mult){
+      const n = closes.length;
+      const mid = [], upper = [], lower = [];
+      for(let i = 0; i < n; i++){
+        if(i < period - 1){ mid.push(null); upper.push(null); lower.push(null); continue; }
+        let sum = 0;
+        for(let j = i - period + 1; j <= i; j++){ sum += closes[j]; }
+        const m = sum / period;
+        let variance = 0;
+        for(let j = i - period + 1; j <= i; j++){ const d = closes[j] - m; variance += d * d; }
+        const sd = Math.sqrt(variance / period);
+        mid.push(+m.toFixed(3));
+        upper.push(+(m + mult * sd).toFixed(3));
+        lower.push(+(m - mult * sd).toFixed(3));
+      }
+      return { mid: mid, upper: upper, lower: lower };
+    },
+    fmtPrice(v){ return fmtNum(v, 3); },
+    fmtPlain(v){ const n = num(v); return isNaN(n) ? '--' : String(n); },
+    fmtSignPct(v){ return fmtPct(v, 2, true); },
+    fmtWanV(v){ return fmtWan(v); },
+    fmtPctV(v){ return fmtPct(v, 2, false); },
+    updownCls(v){ const n = num(v); if(isNaN(n)) return ''; return n > 0 ? 'up' : (n < 0 ? 'down' : 'flat'); },
+
+    fmt(col){
+      return (row,col2,cell)=>{
+        const v=cell;
+        if(v===null||v===undefined||v==='') return '--';
+        switch(col.fmt){
+          case 'pct': return fmtPct(v,2,false);
+          case 'pctSign': return fmtPct(v,2,true);
+          case 'wan': return fmtWan(v);
+          default:
+            if(col.num){
+              if(String(col.label).includes('%')) return fmtPct(v,2,/溢价|YTM|总收益|涨跌幅|触发/.test(col.label)?true:false);
+              return fmtNum(v, 2);
+            }
+            return String(v);
+        }
+      };
+    },
+    onSortChange({prop,order}){
+      if(!prop||!order) return;
+      this.sort={prop,order};
+      this.sortRows();
+    },
+    sortRows(){
+      const {prop,order}=this.sort;
+      if(!prop) return;
+      const dir=order==='ascending'?1:-1;
+      this.rows.sort((a,b)=>{
+        const x=num(a[prop]); const y=num(b[prop]);
+        if(!isNaN(x)&&!isNaN(y)) return (x-y)*dir;
+        return String(a[prop]??'').localeCompare(String(b[prop]??''))*dir;
+      });
+      this.currentPage=1;
+    },
+    buildQuery(){
+      const q={};
+      const f=this.f;
+      if(f.bond_name_like) q.bond_name_like=f.bond_name_like;
+      if(f.stock_name_like) q.stock_name_like=f.stock_name_like;
+      if(f.bond_code_prefix) q.bond_code_prefix=f.bond_code_prefix;
+      if(f.market) q.bond_code_suffix=f.market;
+      // 文本框数值：空字符串=不筛选；Number(文本) NaN=忽略；0 只要是用户输入的"0"就合法（prem_le=0 → 只看折价券）
+      function _num(x){ if(x===null||x===undefined||x==='') return NaN; const n=Number(String(x).trim()); return isNaN(n)?NaN:n; }
+      const NUM_FIELDS=['bond_price_ge','bond_price_le','prem_le','conv_value_le','dual_low_le','rem_le','rem_size_le'];
+      NUM_FIELDS.forEach(k=>{ const n=_num(f[k]); if(!isNaN(n)) q[k]=n; });
+      if(f.rating_ge) q.rating_ge=f.rating_ge;
+      if(f.exclude_callable) q.exclude_callable=1;
+      if(f.exclude_put) q.exclude_put=1;
+      if(f.dual_low_under_130){ const cur=(typeof q.dual_low_le==='number')?q.dual_low_le:Number.POSITIVE_INFINITY; q.dual_low_le=Math.min(cur,130); }
+      q.limit=2000;
+      return q;
+    },
+    async apply(){ await this.load(); },
+    reset(){
+      this.f={ bond_name_like:'', stock_name_like:'', bond_code_prefix:'', market:'',
+              bond_price_ge:'', bond_price_le:'',
+              prem_le:'', conv_value_le:'', dual_low_le:'',
+              rem_le:'', rem_size_le:'', rating_ge:null,
+              exclude_callable:false, exclude_put:false, dual_low_under_130:false };
+      this.sort={prop:'dual_low_calc',order:'ascending'};
+      this.load();
+    },
+    async reload(){ await this.load(true); },
+    clearRefreshTimer(){
+      if(this._rtTimerId){ try{ clearInterval(this._rtTimerId); }catch(e){} this._rtTimerId=null; }
+    },
+    applyRefreshInterval(){
+      this.clearRefreshTimer();
+      try{ localStorage.setItem('cb_refresh_ms', String(Number(this.refreshInterval)||0)); }catch(e){}
+      const ms=Number(this.refreshInterval)||0;
+      if(ms>0){
+        this.$message({type:'info',message:`已设置自动刷新：${ms/1000}秒/次`,duration:1200});
+        this._rtTimerId=setInterval(()=>{ this.load(false, true); }, ms);
+      }else{
+        this.$message({type:'info',message:'已切换为手动刷新',duration:1200});
+      }
+    },
+    async load(force, auto){
+      // in-flight 锁：上一次请求未完成则跳过本次（避免 PyTDX 慢时定时器堆积请求）
+      if(this._rtInFlight){
+        return;
+      }
+      this._rtInFlight=true;
+      if(auto){ this._rtLoadingSilent=true; }
+      else{ this.loading=true; }
+      try{
+        const q=this.buildQuery();
+        const usp=new URLSearchParams();
+        Object.entries(q).forEach(([k,v])=>usp.set(k, String(v)));
+        // auto 模式也带时间戳防浏览器 HTTP 缓存（否则 fetch 命中本地缓存，后端 PyTDX 新数据拿不到）
+        const url='/cb/full?'+usp.toString()+'&_='+Date.now();
+        const res=await fetch(url, {cache:'no-store'});
+        const js=await res.json();
+        this.raw=js.data||[];
+        this.rows=this.raw.slice();
+        this.totalRaw=js.total_raw||0;
+        this.totalFiltered=js.total_filtered||0;
+        // 时间戳精确到秒，KPI 卡片可见随刷新变化
+        const d=new Date();
+        const pad=n=>String(n).padStart(2,'0');
+        this.updatedAt=`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+        this.sortRows();
+      }catch(e){
+        // auto 模式静默失败，不打扰用户
+        if(!auto){ this.$message.error('加载失败：'+e.message); }
+      }finally{
+        this._rtInFlight=false;
+        if(auto){ this._rtLoadingSilent=false; }
+        else{ this.loading=false; }
+      }
+    },
+    exportCsv(){
+      const q=this.buildQuery();
+      q.format='csv';
+      const usp=new URLSearchParams();
+      Object.entries(q).forEach(([k,v])=>usp.set(k, String(v)));
+      window.open('/cb/full?'+usp.toString(),'_blank');
+    },
+    toggleColCfg(){ this.colDlg=true; },
+    restoreCols(){
+      this.showCols=COLUMNS.map(c=>c.prop).filter(p=>!['coupon_sum_estimate','maturity_days_left','put_trigger_pct','adjust_trigger_pct','adjust_status','premium_decomp_bond_pct','remaining_ratio','high','low','amount_yuan','volume_zhang'].includes(p));
+    },
+  },
+  mounted(){
+    // 恢复上次设置的自动刷新频率（默认3s）
+    try{
+      const saved=parseInt(localStorage.getItem('cb_refresh_ms')||'3000',10);
+      if(!isNaN(saved) && saved>=0) this.refreshInterval=saved;
+    }catch(e){}
+    // 首次加载 + 启动定时器
+    const self=this;
+    this.load().then(()=>{ self.applyRefreshInterval(); });
+  },
+});
+</script>
+</body>
+</html>
+
+
+<style>
+.cell-up   { color: #e74c3c !important; font-weight:600; }  /* 红涨 */
+.cell-down { color: #27ae60 !important; font-weight:600; }  /* 绿跌 */
+  .cb-popup{position:fixed;z-index:3000;width:580px;max-width:92vw;background:#fff;border:1px solid #e4e7ed;border-radius:8px;box-shadow:0 6px 24px rgba(0,0,0,.18);padding:12px 14px;font-size:12px;color:#303133;}
+  .cb-popup-head{display:flex;align-items:center;border-bottom:1px solid #f0f0f0;padding-bottom:8px;margin-bottom:8px;}
+  .cb-tabs{margin-left:auto;display:inline-flex;border:1px solid #dcdfe6;border-radius:4px;overflow:hidden;}
+  .cb-tab{padding:2px 10px;font-size:12px;cursor:pointer;color:#606266;background:#fff;user-select:none;}
+  .cb-tab.active{background:#409EFF;color:#fff;}
+  .cb-mini{display:flex;flex-wrap:wrap;gap:2px 16px;margin:2px 0 8px;padding:6px 8px;background:#f7f9fc;border-radius:6px;}
+  .cb-mini-item{font-size:12px;color:#606266;}
+  .cb-mini-item b{color:#909399;font-weight:400;margin-right:4px;}
+  .cb-mini-item i{font-style:normal;font-weight:600;font-variant-numeric:tabular-nums;}
+  .cb-popup-code{font-weight:700;font-size:14px;margin-right:8px;}
+  .cb-popup-name{color:#606266;}
+  .cb-block{margin-bottom:8px;}
+  .cb-block-title{font-weight:600;color:#409EFF;margin-bottom:4px;}
+  .cb-grid{display:flex;flex-wrap:wrap;gap:4px 18px;}
+  .cb-item{display:flex;align-items:baseline;gap:4px;min-width:120px;}
+  .cb-k{color:#909399;}
+  .cb-v{font-weight:600;font-variant-numeric:tabular-nums;}
+  .cb-chart-title{font-weight:600;margin:6px 0 2px;color:#606266;}
+  .cb-chart{width:100%;height:200px;}
+  .cb-trigger{cursor:pointer;}
+  .up{color:#e74c3c;} .down{color:#27ae60;} .flat{color:#95a5a6;}
+</style>
