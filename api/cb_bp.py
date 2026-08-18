@@ -49,17 +49,22 @@ def _parse_bool(s):
     return str(s).lower() in ("1","true","yes","y","是")
 
 
-_CB_FULL_CACHE = {"df": None, "ts": 0.0}
+_CB_FULL_CACHE = {"df": None, "ts": 0.0, "attrs": {}}
 _CB_FULL_CACHE_TTL = 6.0  # 秒；覆盖前端 3s/5s 轮询；配合 stale-while-revalidate，任何轮询都不再阻塞重算
 _CB_FULL_REFRESHING = {"flag": False}
 _CB_FULL_LOCK = threading.Lock()
 
-def _compute_full_df(static_ttl):
-    return ak_service.cb_full_metrics(static_ttl=static_ttl)
+def _compute_full_df(static_ttl, ttl=None):
+    return ak_service.cb_full_metrics(ttl=ttl, static_ttl=static_ttl)
 
 def _store_full_df(df):
     _CB_FULL_CACHE["df"] = df
     _CB_FULL_CACHE["ts"] = time.time()
+    _CB_FULL_CACHE["attrs"] = dict(df.attrs or {})
+
+def _get_full_attrs():
+    """最近一次计算的 DataFrame 的 attrs（实时来源 meta），不触发重算。"""
+    return _CB_FULL_CACHE.get("attrs") or {}
 
 def _refresh_full_cache_bg(static_ttl):
     """后台刷新顶层缓存：stale-while-revalidate，避免用户轮询被 8~14s 重算阻塞。"""
@@ -97,7 +102,7 @@ def _get_full_df(static_ttl=None):
     except Exception:
         _force = False
     if _force:
-        df = _compute_full_df(0)
+        df = _compute_full_df(0, 0)
         _store_full_df(df)
         return df.copy(deep=True)
     _c = _CB_FULL_CACHE.get("df")
@@ -229,10 +234,10 @@ def cb_full():
     # 注：旧实现只读 __qmt_meta__（恒为 {}），导致 qmt.meta 永远为空；现改读实时来源属性。
     qmt_meta = {}
     try:
-        src_df = _get_full_df()
-        _rt = src_df.attrs.get("__rt_src_meta__") or {}
-        _qmt = src_df.attrs.get("__qmt_meta__") or {}
-        _pytdx = src_df.attrs.get("__pytdx_meta__") or {}
+        _attrs = _get_full_attrs()
+        _rt = _attrs.get("__rt_src_meta__") or {}
+        _qmt = _attrs.get("__qmt_meta__") or {}
+        _pytdx = _attrs.get("__pytdx_meta__") or {}
         qmt_meta = {}
         qmt_meta.update(_qmt)
         qmt_meta.update(_pytdx)
@@ -253,8 +258,8 @@ def cb_full():
         "derived_columns": sorted([c for c in list(df.columns) if c.endswith("_calc") or c.endswith("_rank") or c.endswith("_estimate") or c.endswith("_years_left") or c.endswith("_days_left") or c.endswith("_progress_pct") or c.endswith("_trigger_pct") or c in ("conv_value_100","conv_rate_per_100","remaining_ratio","redemption_gain_pct","premium_decomp_conv_pct","premium_decomp_bond_pct")]),
         "qmt": {
             "meta": qmt_meta,
-            "filled_counts": src_df.attrs.get("__qmt_filled_counts__", {}),
-            "diagnostic_counts": src_df.attrs.get("__qmt_diag_counts__", {}),
+            "filled_counts": _attrs.get("__qmt_filled_counts__", {}),
+            "diagnostic_counts": _attrs.get("__qmt_diag_counts__", {}),
         },
         "data": _to_records(df),
     })

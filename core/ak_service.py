@@ -474,13 +474,15 @@ def _cache_inner_disk_path(k):
     safe = _hl.md5(k.encode("utf-8")).hexdigest()
     return os.path.join(Config.DATA_DIR, "_cache_inner", safe + ".pkl")
 
-def _cache_get_inner(k, ttl):
+def _cache_get_inner(k, ttl, disk=True):
     import pickle as _pkl, time as _t
     now = _t.time()
     with _lock:
         h = _cache.get(k)
         if h and now - h[0] < ttl:
             return h[1]
+    if not disk:
+        return None
     # 内存 miss → 磁盘
     try:
         p = _cache_inner_disk_path(k)
@@ -496,11 +498,13 @@ def _cache_get_inner(k, ttl):
         pass
     return None
 
-def _cache_put_inner(k, ttl, v):
+def _cache_put_inner(k, ttl, v, disk=True):
     import pickle as _pkl, time as _t
     now = _t.time()
     with _lock:
         _cache[k] = (now, v)
+    if not disk:
+        return
     try:
         p = _cache_inner_disk_path(k)
         os.makedirs(os.path.dirname(p), exist_ok=True)
@@ -1026,6 +1030,118 @@ def _pytdx_get_api():
     return None
 
 
+# ============================================================================
+# 常驻 PyTDX 连接池：持久化 executor + 导入即预热 + 心跳保活
+# 解决：每次调用/重启都 new ThreadPoolExecutor + 重新 connect() 握手（此前冷启动会卡 ~19s）。
+# 每个抓取路径使用模块级常驻 executor，其 worker 线程的 threading.local 连接跨调用复用；
+# 模块导入时后台预热（建连），并由守护心跳线程定期 ping 各 worker 线程保活，避免空闲被服务端断连后重建。
+# ============================================================================
+import atexit as _atexit_pool
+
+_PYTDX_BONDS_EXEC = None
+_PYTDX_SPLIT_EXEC = None
+_PYTDX_EXEC_LOCK = threading.Lock()
+
+def _pytdx_get_executors():
+    # 惰性创建并缓存模块级常驻 executor（仅创建一次）。返回 (bonds_exec, split_exec)。
+    global _PYTDX_BONDS_EXEC, _PYTDX_SPLIT_EXEC
+    if _PYTDX_BONDS_EXEC is not None and _PYTDX_SPLIT_EXEC is not None:
+        return _PYTDX_BONDS_EXEC, _PYTDX_SPLIT_EXEC
+    with _PYTDX_EXEC_LOCK:
+        if _PYTDX_BONDS_EXEC is None:
+            _w = int(getattr(Config, "RT_WORKERS", 48) or 48)
+            _PYTDX_BONDS_EXEC = _futures.ThreadPoolExecutor(
+                max_workers=max(1, _w), thread_name_prefix="pytdx-bonds")
+        if _PYTDX_SPLIT_EXEC is None:
+            _PYTDX_SPLIT_EXEC = _futures.ThreadPoolExecutor(
+                max_workers=3, thread_name_prefix="pytdx-split")
+    return _PYTDX_BONDS_EXEC, _PYTDX_SPLIT_EXEC
+
+
+def _pytdx_warm_one():
+    # 在调用线程上建立并保活一个 PyTDX 连接（threading.local）。用于预热/心跳保活。
+    try:
+        api = _pytdx_get_api()
+        if api is None:
+            return False
+        try:
+            api.get_security_quotes([(1, "000001")])
+        except Exception:
+            pass
+        return True
+    except Exception:
+        return False
+
+
+def _pytdx_warmup():
+    # 导入期后台预热：对每个常驻 executor 的 worker 线程各提交一次建连任务，
+    # 使首个用户请求直接复用已建立的连接，消除冷启动握手卡顿。
+    if not _PYTDX_OK:
+        return
+    try:
+        bonds_ex, split_ex = _pytdx_get_executors()
+        _n = int(getattr(Config, "RT_WORKERS", 48) or 48)
+        for _ in range(max(1, _n)):
+            bonds_ex.submit(_pytdx_warm_one)
+        for _ in range(3):
+            split_ex.submit(_pytdx_warm_one)
+    except Exception:
+        pass
+
+
+_PYTDX_KEEPALIVE_STOP = threading.Event()
+_PYTDX_KEEPALIVE_INTERVAL = float(getattr(Config, "RT_KEEPALIVE_SEC", 30) or 30)
+
+def _pytdx_keepalive_loop():
+    # 周期性 ping 各 worker 线程连接，防止空闲被服务端断连后重建。
+    while not _PYTDX_KEEPALIVE_STOP.is_set():
+        if _PYTDX_KEEPALIVE_STOP.wait(_PYTDX_KEEPALIVE_INTERVAL):
+            break
+        try:
+            bonds_ex, split_ex = _pytdx_get_executors()
+            _n = int(getattr(Config, "RT_WORKERS", 48) or 48)
+            for _ in range(max(1, _n)):
+                bonds_ex.submit(_pytdx_warm_one)
+            for _ in range(3):
+                split_ex.submit(_pytdx_warm_one)
+        except Exception:
+            pass
+
+def _pytdx_start_keepalive():
+    if not _PYTDX_OK:
+        return
+    try:
+        threading.Thread(target=_pytdx_keepalive_loop, daemon=True).start()
+    except Exception:
+        pass
+
+def _pytdx_shutdown_executors():
+    try:
+        _PYTDX_KEEPALIVE_STOP.set()
+    except Exception:
+        pass
+    for _ex in (_PYTDX_BONDS_EXEC, _PYTDX_SPLIT_EXEC):
+        try:
+            if _ex is not None:
+                _ex.shutdown(wait=False, cancel_futures=True)
+        except Exception:
+            pass
+
+try:
+    _atexit_pool.register(_pytdx_shutdown_executors)
+except Exception:
+    pass
+
+# 导入即启动：预热 + 心跳（后台，不阻塞 import）
+if _PYTDX_OK:
+    try:
+        _pytdx_warm_one()      # 导入线程自身也持有一份连接（供 get_kline 等同步调用复用）
+        _pytdx_warmup()
+        _pytdx_start_keepalive()
+    except Exception:
+        pass
+
+
 def _pytdx_market_and_code6(code_with_suffix):
     """'113697.SH' -> (market_id, '113697')
     market_id: 1=上证A股  0=深证A股  11=上证转债/债  12=深证转债/债
@@ -1071,7 +1187,7 @@ def _cb_fetch_rt_pytdx(bond_codes, stock_codes, threads=None, max_age=3):
         return {}, {}, {"ok": False, "reason": "pytdx 未安装或 import 失败"}
     # 缓存（内存，max_age秒）
     cache_key = "pytdx_rt_v1_" + "|".join(sorted(set(list(bond_codes)+list(stock_codes))))[:80]
-    cached = _cache_get_inner(cache_key, max_age)
+    cached = _cache_get_inner(cache_key, max_age, disk=False)
     if isinstance(cached, tuple) and len(cached) == 3:
         log.debug("[pytdx rt] cache hit: bonds=%d stocks=%d", len(cached[0]), len(cached[1]))
         return cached
@@ -1148,21 +1264,21 @@ def _cb_fetch_rt_pytdx(bond_codes, stock_codes, threads=None, max_age=3):
     # 分 chunk：每 chunk 一批请求（越小并行度越高；受 Config.RT_CHUNK 约束）
     CHUNK = int(getattr(Config, "RT_CHUNK", 14) or 14)
     chunks = [all_codes[i:i+CHUNK] for i in range(0, len(all_codes), CHUNK)]
-    # 线程池：并行度受 Config.RT_WORKERS 上限约束
+    # 线程池：并行度受 Config.RT_WORKERS 上限约束；复用模块级常驻 executor（连接跨调用保持，避免每次 new+connect 握手）
     _rt_threads = int(threads if isinstance(threads, int) and threads > 0 else (getattr(Config, "RT_WORKERS", 48) or 48))
     results_all = {}
-    with _futures.ThreadPoolExecutor(max_workers=max(1, min(_rt_threads, len(chunks)))) as ex:
-        futs = [ex.submit(_worker_chunk, ch)
-                for i, ch in enumerate(chunks)]
-        for fu in _futures.as_completed(futs):
-            try:
-                res = fu.result(timeout=40)
-                if isinstance(res, dict) and "__err__" not in res:
-                    results_all.update(res)
-                elif isinstance(res, dict):
-                    log.debug("[pytdx rt] chunk fail: %s", res.get("__err__"))
-            except Exception as _e:
-                log.debug("[pytdx rt] worker chunk exc: %s", _e)
+    bonds_ex, _ = _pytdx_get_executors()
+    ex = bonds_ex
+    futs = [ex.submit(_worker_chunk, ch) for ch in chunks]
+    for fu in _futures.as_completed(futs):
+        try:
+            res = fu.result(timeout=40)
+            if isinstance(res, dict) and "__err__" not in res:
+                results_all.update(res)
+            elif isinstance(res, dict):
+                log.debug("[pytdx rt] chunk fail: %s", res.get("__err__"))
+        except Exception as _e:
+            log.debug("[pytdx rt] worker chunk exc: %s", _e)
     # 拍平到 bond_map / stock_map，派生 4 列
     bond_map, stock_map = {}, {}
     ok_b = 0; ok_s = 0
@@ -1202,7 +1318,7 @@ def _cb_fetch_rt_pytdx(bond_codes, stock_codes, threads=None, max_age=3):
              meta["elapsed_ms"], len(bond_list), ok_b, len(stock_list), ok_s,
              meta["requests_ok"], meta["requests_total"], meta["threads"])
     # 写缓存
-    _cache_put_inner(cache_key, max_age, (bond_map, stock_map, meta))
+    _cache_put_inner(cache_key, max_age, (bond_map, stock_map, meta), disk=False)
     return bond_map, stock_map, meta
 
 
@@ -1320,7 +1436,7 @@ def _cb_fetch_rt_pytdx_quotes(stock_codes, threads=None, max_age=3):
     if not _PYTDX_OK:
         return {}, {"ok": False, "reason": "pytdx 未安装或 import 失败"}
     cache_key = "pytdx_q_v1_" + "|".join(sorted(set(str(c) for c in stock_codes)))[:80]
-    cached = _cache_get_inner(cache_key, max_age)
+    cached = _cache_get_inner(cache_key, max_age, disk=False)
     if isinstance(cached, tuple) and len(cached) == 2:
         log.debug("[pytdx quotes] cache hit: stocks=%d", len(cached[0]))
         return cached
@@ -1413,7 +1529,7 @@ def _cb_fetch_rt_pytdx_quotes(stock_codes, threads=None, max_age=3):
     }
     log.info("[pytdx quotes] t=%dms stocks=%d(%d ok) req=%d",
              meta["elapsed_ms"], len(stock_list), req_ok, req_total)
-    _cache_put_inner(cache_key, max_age, (stock_map, meta))
+    _cache_put_inner(cache_key, max_age, (stock_map, meta), disk=False)
     return stock_map, meta
 
 
@@ -1431,7 +1547,7 @@ def _cb_fetch_rt_pytdx_quotes_cb(cb_codes, threads=None, max_age=3):
     if not _PYTDX_OK:
         return {}, {"ok": False, "reason": "pytdx 未安装或 import 失败"}
     cache_key = "pytdx_q_cb_v1_" + "|".join(sorted(set(str(c) for c in cb_codes)))[:80]
-    cached = _cache_get_inner(cache_key, max_age)
+    cached = _cache_get_inner(cache_key, max_age, disk=False)
     if isinstance(cached, tuple) and len(cached) == 2:
         log.debug("[pytdx quotes cb] cache hit: cb=%d", len(cached[0]))
         return cached
@@ -1542,7 +1658,7 @@ def _cb_fetch_rt_pytdx_quotes_cb(cb_codes, threads=None, max_age=3):
     }
     log.info("[pytdx quotes cb] t=%dms cb=%d(%d ok) req=%d",
              meta["elapsed_ms"], len(cb_list), req_ok, req_total)
-    _cache_put_inner(cache_key, max_age, (bond_map, meta))
+    _cache_put_inner(cache_key, max_age, (bond_map, meta), disk=False)
     return bond_map, meta
 
 
@@ -1595,13 +1711,14 @@ def _cb_fetch_rt_pytdx_split(bond_codes, stock_codes, threads=None, max_age=3):
     stocks = list(dict.fromkeys([str(c) for c in (stock_codes or []) if str(c).strip()]))
     cb_bonds = [c for c in bonds if _is_convertible_bond(c)]
     non_cb_bonds = [c for c in bonds if not _is_convertible_bond(c)]
-    with _futures.ThreadPoolExecutor(max_workers=3) as ex:
-        fb = ex.submit(_cb_fetch_rt_pytdx, non_cb_bonds, []) if non_cb_bonds else None
-        fq = ex.submit(_cb_fetch_rt_pytdx_quotes, stocks) if stocks else None
-        fcb = ex.submit(_cb_fetch_rt_pytdx_quotes_cb, cb_bonds) if cb_bonds else None
-        bars_rt = fb.result() if fb is not None else ({}, {}, {"ok": True})
-        quotes_rt = fq.result() if fq is not None else ({}, {"ok": True})
-        cb_rt = fcb.result() if fcb is not None else ({}, {"ok": True})
+    # 复用模块级常驻 split executor（3 个 worker 线程连接跨调用保持，避免每次 new+connect 握手）
+    _, split_ex = _pytdx_get_executors()
+    fb = split_ex.submit(_cb_fetch_rt_pytdx, non_cb_bonds, [], max_age) if non_cb_bonds else None
+    fq = split_ex.submit(_cb_fetch_rt_pytdx_quotes, stocks, None, max_age) if stocks else None
+    fcb = split_ex.submit(_cb_fetch_rt_pytdx_quotes_cb, cb_bonds, None, max_age) if cb_bonds else None
+    bars_rt = fb.result() if fb is not None else ({}, {}, {"ok": True})
+    quotes_rt = fq.result() if fq is not None else ({}, {"ok": True})
+    cb_rt = fcb.result() if fcb is not None else ({}, {"ok": True})
     return _cb_rt_combine(bars_rt, quotes_rt, cb_rt)
 
 
@@ -2311,13 +2428,13 @@ def _add_derived(df: pd.DataFrame) -> pd.DataFrame:
 #   rt TTL：由 PyTDX _cb_fetch_rt_pytdx 的 max_age=3 秒级缓存控制；
 #   前端 setInterval 1s/3s/5s 轮询时，只命中静态缓存 + PyTDX 内存缓存，不再打 akshare。
 CB_FULL_STATIC_KEY = "cb_full_static_snapshot_v1"
-CB_FULL_STATIC_TTL_DEFAULT = None  # None → 用 Config.AK_CACHE_TTL
+CB_FULL_STATIC_TTL_DEFAULT = 600  # 静态快照重建周期(秒);None 才回退 Config.AK_CACHE_TTL
 
 
 def _cb_full_static_snapshot(ttl=None):
     """拉取“静态字段快照”（不含 PyTDX 行情及其二次派生）。结果带内存/磁盘缓存。"""
     import time as _tt
-    ttl = ttl or Config.AK_CACHE_TTL
+    ttl = Config.AK_CACHE_TTL if ttl is None else ttl
     cache_key = CB_FULL_STATIC_KEY
     cached = _cache_get_inner(cache_key, ttl)
     if isinstance(cached, pd.DataFrame) and len(cached) > 0:
@@ -2388,21 +2505,23 @@ def cb_full_metrics(ttl = None, static_ttl = None):
     import time as _tt
     static_ttl = static_ttl if isinstance(static_ttl, int) and static_ttl >= 0 else CB_FULL_STATIC_TTL_DEFAULT
     if static_ttl is None: static_ttl = Config.AK_CACHE_TTL
-    # ============== 并发编排：静态快照 与 PyTDX 实时抓取 并行 ==============
-    # 静态快照从（可能过期的）缓存取出代码 universe 后，PyTDX 即可提前启动，
-    # 与 akshare 重建并行，省去原本串行的 ~2.7s 静态耗时。
-    _f_static = _cb_par_exec.submit(_cb_full_static_snapshot, ttl=static_ttl)
-    _rt_fut = None
+    # ============== 并发编排（错峰·实时优先）：实时抓取先独占运行，静态快照延后串行 ==============
+    # 实时抓取只依赖缓存的代码 universe（_cb_static_codes_cached，毫秒级），
+    # 先用其独占启动 PyTDX 实时抓取，不与 akshare 静态重建争抢 GIL/网络，
+    # 从而明显缩短冷启动实时段；待实时段完成后再串行构建静态快照。
+    # ttl：实时段缓存秒数；ttl=0 强制重拉实时，默认 3s（依赖 TTL 缓存而非硬刷新）
+    _rt_max_age = ttl if isinstance(ttl, int) and ttl >= 0 else 3
     _codes = _cb_static_codes_cached()
     if _codes is not None and (_codes[0] or _codes[1]):
-        _rt_fut = _cb_par_exec.submit(_cb_fetch_rt_pytdx_split, _codes[0], _codes[1])
-    df = _f_static.result()
-    if _rt_fut is not None:
-        _rt = _rt_fut.result()
+        # 实时优先：缓存 codes 直接驱动 PyTDX，静态快照延后串行，避免两者同进程争抢
+        _rt = _cb_fetch_rt_pytdx_split(_codes[0], _codes[1], max_age=_rt_max_age)
+        df = _cb_full_static_snapshot(ttl=static_ttl)
     else:
+        # 无缓存 universe（进程首次冷启）：先建静态取 codes，再补实时（兜底，仅一次静态）
+        df = _cb_full_static_snapshot(ttl=static_ttl)
         _bc = df["bond_code"].astype(str).tolist() if "bond_code" in df.columns else []
         _sc = df["stock_code"].astype(str).tolist() if "stock_code" in df.columns else []
-        _rt = _cb_fetch_rt_pytdx_split(_bc, _sc)
+        _rt = _cb_fetch_rt_pytdx_split(_bc, _sc, max_age=_rt_max_age)
     # ============== 实时行情全列（转债/正股 价格/涨跌幅/振幅/量/额） ==============
     # PyTDX 第一优先级（通达信原生协议，3秒轮询不封IP，与 /kline 同源）
     # QMT HTTP 桥 v3 /cb_rt_snapshot 兜底：仅补充 PyTDX 未覆盖的空白
