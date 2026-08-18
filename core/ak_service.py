@@ -1206,6 +1206,214 @@ def _cb_fetch_rt_pytdx(bond_codes, stock_codes, threads=None, max_age=3):
     return bond_map, stock_map, meta
 
 
+def _pytdx_quote_market_and_code6(code_with_suffix):
+    """get_security_quotes 用的市场映射（交易所级）：SH->1, SZ->0。
+    与 _pytdx_market_and_code6（债券用 11/12）不同：quotes 接口对债券价格会按品种缩放、
+    且 servertime 乱码，故本函数仅用于股票，债券一律走 get_security_bars。"""
+    s = str(code_with_suffix).strip().upper()
+    if not s:
+        return None, ""
+    parts = s.split(".")
+    if len(parts) != 2:
+        return None, parts[0][:6]
+    code6, exch = parts[0][-6:], parts[1]
+    if exch == "SH":
+        return 1, code6
+    if exch == "SZ":
+        return 0, code6
+    return None, code6
+
+
+def _cb_rt_one_bars_stock(code_full):
+    """单支股票用 get_security_bars 兜底（quotes 异常/缺失时），返回 stock_map 条目或 None。
+    股票市场号走 1/0，价格干净（factor=1），与原 _cb_fetch_rt_pytdx 的股票分支一致。"""
+    mkt, c6 = _pytdx_market_and_code6(code_full)
+    if mkt is None or not c6:
+        return None
+    api = _pytdx_get_api()
+    if api is None:
+        return None
+    try:
+        bars = api.get_security_bars(9, mkt, c6, 0, 2)
+    except Exception:
+        return None
+    if not bars or len(bars) < 1:
+        return None
+    b0 = bars[0]
+    try:
+        opn = float(b0.get("open") or float("nan"))
+        hi = float(b0.get("high") or float("nan"))
+        lo = float(b0.get("low") or float("nan"))
+        close = float(b0.get("close") or float("nan"))
+        lc = float(bars[1].get("close") or float("nan")) if len(bars) >= 2 else float("nan")
+        chg = round((close - lc) / lc * 100, 3) if (lc and close and lc > 0 and not (lc != lc or close != close)) else float("nan")
+        amp = round((hi - lo) / lc * 100, 3) if (lc and hi and lo and lc > 0 and not (lc != lc or hi != hi or lo != lo)) else float("nan")
+        return {
+            "stock_price": close, "stock_chg_pct": chg, "stock_amplitude": amp,
+            "stock_high": hi, "stock_low": lo, "stock_open": opn, "stock_pre_close_rt": lc,
+            "stock_vol": b0.get("vol"), "stock_amount": b0.get("amount"),
+        }
+    except Exception:
+        return None
+
+
+def _cb_fetch_rt_pytdx_quotes(stock_codes, threads=None, max_age=3):
+    """批量 get_security_quotes 拉股票实时报价（单批 <=80 条，PyTDX 协议硬上限）。
+    注意：get_security_quotes 对股票价格干净（factor=1、servertime 正常），对债券会缩放且时间戳损坏，
+    故本函数仅用于股票；债券请走 get_security_bars（_cb_fetch_rt_pytdx）。
+    任一批/任一条失败则回退该股票的 get_security_bars，保证零回归风险。
+    返回 (stock_map, meta)；stock_map schema 与 _cb_fetch_rt_pytdx 的股票分支完全一致。
+    """
+    log = logging.getLogger(__name__)
+    if not _PYTDX_OK:
+        return {}, {"ok": False, "reason": "pytdx 未安装或 import 失败"}
+    cache_key = "pytdx_q_v1_" + "|".join(sorted(set(str(c) for c in stock_codes)))[:80]
+    cached = _cache_get_inner(cache_key, max_age)
+    if isinstance(cached, tuple) and len(cached) == 2:
+        log.debug("[pytdx quotes] cache hit: stocks=%d", len(cached[0]))
+        return cached
+    t0 = time.time()
+    stock_list = list(dict.fromkeys([str(c) for c in stock_codes if str(c).strip()]))
+    stock_map = {}
+    req_total = 0
+    req_ok = 0
+    BATCH = 80  # PyTDX get_security_quotes 单批硬上限
+    for i in range(0, len(stock_list), BATCH):
+        batch = stock_list[i:i + BATCH]
+        tuples = []
+        for code_full in batch:
+            mkt, c6 = _pytdx_quote_market_and_code6(code_full)
+            if mkt is None or not c6:
+                continue
+            tuples.append((mkt, c6, code_full))
+        if not tuples:
+            continue
+        req_total += 1
+        api = _pytdx_get_api()
+        if api is None:
+            for _, _, cf in tuples:
+                r = _cb_rt_one_bars_stock(cf)
+                if isinstance(r, dict):
+                    stock_map[cf] = r
+                    req_ok += 1
+            continue
+        try:
+            resp = api.get_security_quotes([(mkt, c6) for mkt, c6, _ in tuples])
+        except Exception:
+            for _, _, cf in tuples:
+                r = _cb_rt_one_bars_stock(cf)
+                if isinstance(r, dict):
+                    stock_map[cf] = r
+                    req_ok += 1
+            continue
+        if not resp:
+            for _, _, cf in tuples:
+                r = _cb_rt_one_bars_stock(cf)
+                if isinstance(r, dict):
+                    stock_map[cf] = r
+                    req_ok += 1
+            continue
+        by_code = {}
+        for r in resp:
+            try:
+                by_code[(int(r.get("market")), str(r.get("code")))] = r
+            except Exception:
+                pass
+        for mkt, c6, code_full in tuples:
+            r = by_code.get((mkt, c6))
+            if r is None:
+                rb = _cb_rt_one_bars_stock(code_full)
+                if isinstance(rb, dict):
+                    stock_map[code_full] = rb
+                    req_ok += 1
+                continue
+            try:
+                opn = float(r.get("open") or float("nan"))
+                hi = float(r.get("high") or float("nan"))
+                lo = float(r.get("low") or float("nan"))
+                pr = r.get("price")
+                close = float(pr if pr is not None else r.get("close") or float("nan"))
+                lc = float(r.get("last_close") or float("nan"))
+                vol = r.get("vol") or r.get("volume")
+                amount = r.get("amount") or r.get("turnover")
+                chg = round((close - lc) / lc * 100, 3) if (lc and close and lc > 0 and not (lc != lc or close != close)) else float("nan")
+                amp = round((hi - lo) / lc * 100, 3) if (lc and hi and lo and lc > 0 and not (lc != lc or hi != hi or lo != lo)) else float("nan")
+                stock_map[code_full] = {
+                    "stock_price": close, "stock_chg_pct": chg, "stock_amplitude": amp,
+                    "stock_high": hi, "stock_low": lo, "stock_open": opn, "stock_pre_close_rt": lc,
+                    "stock_vol": vol, "stock_amount": amount,
+                }
+                if not (chg != chg):
+                    req_ok += 1
+            except Exception:
+                rb = _cb_rt_one_bars_stock(code_full)
+                if isinstance(rb, dict):
+                    stock_map[code_full] = rb
+                    req_ok += 1
+    meta = {
+        "ok": True,
+        "elapsed_ms": int((time.time() - t0) * 1000),
+        "route": "get_security_quotes",
+        "requests_total": req_total,
+        "requests_ok": req_ok,
+        "stocks_chg_ok": req_ok,
+        "distinct_stocks": len(stock_list),
+    }
+    log.info("[pytdx quotes] t=%dms stocks=%d(%d ok) req=%d",
+             meta["elapsed_ms"], len(stock_list), req_ok, req_total)
+    _cache_put_inner(cache_key, max_age, (stock_map, meta))
+    return stock_map, meta
+
+
+def _cb_rt_combine(bars_rt, quotes_rt):
+    """合并 债券bars路由 与 股票quotes路由 的结果。
+    bars_rt   = (bond_map, stock_map_from_bars, meta_bars)
+    quotes_rt = (stock_map_from_quotes, meta_quotes)
+    股票以 quotes 为准（已验证干净），quotes 缺失/回退时由 bars 的股票结果兜底。
+    返回统一的 (bond_map, stock_map, meta)，可直接喂给 _cb_merge_rt_pytdx。
+    """
+    if not isinstance(bars_rt, (tuple, list)) or len(bars_rt) < 3:
+        bars_rt = ({}, {}, {})
+    b_bond, b_stock, b_meta = (list(bars_rt) + [{}, {}, {}])[:3]
+    q_stock = quotes_rt[0] if isinstance(quotes_rt, (tuple, list)) and len(quotes_rt) >= 1 else {}
+    q_meta = quotes_rt[1] if isinstance(quotes_rt, (tuple, list)) and len(quotes_rt) >= 2 else {}
+    b_meta = b_meta or {}
+    q_meta = q_meta or {}
+    # 股票：quotes 优先覆盖，bars 兜底
+    stock_map = dict(b_stock or {})
+    stock_map.update(q_stock or {})
+    meta = {
+        "ok": bool(b_meta.get("ok")) or bool(q_meta.get("ok")),
+        "route": "split(bars_bonds+quotes_stocks)",
+        "elapsed_ms": max(int(b_meta.get("elapsed_ms") or 0), int(q_meta.get("elapsed_ms") or 0)),
+        "requests_total": int(b_meta.get("requests_total") or 0) + int(q_meta.get("requests_total") or 0),
+        "requests_ok": int(b_meta.get("requests_ok") or 0) + int(q_meta.get("requests_total") or 0),
+        "bonds_chg_ok": int(b_meta.get("bonds_chg_ok") or 0),
+        "stocks_chg_ok": int(b_meta.get("stocks_chg_ok") or 0) + int(q_meta.get("stocks_chg_ok") or 0),
+        "distinct_bonds": int(b_meta.get("distinct_bonds") or 0),
+        "distinct_stocks": int(b_meta.get("distinct_stocks") or 0) + int(q_meta.get("distinct_stocks") or 0),
+        "bond_route": b_meta.get("route") or "get_security_bars",
+        "stock_route": q_meta.get("route") or "get_security_quotes",
+    }
+    return b_bond or {}, stock_map, meta
+
+
+def _cb_fetch_rt_pytdx_split(bond_codes, stock_codes, threads=None, max_age=3):
+    """债券走 get_security_bars（价格已验证正确）、股票走批量 get_security_quotes（factor=1，干净）两路并行，
+    再合并为统一 (bond_map, stock_map, meta)。对外接口与 _cb_fetch_rt_pytdx 一致，
+    由 cb_full_metrics 调用以在保持正确性的前提下把股票请求从逐支 bars 降为 80/批 quotes。"""
+    if not _PYTDX_OK:
+        return {}, {}, {"ok": False, "reason": "pytdx 未安装或 import 失败"}
+    bonds = list(dict.fromkeys([str(c) for c in (bond_codes or []) if str(c).strip()]))
+    stocks = list(dict.fromkeys([str(c) for c in (stock_codes or []) if str(c).strip()]))
+    with _futures.ThreadPoolExecutor(max_workers=2) as ex:
+        fb = ex.submit(_cb_fetch_rt_pytdx, bonds, []) if bonds else None
+        fq = ex.submit(_cb_fetch_rt_pytdx_quotes, stocks) if stocks else None
+        bars_rt = fb.result() if fb is not None else ({}, {}, {"ok": True})
+        quotes_rt = fq.result() if fq is not None else ({}, {"ok": True})
+    return _cb_rt_combine(bars_rt, quotes_rt)
+
+
 
 _KL_CACHE = {}
 
@@ -1996,14 +2204,14 @@ def cb_full_metrics(ttl = None, static_ttl = None):
     _rt_fut = None
     _codes = _cb_static_codes_cached()
     if _codes is not None and (_codes[0] or _codes[1]):
-        _rt_fut = _cb_par_exec.submit(_cb_fetch_rt_pytdx, _codes[0], _codes[1])
+        _rt_fut = _cb_par_exec.submit(_cb_fetch_rt_pytdx_split, _codes[0], _codes[1])
     df = _f_static.result()
     if _rt_fut is not None:
         _rt = _rt_fut.result()
     else:
         _bc = df["bond_code"].astype(str).tolist() if "bond_code" in df.columns else []
         _sc = df["stock_code"].astype(str).tolist() if "stock_code" in df.columns else []
-        _rt = _cb_fetch_rt_pytdx(_bc, _sc)
+        _rt = _cb_fetch_rt_pytdx_split(_bc, _sc)
     # ============== 实时行情全列（转债/正股 价格/涨跌幅/振幅/量/额） ==============
     # PyTDX 第一优先级（通达信原生协议，3秒轮询不封IP，与 /kline 同源）
     # QMT HTTP 桥 v3 /cb_rt_snapshot 兜底：仅补充 PyTDX 未覆盖的空白
