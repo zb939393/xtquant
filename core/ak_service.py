@@ -3,6 +3,7 @@
 import os
 import logging
 import time, threading
+import concurrent.futures as _futures
 # akshare 拉东财/集思录时若环境设了 HTTPS_PROXY 会被代理拦掉，先清掉
 for _k in ("HTTP_PROXY","HTTPS_PROXY","http_proxy","https_proxy"):
     os.environ.pop(_k, None)
@@ -878,7 +879,79 @@ _PYTDX_SERVERS = [
 
 
 # ============================================================================
+# PyTDX 服务器延迟优选：启动期对每个服务器做 TCP 连通测速并升序排序。
+# _pytdx_get_api() 优先从前 TOP_N 台最快服务器里随机选，避免冷启动抽到慢服务器
+# （此前首次请求会卡 19s）。测速在后台守护线程进行，不阻塞首个请求。
+# ============================================================================
+import socket as _tdx_sock
+_PYTDX_TOP_N = int(getattr(Config, "RT_SERVER_TOP_N", 4) or 4)
+_PYTDX_SERVERS_RANKED = None
+_PYTDX_RANK_LOCK = threading.Lock()
+
+def _pytdx_measure_one(host, port, timeout=2.0):
+    """测单台服务器 TCP 连通延迟（毫秒），不可达返回 None。"""
+    t0 = time.time()
+    try:
+        s = _tdx_sock.create_connection((host, port), timeout=timeout)
+        s.close()
+        return (time.time() - t0) * 1000.0
+    except Exception:
+        return None
+
+def _pytdx_rank_servers(force=False):
+    """对 _PYTDX_SERVERS 做连通测速排序，返回 [(ms,(host,port)), ...] 升序。结果缓存。"""
+    global _PYTDX_SERVERS_RANKED
+    if _PYTDX_SERVERS_RANKED is not None and not force:
+        return _PYTDX_SERVERS_RANKED
+    with _PYTDX_RANK_LOCK:
+        if _PYTDX_SERVERS_RANKED is not None and not force:
+            return _PYTDX_SERVERS_RANKED
+        measured = []
+        for (h, p) in _PYTDX_SERVERS:
+            measured.append((_pytdx_measure_one(h, p, timeout=2.0), (h, p)))
+        measured.sort(key=lambda x: (x[0] if x[0] is not None else 1e9))
+        _PYTDX_SERVERS_RANKED = measured
+        logging.getLogger(__name__).info(
+            "[pytdx] server rank(ms): %s",
+            [(round(m, 1) if m is not None else None, s) for m, s in measured])
+        return _PYTDX_SERVERS_RANKED
+
+def _pytdx_start_rank_bg():
+    """后台守护线程触发一次测速排序（不阻塞首个请求）。"""
+    if not _PYTDX_OK:
+        return
+    try:
+        _t = threading.Thread(target=_pytdx_rank_servers, kwargs={"force": True}, daemon=True)
+        _t.start()
+    except Exception:
+        pass
+
+
+# cb_full 并发编排线程池（max_workers=2：静态快照 / PyTDX 抓取 两个任务并行）
+_cb_par_exec = _futures.ThreadPoolExecutor(max_workers=2)
+
+def _safe_codes(df, col):
+    if col in df.columns:
+        return df[col].astype(str).tolist()
+    return []
+
+def _cb_static_codes_cached():
+    """从内存缓存取出静态快照的代码 universe（忽略 TTL，取最近一次即可）。
+    用于并发化：让 PyTDX 抓取提前于 akshare 静态重建启动。universe 变化极慢，
+    毫秒级过期不影响覆盖。无缓存时返回 None（走串行兜底）。"""
+    with _lock:
+        h = _cache.get(CB_FULL_STATIC_KEY, None)
+        if isinstance(h, (tuple, list)) and len(h) >= 2 and isinstance(h[1], pd.DataFrame) and len(h[1]) > 0:
+            df = h[1]
+            return (_safe_codes(df, "bond_code"), _safe_codes(df, "stock_code"))
+    return None
+
+
+# ============================================================================
 # PyTDX 线程级连接池：复用持久连接，失效自动重连 + 轮换服务器
+# 启动期触发服务器测速排序（后台守护线程，不阻塞首个请求；优先快服务器消除冷启动卡顿）
+if _PYTDX_OK:
+    _pytdx_start_rank_bg()
 #   消除 _cb_fetch_rt_pytdx / get_kline_pytdx 每次调用都 new api / connect / disconnect 的握手开销
 #   每个工作线程持有一个独立连接（threading.local），通过 _pytdx_get_api() 获取/复用
 # ============================================================================
@@ -911,6 +984,34 @@ def _pytdx_get_api():
         except Exception:
             pass
         _PYTDX_POOL.api = None
+    # 延迟优选：若后台测速已完成，优先前 TOP_N 台最快服务器（其间随机打乱分散负载）；
+    # 若尚未测速完成（冷启动首个请求），直接用全部服务器随机连，避免同步测速阻塞 ~19s。
+    ranked = _PYTDX_SERVERS_RANKED
+    if ranked:
+        top = [s for _, s in ranked[:_PYTDX_TOP_N]]
+        servers = list(top)
+        _rnd_pool.shuffle(servers)
+        for host, port in servers:
+            try:
+                a = _TdxHq(raise_exception=False)
+                if a.connect(host, port, time_out=3):
+                    _PYTDX_POOL.api = a
+                    _PYTDX_POOL.host = (host, port)
+                    return a
+            except Exception:
+                continue
+        rest = [s for _, s in ranked[_PYTDX_TOP_N:]]
+        for host, port in rest:
+            try:
+                a = _TdxHq(raise_exception=False)
+                if a.connect(host, port, time_out=3):
+                    _PYTDX_POOL.api = a
+                    _PYTDX_POOL.host = (host, port)
+                    return a
+            except Exception:
+                continue
+        return None
+    # 冷启动兜底：未测速，直接用全部服务器随机连（不触发同步测速，保持首个请求快）
     servers = list(_PYTDX_SERVERS)
     _rnd_pool.shuffle(servers)
     for host, port in servers:
@@ -955,7 +1056,7 @@ def _pytdx_market_and_code6(code_with_suffix):
         return None, code6
 
 
-def _cb_fetch_rt_pytdx(bond_codes, stock_codes, threads=40, max_age=3):
+def _cb_fetch_rt_pytdx(bond_codes, stock_codes, threads=None, max_age=3):
     """并行 pytdx.get_security_bars(9, mkt, code, 0, 2) 拉 2 根日K
     → 实时 bars[0] = 当日（或最近一个交易日）K（close=最新价），bars[1].close=昨收
     返回 (bond_map, stock_map, meta)：
@@ -1044,12 +1145,13 @@ def _cb_fetch_rt_pytdx(bond_codes, stock_codes, threads=40, max_age=3):
                     return {"__err__": last_err}
         return {"__err__": last_err or "all-round-fail"}
 
-    # 分 chunk：每 chunk 30 个请求（避免单连接服务器侧断）
-    CHUNK = 30
+    # 分 chunk：每 chunk 一批请求（越小并行度越高；受 Config.RT_CHUNK 约束）
+    CHUNK = int(getattr(Config, "RT_CHUNK", 14) or 14)
     chunks = [all_codes[i:i+CHUNK] for i in range(0, len(all_codes), CHUNK)]
-    # 线程池
+    # 线程池：并行度受 Config.RT_WORKERS 上限约束
+    _rt_threads = int(threads if isinstance(threads, int) and threads > 0 else (getattr(Config, "RT_WORKERS", 48) or 48))
     results_all = {}
-    with _futures.ThreadPoolExecutor(max_workers=max(1, min(threads, len(chunks)))) as ex:
+    with _futures.ThreadPoolExecutor(max_workers=max(1, min(_rt_threads, len(chunks)))) as ex:
         futs = [ex.submit(_worker_chunk, ch)
                 for i, ch in enumerate(chunks)]
         for fu in _futures.as_completed(futs):
@@ -1090,7 +1192,7 @@ def _cb_fetch_rt_pytdx(bond_codes, stock_codes, threads=40, max_age=3):
         "ok": True,
         "elapsed_ms": int((time.time() - t0) * 1000),
         "servers_cnt": len(_PYTDX_SERVERS),
-        "threads": max(1, min(threads, len(chunks))),
+        "threads": max(1, min(_rt_threads, len(chunks))),
         "requests_total": len(all_codes),
         "requests_ok": len(results_all),
         "bonds_chg_ok": ok_b, "stocks_chg_ok": ok_s,
@@ -1404,7 +1506,7 @@ def _cb_merge_rt_qmt_bridge(df, overwrite_if_filled=True):
     return df
 
 
-def _cb_merge_rt_pytdx(df: pd.DataFrame) -> pd.DataFrame:
+def _cb_merge_rt_pytdx(df: pd.DataFrame, rt=None) -> pd.DataFrame:
     """把 PyTDX 返回的 bond_map / stock_map 合并到 DataFrame（安全 dtype 版）。
 
     填充列：
@@ -1423,7 +1525,10 @@ def _cb_merge_rt_pytdx(df: pd.DataFrame) -> pd.DataFrame:
     N = len(df)
     bc_list = df["bond_code"].astype(str).tolist() if "bond_code" in df.columns else []
     sc_list = df["stock_code"].astype(str).tolist() if "stock_code" in df.columns else []
-    bond_map, stock_map, meta = _cb_fetch_rt_pytdx(bc_list, sc_list)
+    if rt is not None and len(rt) == 3:
+        bond_map, stock_map, meta = rt
+    else:
+        bond_map, stock_map, meta = _cb_fetch_rt_pytdx(bc_list, sc_list)
     df.attrs["__pytdx_meta__"] = meta
     if not bond_map and not stock_map:
         return df
@@ -1884,13 +1989,27 @@ def cb_full_metrics(ttl = None, static_ttl = None):
     import time as _tt
     static_ttl = static_ttl if isinstance(static_ttl, int) and static_ttl >= 0 else CB_FULL_STATIC_TTL_DEFAULT
     if static_ttl is None: static_ttl = Config.AK_CACHE_TTL
-    df = _cb_full_static_snapshot(ttl=static_ttl)
+    # ============== 并发编排：静态快照 与 PyTDX 实时抓取 并行 ==============
+    # 静态快照从（可能过期的）缓存取出代码 universe 后，PyTDX 即可提前启动，
+    # 与 akshare 重建并行，省去原本串行的 ~2.7s 静态耗时。
+    _f_static = _cb_par_exec.submit(_cb_full_static_snapshot, ttl=static_ttl)
+    _rt_fut = None
+    _codes = _cb_static_codes_cached()
+    if _codes is not None and (_codes[0] or _codes[1]):
+        _rt_fut = _cb_par_exec.submit(_cb_fetch_rt_pytdx, _codes[0], _codes[1])
+    df = _f_static.result()
+    if _rt_fut is not None:
+        _rt = _rt_fut.result()
+    else:
+        _bc = df["bond_code"].astype(str).tolist() if "bond_code" in df.columns else []
+        _sc = df["stock_code"].astype(str).tolist() if "stock_code" in df.columns else []
+        _rt = _cb_fetch_rt_pytdx(_bc, _sc)
     # ============== 实时行情全列（转债/正股 价格/涨跌幅/振幅/量/额） ==============
     # PyTDX 第一优先级（通达信原生协议，3秒轮询不封IP，与 /kline 同源）
     # QMT HTTP 桥 v3 /cb_rt_snapshot 兜底：仅补充 PyTDX 未覆盖的空白
     # 备用：58600 RPC（交易时段 getMarketData 非空）
     try:
-        df = _cb_merge_rt_pytdx(df)          # PyTDX 第一：全量覆盖实时列
+        df = _cb_merge_rt_pytdx(df, rt=_rt)          # PyTDX 第一：全量覆盖实时列
     except Exception as e:
         logging.getLogger(__name__).warning("_cb_merge_rt_pytdx fail: %s", e)
     # 覆盖率是否达标：PyTDX 命中且转债覆盖≥90% 则信任 PyTDX；否则 QMT 桥兜底补空白

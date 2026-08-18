@@ -33,6 +33,14 @@ class Config:
     # ============== akshare ==============
     AK_CACHE_TTL = 300  # 秒
 
+    # ============== PyTDX 实时行情抓取 ==============
+    # 并行抓取线程上限（线程级连接池：每线程一个持久连接）
+    RT_WORKERS = 48
+    # 每连接分片大小：越小并行度越高（受服务器侧单连接稳定性约束，不宜过小）
+    RT_CHUNK = 14
+    # 服务器延迟优选：启动期测速排序，仅从前 N 台最快服务器里随机选，消除冷启动卡顿
+    RT_SERVER_TOP_N = 4
+
     # ============== 路径 ==============
     LOG_DIR  = os.path.join(BASE_DIR, "logs")
     DATA_DIR = os.path.join(BASE_DIR, "data")
