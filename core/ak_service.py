@@ -1724,6 +1724,9 @@ def _cb_fetch_rt_pytdx_split(bond_codes, stock_codes, threads=None, max_age=3):
 
 
 _KL_CACHE = {}
+_MINUTE_CACHE = {}
+_QUOTE_CACHE = {}
+_TICK_CACHE = {}
 
 
 def get_kline_pytdx(code, count=120, ttl=120, batch=800, max_bars=5000, period="1d"):
@@ -1810,6 +1813,239 @@ def get_kline_pytdx(code, count=120, ttl=120, batch=800, max_bars=5000, period="
     if out:
         out.sort(key=lambda x: x["date"])
         _KL_CACHE[key] = (out, time.time())
+    return out
+
+
+def get_minute_time_data_pytdx(code, ttl=30):
+    """PyTDX 当日分时数据（get_security_bars，category=8 = 1 分钟 K 线）。
+
+    返回 [{"time":"09:30","price":...,"avg_price":...,"vol":...}, ...]，
+    时间标签直接取自 bar 的 datetime/hour/minute。
+
+    价格：get_security_bars 返回的 open/high/low/close 已经是正确的盘面价（元），
+    股票与可转债都不需要再 /100 —— 比 get_minute_time_data 干净且不会受盘中脏基线影响。
+
+    均价(avg_price)：累积 VWAP = Σ(price_i * vol_i) / Σ(vol_i)，用每根 bar 的
+    close × vol 累加，而非 pytdx 的 amount 字段——实测 amount 在部分可转债 bar 上
+    会被数据源污染（amount/vol 与盘面价偏差数倍），而 close / vol 始终可靠。
+    分子分母同用 vol，单位（股/张/手）自然抵消，无需按品种区分口径。
+
+    脏数据（close/vol 非有限或 <=0）整根丢弃，不参与均价累计。
+
+    注：get_security_bars 返回的是「最近 N 根交易分钟」，盘中会跨到昨日下午，
+    这里按 bar 的 datetime.date 只保留「今天」，时间标签取 HH:MM，自然形成
+    09:30~11:30 / 13:00~15:00 的分时序列。
+    """
+    if not _PYTDX_OK:
+        return []
+    mkt, c6 = _pytdx_market_and_code6(code)
+    if mkt is None or not c6:
+        return []
+    key = "minute_%s" % code
+    cached = _MINUTE_CACHE.get(key)
+    if cached and (time.time() - cached[1]) < ttl:
+        return cached[0]
+    out = []
+    api = _pytdx_get_api()
+    for _round in range(2):
+        if api is None:
+            break
+        try:
+            if not _pytdx_is_alive(api):
+                api = _pytdx_get_api()
+                if api is None:
+                    break
+            # category=8：1 分钟 K 线；count=242（略多于一个交易日 240 根）。
+            # 注意：pytdx 返回的是「最近 242 根交易分钟」，盘中会跨到昨日下午，
+            # 故下面只保留「今天」的 bar；若今天无交易则退回最近一整天。
+            bars = api.get_security_bars(8, mkt, c6, 0, 242)
+            if not bars:
+                try:
+                    api.disconnect()
+                except Exception:
+                    pass
+                _PYTDX_POOL.api = None
+                api = _pytdx_get_api()
+                continue
+            # 仅取今天（pytdx 的 datetime 是字符串 "YYYY-MM-DD HH:MM"，按前缀过滤）；
+            # 空集则退回全部（最近一整天）。lexicographic 排序对 "YYYY-MM-DD HH:MM" 即时间序。
+            import datetime as _dt
+            today_str = _dt.date.today().isoformat()
+            today_bars = [b for b in bars
+                          if str(b.get("datetime", "")).split(" ")[0] == today_str]
+            use_bars = today_bars if len(today_bars) >= 2 else bars
+            use_bars = sorted(use_bars, key=lambda x: str(x.get("datetime", "")))
+            cum_amt = 0.0
+            cum_vol = 0.0
+            for b in use_bars:
+                try:
+                    close = b.get("close")
+                    vol = b.get("vol")
+                    if close is None or not isinstance(close, (int, float)):
+                        continue
+                    price = float(close)
+                    if not math.isfinite(price) or price <= 0:
+                        continue
+                    v = float(vol) if isinstance(vol, (int, float)) else 0.0
+                    if not math.isfinite(v) or v <= 0:
+                        continue
+                    # 均价：累积 VWAP = Σ(price_i * vol_i) / Σ(vol_i)。
+                    # 用 price*vol 而非 amount 字段——amount 在部分转债 bar 上会被
+                    # 数据源污染（amount/vol 与盘面价偏差数倍），而 close/vol 可靠；
+                    # 分子分母同用 vol，单位（股/张/手）自然抵消，无需按品种区分。
+                    cum_amt += price * v
+                    cum_vol += v
+                    avg_price = cum_amt / cum_vol
+                    # 时间标签：datetime 字符串取 "HH:MM" 段；否则用 hour/minute
+                    dt = b.get("datetime")
+                    if isinstance(dt, str) and " " in dt:
+                        time_str = dt.split(" ")[1][:5]
+                    else:
+                        h = int(b.get("hour") or 0)
+                        m = int(b.get("minute") or 0)
+                        time_str = "%02d:%02d" % (h, m)
+                    out.append({
+                        "time": time_str,
+                        "price": price,
+                        "avg_price": avg_price,
+                        "vol": v,
+                    })
+                except Exception:
+                    continue
+            if not out:
+                try:
+                    api.disconnect()
+                except Exception:
+                    pass
+                _PYTDX_POOL.api = None
+                api = _pytdx_get_api()
+                continue
+            break
+        except Exception:
+            try:
+                api.disconnect()
+            except Exception:
+                pass
+            _PYTDX_POOL.api = None
+            api = _pytdx_get_api()
+    if out:
+        _MINUTE_CACHE[key] = (out, time.time())
+    return out
+
+
+def get_quote_pytdx(code, ttl=3):
+    """五档买卖盘口（PyTDX get_security_quotes）。
+
+    返回 {'price':最新价, 'last_close':昨收, 'servertime':服务器时间(HH:MM:SS.mmm),
+          'bids':[[price,vol]×5],  买一..买五
+          'asks':[[price,vol]×5]}  卖一..卖五（index0=卖一，价格最低一侧）
+    无连接 / 空数据时返回 {}。
+    """
+    if not _PYTDX_OK:
+        return {}
+    mkt, c6 = _pytdx_market_and_code6(code)
+    if mkt is None or not c6:
+        return {}
+    key = "quote_%s" % code
+    cached = _QUOTE_CACHE.get(key)
+    if cached and (time.time() - cached[1]) < ttl:
+        return cached[0]
+    api = _pytdx_get_api()
+    out = {}
+    for _round in range(2):
+        if api is None:
+            break
+        try:
+            if not _pytdx_is_alive(api):
+                api = _pytdx_get_api()
+                if api is None:
+                    break
+            rows = api.get_security_quotes([(mkt, c6)])
+            if not rows:
+                raise RuntimeError("empty quote")
+            q = rows[0]
+            bids = []
+            asks = []
+            for i in range(1, 6):
+                bp = q.get("bid%d" % i)
+                bv = q.get("bid_vol%d" % i)
+                ap = q.get("ask%d" % i)
+                av = q.get("ask_vol%d" % i)
+                if bp is None or ap is None:
+                    continue
+                bids.append([float(bp), float(bv or 0)])
+                asks.append([float(ap), float(av or 0)])
+            out = {
+                "price": float(q.get("price") or 0),
+                "last_close": float(q.get("last_close") or 0),
+                "servertime": q.get("servertime") or "",
+                "bids": bids,
+                "asks": asks,
+            }
+            break
+        except Exception:
+            try:
+                api.disconnect()
+            except Exception:
+                pass
+            _PYTDX_POOL.api = None
+            api = _pytdx_get_api()
+    if out:
+        _QUOTE_CACHE[key] = (out, time.time())
+    return out
+
+
+def get_transaction_pytdx(code, count=40, ttl=3):
+    """逐笔成交（PyTDX get_transaction_data）。
+
+    返回 [{'time':'HH:MM','price':元,'vol':手/张,'num':笔数,'buyorsell':0/1/2}, ...]
+    buyorsell：0=买盘 1=卖盘 2=中性/未知。
+    注：pytdx 逐笔按当日从开盘起索引分页，本函数拉取首窗口后取最近 count 笔（窗口尾部）。
+    逐笔成交的市场码按交易所取 0/1（与盘口的 11/12 不同）。
+    """
+    if not _PYTDX_OK:
+        return []
+    mkt, c6 = _pytdx_market_and_code6(code)
+    if mkt is None or not c6:
+        return []
+    tx_mkt = 1 if mkt in (1, 11) else 0
+    key = "tick_%s_%d" % (code, count)
+    cached = _TICK_CACHE.get(key)
+    if cached and (time.time() - cached[1]) < ttl:
+        return cached[0]
+    api = _pytdx_get_api()
+    out = []
+    for _round in range(2):
+        if api is None:
+            break
+        try:
+            if not _pytdx_is_alive(api):
+                api = _pytdx_get_api()
+                if api is None:
+                    break
+            rows = api.get_transaction_data(tx_mkt, c6, 0, max(800, count))
+            if not rows:
+                raise RuntimeError("empty ticks")
+            tail = rows[-count:] if len(rows) > count else rows
+            for t in tail:
+                bos = t.get("buyorsell")
+                out.append({
+                    "time": t.get("time") or "",
+                    "price": float(t.get("price") or 0),
+                    "vol": int(t.get("vol") or 0),
+                    "num": int(t.get("num") or 0),
+                    "buyorsell": int(bos) if bos is not None else 2,
+                })
+            break
+        except Exception:
+            try:
+                api.disconnect()
+            except Exception:
+                pass
+            _PYTDX_POOL.api = None
+            api = _pytdx_get_api()
+    if out:
+        _TICK_CACHE[key] = (out, time.time())
     return out
 
 

@@ -24,3 +24,40 @@ def kline(code):
     except Exception:
         data = []
     return jsonify({"ok": bool(data), "count": len(data), "src": "pytdx", "period": period, "data": data})
+
+
+@market_bp.route("/minute/<path:code>")
+def minute(code):
+    """当日分时（1 分钟时间分享线）：PyTDX get_minute_time_data。"""
+    ttl = int(request.args.get("ttl", "30"))
+    data = []
+    try:
+        data = ak_service.get_minute_time_data_pytdx(code, ttl=ttl)
+    except Exception:
+        data = []
+    return jsonify({"ok": bool(data), "count": len(data), "src": "pytdx", "data": data})
+
+
+@market_bp.route("/depth/<path:code>")
+def depth(code):
+    """五档买卖盘口：PyTDX get_security_quotes。"""
+    ttl = int(request.args.get("ttl", "3"))
+    data = {}
+    try:
+        data = ak_service.get_quote_pytdx(code, ttl=ttl)
+    except Exception:
+        data = {}
+    return jsonify({"ok": bool(data), "src": "pytdx", "data": data})
+
+
+@market_bp.route("/tick/<path:code>")
+def tick(code):
+    """逐笔成交：PyTDX get_transaction_data。"""
+    count = int(request.args.get("count", "40"))
+    ttl = int(request.args.get("ttl", "3"))
+    data = []
+    try:
+        data = ak_service.get_transaction_pytdx(code, count=count, ttl=ttl)
+    except Exception:
+        data = []
+    return jsonify({"ok": bool(data), "count": len(data), "src": "pytdx", "data": data})

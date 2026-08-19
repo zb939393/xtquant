@@ -134,6 +134,8 @@ def _apply_filters(df):
         call_status_eq=公告要强赎
         exclude_callable=1  剔除强赎状态非"—/空/未触发"的（只留安全的）
         exclude_force_redeem=1 同 exclude_callable
+        exclude_unlisted=1  排除非上市（待上市）：上市日为空或晚于今日
+        exclude_put=1       排除回售触发：正股价已跌破回售触发价（put_trigger_pct<=0）
         code_in=123456,123457
         stock_name_like=银行
     """
@@ -165,6 +167,23 @@ def _apply_filters(df):
             elif k in ("exclude_callable","exclude_force_redeem") and _parse_bool(v) and "call_status" in df.columns:
                 safe = {"","—","-","nan","未触发","未公告","无","none"}
                 df = df[df["call_status"].astype(str).map(lambda s: s.strip() in safe)]
+            elif k == "exclude_unlisted" and _parse_bool(v) and "list_date" in df.columns:
+                # 排除非上市（待上市）：上市日为空或晚于今日
+                today = pd.Timestamp.now().normalize()
+                def _is_listed(s):
+                    t = pd.to_datetime(s, errors="coerce")
+                    if pd.isna(t):
+                        return False
+                    return t.normalize() <= today
+                df = df[df["list_date"].map(_is_listed)]
+            elif k in ("exclude_put",) and _parse_bool(v) and "put_trigger_pct" in df.columns:
+                # 排除回售触发：正股价已跌破回售触发价（put_trigger_pct <= 0）；无回售触发价数据则保留
+                def _put_not_triggered(x):
+                    n = pd.to_numeric(x, errors="coerce")
+                    if pd.isna(n):
+                        return True
+                    return n > 0
+                df = df[df["put_trigger_pct"].map(_put_not_triggered)]
         except Exception:
             continue
     return df

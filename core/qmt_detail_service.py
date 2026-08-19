@@ -336,7 +336,12 @@ def augment_codes(codes, ttl=None):
     result = {}
     hits_cnt = {}
     for c in codes:
-        raw = bridge_map.get(c) if (bridge_ok and bridge_map.get(c)) else rpc58600_map.get(c, {})
+        if bridge_ok and isinstance(bridge_map, dict) and bridge_map.get(c):
+            raw = bridge_map.get(c)
+        elif isinstance(rpc58600_map, dict):
+            raw = rpc58600_map.get(c, {})
+        else:
+            raw = {}
         if not isinstance(raw, dict) or not raw:
             result[c] = {}; hits_cnt[c] = 0; continue
         std_row = to_std_row(raw)

@@ -79,6 +79,16 @@ def create_app():
         logging.exception("unhandled: %s", e)
         return jsonify({"ok": False, "error": type(e).__name__ + ": " + str(e)}), 500
 
+    @app.route("/cb/watchlist")
+    def cb_watchlist():
+        # 自选股看板：复用同一前端模板，由前端根据路径进入只看自选模式
+        return render_template("index.html")
+
+    @app.route("/cb/watchlist/board")
+    def cb_watchlist_board():
+        # 自选股看盘：复用同一前端模板，由前端根据路径进入看盘模式（每行4面板）
+        return render_template("index.html")
+
     return app
 
 
