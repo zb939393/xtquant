@@ -17,9 +17,10 @@ def quote(code):
 def kline(code):
     """日K：固定走 PyTDX（最可靠）。miniQMT/xtdata 不可用，不再尝试。"""
     count = int(request.args.get("count", "120"))
+    period = request.args.get("period", "1d")
     data = []
     try:
-        data = ak_service.get_kline_pytdx(code, count=count)
+        data = ak_service.get_kline_pytdx(code, count=count, period=period)
     except Exception:
         data = []
-    return jsonify({"ok": bool(data), "count": len(data), "src": "pytdx", "data": data})
+    return jsonify({"ok": bool(data), "count": len(data), "src": "pytdx", "period": period, "data": data})

@@ -1726,19 +1726,30 @@ def _cb_fetch_rt_pytdx_split(bond_codes, stock_codes, threads=None, max_age=3):
 _KL_CACHE = {}
 
 
-def get_kline_pytdx(code, count=120, ttl=120, batch=800, max_bars=5000):
-    """PyTDX 日K（最可靠路径：与 /cb/full 实时同源，无需登录 miniQMT）。
+def get_kline_pytdx(code, count=120, ttl=120, batch=800, max_bars=5000, period="1d"):
+    """PyTDX K线（最可靠路径：与 /cb/full 实时同源，无需登录 miniQMT）。
 
+    period 支持：1d(日) / 1w(周) / 1m(月) / 5m / 15m / 30m / 60m。
     count 较大时（超过 PyTDX 单次 get_security_bars 上限约 800 根）自动循环
     start 偏移分批拉取，从而支持「全量」历史 K 线。
     """
+    _PERIOD_CAT = {
+        "1d": 9, "day": 9, "daily": 9,
+        "1w": 5, "week": 5, "weekly": 5,
+        "1m": 6, "month": 6, "monthly": 6,
+        "5m": 0, "5min": 0,
+        "15m": 1, "15min": 1,
+        "30m": 2, "30min": 2,
+        "60m": 3, "60min": 3, "1h": 3,
+    }
+    cat = _PERIOD_CAT.get(period, 9)
     if not _PYTDX_OK:
         return []
     mkt, c6 = _pytdx_market_and_code6(code)
     if mkt is None or not c6:
         return []
     cnt = min(int(count), max_bars)
-    key = "kline_%s_%d" % (code, cnt)
+    key = "kline_%s_%s_%d" % (code, period, cnt)
     cached = _KL_CACHE.get(key)
     if cached and (time.time() - cached[1]) < ttl:
         return cached[0]
@@ -1758,7 +1769,7 @@ def get_kline_pytdx(code, count=120, ttl=120, batch=800, max_bars=5000):
             start = 0
             while need > 0:
                 take = min(batch, need)
-                bars = api.get_security_bars(9, mkt, c6, start, take)
+                bars = api.get_security_bars(cat, mkt, c6, start, take)
                 if not bars:
                     break
                 allbars.extend(bars)
@@ -1776,7 +1787,9 @@ def get_kline_pytdx(code, count=120, ttl=120, batch=800, max_bars=5000):
                 continue
             for b in allbars:
                 try:
-                    dt = str(b.get("datetime") or b.get("date") or "")[:10]
+                    raw_dt = str(b.get("datetime") or b.get("date") or "")
+                    # 非分钟周期（日/周/月）只取日期；分钟周期保留完整时间
+                    dt = raw_dt[:10] if cat not in (0, 1, 2, 3) else raw_dt
                     out.append({
                         "date": dt,
                         "open": float(b.get("open")),
