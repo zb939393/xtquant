@@ -18,6 +18,12 @@ try:
     from pytdx.hq import TdxHq_API as _TdxHq
     import concurrent.futures as _futures
     _PYTDX_OK = True
+    # 应用 pytdx 猴子补丁：修复 get_minute_time_data 当日分时错位 / 断线心跳自愈等。
+    # 导入即生效，且须早于任何 TdxHq_API 实例创建（_pytdx_get_api 为惰性调用）。
+    try:
+        import pytdx_patches
+    except Exception:
+        pass
 except Exception as _pytdx_import_e:
     _PYTDX_OK = False
     _pytdx_import_e
@@ -1817,24 +1823,19 @@ def get_kline_pytdx(code, count=120, ttl=120, batch=800, max_bars=5000, period="
 
 
 def get_minute_time_data_pytdx(code, ttl=30):
-    """PyTDX 当日分时数据（get_security_bars，category=8 = 1 分钟 K 线）。
+    """PyTDX 当日分时数据（数据源：经 pip 包 pytdx_patches 修复的 api.get_minute_time_data）。
 
-    返回 [{"time":"09:30","price":...,"avg_price":...,"vol":...}, ...]，
-    时间标签直接取自 bar 的 datetime/hour/minute。
+    悬浮框与自选股看盘板的分时图共用此接口。pip 补丁内部由 1 分钟 K 线
+    （category=7，pytdx 解析完全正确）重构分时，但返回形态为
+    {price, avg(单分钟均价), vol(已//100), datetime}；此处适配为前端契约
+    [{"time":"09:30","price":...,"avg_price":...,"vol":...}]：
+      - time     ：datetime[11:16] -> "HH:MM"
+      - price    ：分时价（close）
+      - avg_price：累积 VWAP 均价 = Σ(amount_i) / Σ(vol_i)
+                  = Σ(avg_j * vol_j) / Σ(vol_j)（用 pip 的 avg/vol 还原）
+      - vol      ：原始 K 线成交量 = pip.vol * 100（前端按 /10000 显示“万”）
 
-    价格：get_security_bars 返回的 open/high/low/close 已经是正确的盘面价（元），
-    股票与可转债都不需要再 /100 —— 比 get_minute_time_data 干净且不会受盘中脏基线影响。
-
-    均价(avg_price)：累积 VWAP = Σ(price_i * vol_i) / Σ(vol_i)，用每根 bar 的
-    close × vol 累加，而非 pytdx 的 amount 字段——实测 amount 在部分可转债 bar 上
-    会被数据源污染（amount/vol 与盘面价偏差数倍），而 close / vol 始终可靠。
-    分子分母同用 vol，单位（股/张/手）自然抵消，无需按品种区分口径。
-
-    脏数据（close/vol 非有限或 <=0）整根丢弃，不参与均价累计。
-
-    注：get_security_bars 返回的是「最近 N 根交易分钟」，盘中会跨到昨日下午，
-    这里按 bar 的 datetime.date 只保留「今天」，时间标签取 HH:MM，自然形成
-    09:30~11:30 / 13:00~15:00 的分时序列。
+    价格量纲：pip 返回的 close 已是正确盘面价（元），股票与可转债都不需要再 /100。
     """
     if not _PYTDX_OK:
         return []
@@ -1855,11 +1856,9 @@ def get_minute_time_data_pytdx(code, ttl=30):
                 api = _pytdx_get_api()
                 if api is None:
                     break
-            # category=8：1 分钟 K 线；count=242（略多于一个交易日 240 根）。
-            # 注意：pytdx 返回的是「最近 242 根交易分钟」，盘中会跨到昨日下午，
-            # 故下面只保留「今天」的 bar；若今天无交易则退回最近一整天。
-            bars = api.get_security_bars(8, mkt, c6, 0, 242)
-            if not bars:
+            # 经 pip pytdx_patches 修复的当日分时（1分钟K线重构，with_time 提供 datetime）
+            data = api.get_minute_time_data(mkt, c6, with_time=True)
+            if not data:
                 try:
                     api.disconnect()
                 except Exception:
@@ -1867,48 +1866,28 @@ def get_minute_time_data_pytdx(code, ttl=30):
                 _PYTDX_POOL.api = None
                 api = _pytdx_get_api()
                 continue
-            # 仅取今天（pytdx 的 datetime 是字符串 "YYYY-MM-DD HH:MM"，按前缀过滤）；
-            # 空集则退回全部（最近一整天）。lexicographic 排序对 "YYYY-MM-DD HH:MM" 即时间序。
-            import datetime as _dt
-            today_str = _dt.date.today().isoformat()
-            today_bars = [b for b in bars
-                          if str(b.get("datetime", "")).split(" ")[0] == today_str]
-            use_bars = today_bars if len(today_bars) >= 2 else bars
-            use_bars = sorted(use_bars, key=lambda x: str(x.get("datetime", "")))
-            cum_amt = 0.0
+            # 适配 pip 输出：{price, avg(单分钟均价), vol(已//100), datetime}
+            # 还原为前端契约 {time, price, avg_price(累积VWAP), vol(原始K线量)}：
+            #   time     : datetime[11:16] -> "HH:MM"
+            #   avg_price: 累积 VWAP = Σ(avg_j*vol_j) / Σ(vol_j)
+            #   vol      : ×100 还原为原始成交量（前端按 /10000 显示"万"）
+            cum_avg_vol = 0.0
             cum_vol = 0.0
-            for b in use_bars:
+            for d in data:
                 try:
-                    close = b.get("close")
-                    vol = b.get("vol")
-                    if close is None or not isinstance(close, (int, float)):
-                        continue
-                    price = float(close)
-                    if not math.isfinite(price) or price <= 0:
-                        continue
-                    v = float(vol) if isinstance(vol, (int, float)) else 0.0
-                    if not math.isfinite(v) or v <= 0:
-                        continue
-                    # 均价：累积 VWAP = Σ(price_i * vol_i) / Σ(vol_i)。
-                    # 用 price*vol 而非 amount 字段——amount 在部分转债 bar 上会被
-                    # 数据源污染（amount/vol 与盘面价偏差数倍），而 close/vol 可靠；
-                    # 分子分母同用 vol，单位（股/张/手）自然抵消，无需按品种区分。
-                    cum_amt += price * v
-                    cum_vol += v
-                    avg_price = cum_amt / cum_vol
-                    # 时间标签：datetime 字符串取 "HH:MM" 段；否则用 hour/minute
-                    dt = b.get("datetime")
-                    if isinstance(dt, str) and " " in dt:
-                        time_str = dt.split(" ")[1][:5]
-                    else:
-                        h = int(b.get("hour") or 0)
-                        m = int(b.get("minute") or 0)
-                        time_str = "%02d:%02d" % (h, m)
+                    price = float(d.get("price") or 0)
+                    avg = float(d.get("avg") or 0)
+                    vol = int(d.get("vol") or 0)
+                    dt = d.get("datetime") or ""
+                    time_str = dt[11:16] if len(dt) >= 16 else ""
+                    cum_avg_vol += avg * vol
+                    cum_vol += vol
+                    avg_price = (cum_avg_vol / cum_vol) if cum_vol else price
                     out.append({
                         "time": time_str,
                         "price": price,
                         "avg_price": avg_price,
-                        "vol": v,
+                        "vol": vol * 100,
                     })
                 except Exception:
                     continue
