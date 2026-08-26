@@ -967,6 +967,10 @@ if _PYTDX_OK:
 # ============================================================================
 import random as _rnd_pool
 _PYTDX_POOL = threading.local()
+# PyTDX 阻塞型行情请求的并发信号量：把并发的 get_security_bars / get_security_quotes /
+# get_minute_time_data / get_transaction_data 等网络调用收敛到固定上限，其余请求在此排队，
+# 避免看盘页多行同时轮询时把服务端打垮（ERR_CONNECTION_REFUSED）。缓存命中不占用配额。
+_PYTDX_SEM = threading.Semaphore(int(getattr(Config, "PYTDX_MAX_CONCURRENCY", 8) or 8))
 
 
 def _pytdx_is_alive(api):
@@ -1222,7 +1226,8 @@ def _cb_fetch_rt_pytdx(bond_codes, stock_codes, threads=None, max_age=3):
                     if mkt is None or not c6:
                         chunk_out[(code_full, side)] = None; continue
                     try:
-                        bars = api.get_security_bars(9, mkt, c6, 0, 2)
+                        with _PYTDX_SEM:
+                            bars = api.get_security_bars(9, mkt, c6, 0, 2)
                     except Exception as _be:
                         last_err = str(_be)
                         # 连接级异常：断开后整体重连重试一次
@@ -1472,7 +1477,8 @@ def _cb_fetch_rt_pytdx_quotes(stock_codes, threads=None, max_age=3):
                     req_ok += 1
             continue
         try:
-            resp = api.get_security_quotes([(mkt, c6) for mkt, c6, _ in tuples])
+            with _PYTDX_SEM:
+                resp = api.get_security_quotes([(mkt, c6) for mkt, c6, _ in tuples])
         except Exception:
             for _, _, cf in tuples:
                 r = _cb_rt_one_bars_stock(cf)
@@ -1574,7 +1580,8 @@ def _cb_fetch_rt_pytdx_quotes_cb(cb_codes, threads=None, max_age=3):
         req_total += 1
         resp = []
         try:
-            resp = api.get_security_quotes([(mkt, c6) for mkt, c6, _ in tuples])
+            with _PYTDX_SEM:
+                resp = api.get_security_quotes([(mkt, c6) for mkt, c6, _ in tuples])
         except Exception:
             resp = []
         if not resp:
@@ -1733,14 +1740,139 @@ _KL_CACHE = {}
 _MINUTE_CACHE = {}
 _QUOTE_CACHE = {}
 _TICK_CACHE = {}
+_XDXR_CACHE = {}
 
 
-def get_kline_pytdx(code, count=120, ttl=120, batch=800, max_bars=5000, period="1d"):
+def _pytdx_get_xdxr(mkt, c6, ttl=86400):
+    """拉取并缓存除权除息（XDXR）数据：复权因子的唯一数据源。
+
+    返回 pytdx get_xdxr_info 解析后的行列表（OrderedDict），字段含
+    year/month/day/category/fenhong/peigujia/songzhuangu/peigu/suogu 等。
+    失败或无数据返回 []。结果按天缓存（除权事件极少变动）。
+    """
+    if not _PYTDX_OK or mkt is None or not c6:
+        return []
+    key = "xdxr_%d_%s" % (mkt, c6)
+    cached = _XDXR_CACHE.get(key)
+    if cached and (time.time() - cached[1]) < ttl:
+        return cached[0]
+    api = _pytdx_get_api()
+    rows = []
+    for _round in range(2):
+        if api is None:
+            break
+        try:
+            if not _pytdx_is_alive(api):
+                api = _pytdx_get_api()
+                if api is None:
+                    break
+            rows = api.get_xdxr_info(mkt, c6) or []
+            break
+        except Exception:
+            try:
+                api.disconnect()
+            except Exception:
+                pass
+            _PYTDX_POOL.api = None
+            api = _pytdx_get_api()
+    _XDXR_CACHE[key] = (rows, time.time())
+    return rows
+
+
+def _apply_adjust(bars, xdxr, adjust):
+    """对原始 K 线按 qfq(前复权)/hfq(后复权) 应用复权因子。
+
+    bars: 升序排列的 K 线列表（含 date/open/high/low/close）。
+    xdxr: _pytdx_get_xdxr 返回的事件列表。
+    复权因子算法（标准除权除息参考价法）：
+        参考价 = (前收 - 现金红利 + 配股数*配股价) / (1 + 送股 + 配股)
+        单事件因子 ratio = 前收 / 参考价
+        hfq: 每个 bar 价格 = 不复权价 * 累计因子（首根不变）
+        qfq: 每个 bar 价格 = 不复权价 * 累计因子 / 末根累计因子（末根不变）
+    adjust 非 'qfq'/'hfq' 或数据不足时原样返回。
+    """
+    if adjust not in ("qfq", "hfq") or not bars:
+        return bars
+    if not xdxr:
+        return bars
+
+    def _day(s):
+        return (s or "")[:10]
+
+    events = []
+    for r in xdxr:
+        try:
+            y = int(r.get("year") or 0)
+            m = int(r.get("month") or 0)
+            d = int(r.get("day") or 0)
+            if not (y and m and d):
+                continue
+            sg = float(r.get("songzhuangu") or 0) / 10.0
+            pg = float(r.get("peigu") or 0) / 10.0
+            fh = float(r.get("fenhong") or 0) / 10.0
+            pgj = float(r.get("peigujia") or 0)
+            suogu = r.get("suogu")
+            suogu = float(suogu) if suogu else 0.0
+            if sg == 0 and pg == 0 and fh == 0 and pgj == 0 and suogu == 0:
+                continue
+            events.append({
+                "date": "%04d-%02d-%02d" % (y, m, d),
+                "sg": sg, "pg": pg, "fh": fh, "pgj": pgj, "suogu": suogu,
+            })
+        except Exception:
+            continue
+    if not events:
+        return bars
+
+    events.sort(key=lambda e: e["date"])
+    first_close = float(bars[0]["close"])
+
+    for ev in events:
+        pre_close = None
+        for b in bars:
+            if _day(b["date"]) < ev["date"]:
+                pre_close = float(b["close"])
+            else:
+                break
+        if pre_close is None:
+            pre_close = first_close
+        shares_mult = 1.0 + ev["sg"] + ev["pg"] + ev["suogu"]
+        denom = pre_close - ev["fh"] + ev["pg"] * ev["pgj"]
+        if denom <= 0 or shares_mult <= 0:
+            ev["ratio"] = 1.0
+        else:
+            ev["ratio"] = pre_close * shares_mult / denom
+
+    cum = 1.0
+    ei = 0
+    factors = []
+    for b in bars:
+        bd = _day(b["date"])
+        while ei < len(events) and events[ei]["date"] <= bd:
+            cum *= events[ei]["ratio"]
+            ei += 1
+        factors.append(cum)
+
+    if adjust == "hfq":
+        out = [dict(b, open=b["open"] * f, high=b["high"] * f,
+                    low=b["low"] * f, close=b["close"] * f)
+               for b, f in zip(bars, factors)]
+    else:
+        last_f = factors[-1] if factors else 1.0
+        out = [dict(b, open=b["open"] * (f / last_f), high=b["high"] * (f / last_f),
+                    low=b["low"] * (f / last_f), close=b["close"] * (f / last_f))
+               for b, f in zip(bars, factors)]
+    return out
+
+
+def get_kline_pytdx(code, count=120, ttl=120, batch=800, max_bars=5000, period="1d", adjust=""):
     """PyTDX K线（最可靠路径：与 /cb/full 实时同源，无需登录 miniQMT）。
 
-    period 支持：1d(日) / 1w(周) / 1m(月) / 5m / 15m / 30m / 60m。
+    period 支持：1d(日) / 1w(周) / 1m(月) / 5m / 15m / 30m / 60m / 1min(1分钟)。
     count 较大时（超过 PyTDX 单次 get_security_bars 上限约 800 根）自动循环
     start 偏移分批拉取，从而支持「全量」历史 K 线。
+    adjust 支持：'' (原始/不复权) / 'qfq' (前复权) / 'hfq' (后复权)。
+    复权因子由 PyTDX get_xdxr_info（经 pytdx_patches 修复的连接）计算。
     """
     _PERIOD_CAT = {
         "1d": 9, "day": 9, "daily": 9,
@@ -1750,6 +1882,7 @@ def get_kline_pytdx(code, count=120, ttl=120, batch=800, max_bars=5000, period="
         "15m": 1, "15min": 1,
         "30m": 2, "30min": 2,
         "60m": 3, "60min": 3, "1h": 3,
+        "1min": 7, "1minute": 7,
     }
     cat = _PERIOD_CAT.get(period, 9)
     if not _PYTDX_OK:
@@ -1758,7 +1891,7 @@ def get_kline_pytdx(code, count=120, ttl=120, batch=800, max_bars=5000, period="
     if mkt is None or not c6:
         return []
     cnt = min(int(count), max_bars)
-    key = "kline_%s_%s_%d" % (code, period, cnt)
+    key = "kline_%s_%s_%d_%s" % (code, period, cnt, adjust or "")
     cached = _KL_CACHE.get(key)
     if cached and (time.time() - cached[1]) < ttl:
         return cached[0]
@@ -1778,7 +1911,8 @@ def get_kline_pytdx(code, count=120, ttl=120, batch=800, max_bars=5000, period="
             start = 0
             while need > 0:
                 take = min(batch, need)
-                bars = api.get_security_bars(cat, mkt, c6, start, take)
+                with _PYTDX_SEM:
+                    bars = api.get_security_bars(cat, mkt, c6, start, take)
                 if not bars:
                     break
                 allbars.extend(bars)
@@ -1797,8 +1931,8 @@ def get_kline_pytdx(code, count=120, ttl=120, batch=800, max_bars=5000, period="
             for b in allbars:
                 try:
                     raw_dt = str(b.get("datetime") or b.get("date") or "")
-                    # 非分钟周期（日/周/月）只取日期；分钟周期保留完整时间
-                    dt = raw_dt[:10] if cat not in (0, 1, 2, 3) else raw_dt
+                    # 非分钟周期（日/周/月）只取日期；分钟周期（5/15/30/60分、1分）保留完整时间
+                    dt = raw_dt[:10] if cat not in (0, 1, 2, 3, 7) else raw_dt
                     out.append({
                         "date": dt,
                         "open": float(b.get("open")),
@@ -1818,6 +1952,12 @@ def get_kline_pytdx(code, count=120, ttl=120, batch=800, max_bars=5000, period="
             api = _pytdx_get_api()
     if out:
         out.sort(key=lambda x: x["date"])
+        if adjust in ("qfq", "hfq"):
+            try:
+                xdxr = _pytdx_get_xdxr(mkt, c6)
+                out = _apply_adjust(out, xdxr, adjust)
+            except Exception:
+                pass
         _KL_CACHE[key] = (out, time.time())
     return out
 
@@ -1857,7 +1997,8 @@ def get_minute_time_data_pytdx(code, ttl=30):
                 if api is None:
                     break
             # 经 pip pytdx_patches 修复的当日分时（1分钟K线重构，with_time 提供 datetime）
-            data = api.get_minute_time_data(mkt, c6, with_time=True)
+            with _PYTDX_SEM:
+                data = api.get_minute_time_data(mkt, c6, with_time=True)
             if not data:
                 try:
                     api.disconnect()
@@ -1939,7 +2080,8 @@ def get_quote_pytdx(code, ttl=3):
                 api = _pytdx_get_api()
                 if api is None:
                     break
-            rows = api.get_security_quotes([(mkt, c6)])
+            with _PYTDX_SEM:
+                rows = api.get_security_quotes([(mkt, c6)])
             if not rows:
                 raise RuntimeError("empty quote")
             q = rows[0]
@@ -2002,7 +2144,8 @@ def get_transaction_pytdx(code, count=40, ttl=3):
                 api = _pytdx_get_api()
                 if api is None:
                     break
-            rows = api.get_transaction_data(tx_mkt, c6, 0, max(800, count))
+            with _PYTDX_SEM:
+                rows = api.get_transaction_data(tx_mkt, c6, 0, max(800, count))
             if not rows:
                 raise RuntimeError("empty ticks")
             tail = rows[-count:] if len(rows) > count else rows

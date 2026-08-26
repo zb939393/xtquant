@@ -15,15 +15,22 @@ def quote(code):
 
 @market_bp.route("/kline/<path:code>")
 def kline(code):
-    """日K：固定走 PyTDX（最可靠）。miniQMT/xtdata 不可用，不再尝试。"""
+    """日K：固定走 PyTDX（最可靠）。miniQMT/xtdata 不可用，不再尝试。
+
+    adjust: ''（原始）/'qfq'（前复权）/'hfq'（后复权）。
+    """
     count = int(request.args.get("count", "120"))
     period = request.args.get("period", "1d")
+    adjust = request.args.get("adjust", "")
+    if adjust not in ("qfq", "hfq"):
+        adjust = ""
     data = []
     try:
-        data = ak_service.get_kline_pytdx(code, count=count, period=period)
+        data = ak_service.get_kline_pytdx(code, count=count, period=period, adjust=adjust)
     except Exception:
         data = []
-    return jsonify({"ok": bool(data), "count": len(data), "src": "pytdx", "period": period, "data": data})
+    return jsonify({"ok": bool(data), "count": len(data), "src": "pytdx",
+                    "period": period, "adjust": adjust, "data": data})
 
 
 @market_bp.route("/minute/<path:code>")

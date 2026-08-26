@@ -93,32 +93,20 @@ def create_app():
 
 
 if __name__ == "__main__":
-    import tornado.wsgi
-    import tornado.httpserver
-    import tornado.ioloop
-
     app = create_app()
-    # 用 Tornado 托管 Flask WSGI，替代 Flask 自带(werkzeug)开发服务器
-    container = tornado.wsgi.WSGIContainer(app)
-    http_server = tornado.httpserver.HTTPServer(container)
-    http_server.listen(Config.PORT, Config.HOST)
 
-    io_loop = tornado.ioloop.IOLoop.current()
-
-    def _shutdown(signum, frame):
-        logging.getLogger(__name__).info("收到信号 %s，停止 Tornado 服务...", signum)
-        http_server.stop()
-        io_loop.add_callback_from_signal(io_loop.stop)
-
-    signal.signal(signal.SIGINT, _shutdown)
-    try:
-        signal.signal(signal.SIGTERM, _shutdown)
-    except (ValueError, OSError):
-        pass
+    # 关键修复：改用多线程 WSGI 服务（werkzeug），彻底解决阻塞请求串行化问题。
+    # 原方案用 tornado.wsgi.WSGIContainer，所有请求在单个 IOLoop 线程中串行执行；
+    # 而 /market/kline、/market/quote 等接口会「同步阻塞」调用 PyTDX
+    # （冷缓存约 12~23s），一个慢请求会冻结全部请求，这正是
+    # 「日K 正常、切换其它周期卡死/超时」的根因。
+    # ak_service 的 PyTDX 连接基于 threading.local 按线程隔离（_PYTDX_POOL），
+    # 因此多线程并发调用是安全且预期内的：每个阻塞请求在独立线程执行，互不冻结。
+    app.config["TEMPLATES_AUTO_RELOAD"] = True  # 编辑 index.html 后热重载
 
     logging.getLogger(__name__).info(
-        "Tornado 托管 Flask WSGI 启动: http://%s:%d (DEBUG=%s)",
+        "多线程 WSGI 服务启动: http://%s:%d (DEBUG=%s)",
         Config.HOST, Config.PORT, Config.DEBUG,
     )
-    print("Tornado serving Flask WSGI at http://%s:%d" % (Config.HOST, Config.PORT))
-    io_loop.start()
+    print("Threaded WSGI serving Flask at http://%s:%d" % (Config.HOST, Config.PORT))
+    app.run(host=Config.HOST, port=Config.PORT, threaded=True, use_reloader=False, debug=False)

@@ -234,15 +234,19 @@
         <el-select size="mini" v-model="klinePeriod" @change="changePeriod" :popper-append-to-body="false" style="width:96px;">
           <el-option v-for="p in PERIODS" :key="p.key" :label="p.label" :value="p.key"></el-option>
         </el-select>
+        <span class="cb-kline-period-label">复权</span>
+        <el-select size="mini" v-model="klineAdjust" @change="changeAdjust" :popper-append-to-body="false" style="width:84px;">
+          <el-option v-for="a in ADJUSTS" :key="a.key" :label="a.label" :value="a.key"></el-option>
+        </el-select>
       </div>
       <div class="cb-kline-ctrl">
         <el-button size="mini" :disabled="kline.stock.show<=20" @click="adjustKlineAll(-20)">减少</el-button>
         <span class="cb-kline-cnt">显示 [# kline.stock.show #] / 共 [# kline.stock.total #] 根</span>
         <el-button size="mini" :disabled="kline.stock.show>=kline.stock.total" @click="adjustKlineAll(20)">增加</el-button>
       </div>
-      <div class="cb-chart-title">正股 [# klinePeriodLabel #]</div>
+      <div class="cb-chart-title">正股 [# klinePeriodLabel #] · [# klineAdjustLabel #]</div>
       <cb-chart ref="stockChart"></cb-chart>
-      <div class="cb-chart-title">转债 [# klinePeriodLabel #] <span class="muted" v-text="kline.bond.src ? ('('+kline.bond.src+')') : ''"></span></div>
+      <div class="cb-chart-title">转债 [# klinePeriodLabel #] · [# klineAdjustLabel #] <span class="muted" v-text="kline.bond.src ? ('('+kline.bond.src+')') : ''"></span></div>
       <cb-chart ref="bondChart"></cb-chart>
     </div>
   </div>
@@ -251,9 +255,16 @@
     <div class="board-toolbar">
       <span class="board-title">📈 自选股看盘</span>
       <span class="muted">每个自选股一行：正股实时行情 · 正股K线 · 可转债实时行情 · 可转债K线</span>
+      <span class="drag-tip">拖动行首 ⠿ 可调整顺序</span>
       <span class="board-toolbar-right">
         <el-select size="mini" v-model="boardPeriod" style="width:108px;">
           <el-option v-for="p in PERIODS" :key="p.key" :label="p.label" :value="p.key"></el-option>
+        </el-select>
+        <el-select size="mini" v-model="boardAdjust" style="width:96px;">
+          <el-option v-for="a in ADJUSTS" :key="a.key" :label="a.label" :value="a.key"></el-option>
+        </el-select>
+        <el-select size="mini" v-model="boardKlineCount" style="width:96px;" title="K线显示数量">
+          <el-option v-for="c in KLINE_COUNTS" :key="c.key" :label="c.label" :value="c.key"></el-option>
         </el-select>
         <el-button size="mini" icon="el-icon-refresh" :loading="loading" @click="reload">刷新行情</el-button>
         <span class="muted">实时自动刷新：[# refreshInterval/1000 #] 秒</span>
@@ -262,32 +273,38 @@
     <div v-if="!boardRows.length" class="board-empty">
       暂无自选股，请先点击顶栏「⭐ 自选股」加入，或在列表左侧 ☆ 星标加入。
     </div>
-    <div v-for="row in boardRows" :key="row.bond_code" class="board-row">
+    <div class="board-rows" ref="boardRows">
+      <div v-for="(row, idx) in boardRows" :key="row.bond_code" class="board-row" :data-code="row.bond_code">
       <div class="board-row-head">
+        <span class="board-drag" title="按住拖动调整本行顺序">⠿</span>
+        <span class="board-move" :class="{'board-move-disabled': idx===0}" title="上移一位" @click="moveRow(row.bond_code, -1)">↑</span>
+        <span class="board-move" :class="{'board-move-disabled': idx===boardRows.length-1}" title="下移一位" @click="moveRow(row.bond_code, 1)">↓</span>
         <span class="board-badge" :class="updownCls(row.bond_chg_pct)" v-text="row.bond_code"></span>
         <span class="board-name" v-text="row.bond_name"></span>
         <span class="board-sub muted">正股 [# row.stock_name #]（[# row.stock_code #]）</span>
         <span class="board-head-spacer"></span>
+        <el-checkbox size="mini" :value="boardSide[row.bond_code] === true" @change="setRowSide(row.bond_code, $event)" border title="显示/隐藏本行正股与可转债分时图的盘口（报价+成交）">盘口</el-checkbox>
         <el-button size="mini" icon="el-icon-close" @click="toggleWatch(row)" title="移出自选">移出</el-button>
       </div>
       <div class="board-panels">
         <div class="board-panel board-panel-chart">
           <div class="board-panel-title">正股分时图</div>
-          <board-rt :code="row.stock_code" :prev-close="row.stock_pre_close_rt" :price="row.stock_price" :chg-pct="row.stock_chg_pct" kind="stock"></board-rt>
+          <board-rt :code="row.stock_code" :prev-close="row.stock_pre_close_rt" :price="row.stock_price" :chg-pct="row.stock_chg_pct" kind="stock" :show-book="boardSide[row.bond_code] === true" :show-ticks="boardSide[row.bond_code] === true"></board-rt>
         </div>
         <div class="board-panel board-panel-chart">
           <div class="board-panel-title">正股 K线</div>
-          <board-kline :code="row.stock_code" :period="boardPeriod" kind="stock"></board-kline>
+          <board-kline :code="row.stock_code" :period="boardPeriod" :adjust="boardAdjust" :count="boardKlineCount" kind="stock"></board-kline>
         </div>
         <div class="board-panel board-panel-chart">
           <div class="board-panel-title">可转债分时图</div>
-          <board-rt :code="row.bond_code" :prev-close="row.pre_close_rt" :price="row.bond_price" :chg-pct="row.bond_chg_pct" kind="bond"></board-rt>
+          <board-rt :code="row.bond_code" :prev-close="row.pre_close_rt" :price="row.bond_price" :chg-pct="row.bond_chg_pct" kind="bond" :show-book="boardSide[row.bond_code] === true" :show-ticks="boardSide[row.bond_code] === true"></board-rt>
         </div>
         <div class="board-panel board-panel-chart">
           <div class="board-panel-title">可转债 K线</div>
-          <board-kline :code="row.bond_code" :period="boardPeriod" kind="bond"></board-kline>
+          <board-kline :code="row.bond_code" :period="boardPeriod" :adjust="boardAdjust" :count="boardKlineCount" kind="bond"></board-kline>
         </div>
       </div>
+    </div>
     </div>
   </div>
 
@@ -436,18 +453,92 @@ function _calcBoll(closes, period, mult){
   return { mid: mid, upper: upper, lower: lower };
 }
 
+// 行情请求调度器：统一「并发上限 + 请求去重 + 超时」
+// 看盘页多行同时轮询时会一次性发起大量 /market/* 请求，极易触发浏览器连接池耗尽
+// （ERR_INSUFFICIENT_RESOURCES）并打垮后端 pytdx 连接（ERR_CONNECTION_REFUSED）。
+// 这里把所有行情 fetch 收口到 reqJSON：最多同时 MAX 个在途，超出排队；同一 URL 在途时复用；
+// 单个请求 TIMEOUT 毫秒超时自动 abort，避免挂死占用配额。这是行情节流的核心手段。
+(function(){
+  const MAX = 6;          // 同时进行的行情请求数上限
+  const TIMEOUT = 12000;  // 单个请求超时（毫秒）
+  const _inflight = new Set();     // 当前在途请求的 key（=URL）
+  const _pending = [];             // 等待队列
+  const _inFlightP = new Map();    // URL -> 在途 Promise（用于并发去重）
+
+  function _pump(){
+    while(_inflight.size < MAX && _pending.length){
+      const job = _pending.shift();
+      _inflight.add(job.key);
+      let ctrl = null;
+      if(typeof AbortController !== 'undefined'){ try{ ctrl = new AbortController(); }catch(e){ ctrl = null; } }
+      const opts = Object.assign({}, job.opts || {});
+      if(ctrl) opts.signal = ctrl.signal;
+      const timer = setTimeout(() => { if(ctrl){ try{ ctrl.abort(); }catch(e){} } }, TIMEOUT);
+      fetch(job.url, opts).then(async (res) => {
+        let body;
+        try{ body = await res.json(); }
+        catch(e1){ try{ const t = await res.text(); body = t ? { _text: t } : null; }catch(e2){ body = null; } }
+        if(!res.ok) throw new Error('HTTP ' + res.status);
+        return body;
+      }).then((body) => {
+        clearTimeout(timer);
+        _inFlightP.delete(job.key);
+        _inflight.delete(job.key);
+        job.resolve(body);
+        _pump();
+      }).catch((err) => {
+        clearTimeout(timer);
+        _inFlightP.delete(job.key);
+        _inflight.delete(job.key);
+        job.reject(err);
+        _pump();
+      });
+    }
+  }
+
+  window.reqJSON = function(url, opts){
+    if(_inFlightP.has(url)) return _inFlightP.get(url);
+    const p = new Promise((resolve, reject) => {
+      _pending.push({ key: url, url: url, opts: opts, resolve: resolve, reject: reject });
+      _pump();
+    });
+    _inFlightP.set(url, p);
+    return p;
+  };
+})();
+
 // 看盘模式：每行一个 K线迷你图（自带 echarts 实例，按 code 复用，不依赖主表悬浮窗）
 Vue.component('board-kline', {
   props: {
     code: { type: String, default: '' },
     period: { type: String, default: '1d' },
+    adjust: { type: String, default: '' },
     kind: { type: String, default: '' },
+    count: { type: Number, default: 0 },
   },
   template: '<div class="board-kline"></div>',
-  data(){ return { src: '', _chart: null, _timer: null }; },
-  mounted(){ this._draw(); this._timer = setInterval(() => this._draw(), 10000); },
-  watch: { period(){ this._draw(); } },
+  data(){ return { src: '', _chart: null, _timer: null, _visible: false, _io: null }; },
+  mounted(){ this._setupIO(); },
+  watch: { period(){ if(this._visible) this._draw(); }, adjust(){ if(this._visible) this._draw(); }, count(){ if(this._visible) this._draw(); } },
   methods: {
+    _setupIO(){
+      // 仅进入视口的行才绘制/轮询 K线：看盘页 300+ 行若全部同时轮询，单线程 Tornado 后端会被
+      // 大量阻塞型 pytdx 请求打满，导致切换周/月/分钟 K 时请求超时（src=err）。可见性门控把并发
+      // 请求收敛到可见行数（个位数），配合后端 120s 缓存即可稳定切换周期。
+      const start = () => { if(!this._timer){ this._timer = setInterval(() => this._draw(), 10000); this._draw(); } };
+      const stop = () => { if(this._timer){ clearInterval(this._timer); this._timer = null; } };
+      if(typeof IntersectionObserver === 'undefined'){ start(); return; }
+      this._io = new IntersectionObserver((entries) => {
+        const e = entries[0];
+        if(e.isIntersecting){
+          if(!this._visible){ this._visible = true; start(); }
+        } else {
+          this._visible = false;
+          stop();
+        }
+      }, { root: null, threshold: 0.01 });
+      this._io.observe(this.$el);
+    },
     _ensureChart(){
       if(this._chart) return this._chart;
       let chart;
@@ -462,20 +553,22 @@ Vue.component('board-kline', {
       const chart = this._ensureChart();
       if(!chart) return;
       const period = this.period || '1d';
-      // K线仅展示 160(日)/240(分钟) 根，BOLL(20) 仅需展示窗前约 20 根作回看；
-      // 请求量按「展示数+缓冲」收敛，避免盲目拉 500~1500 根造成 pytdx 与传输浪费（BOLL 值保持一致）
-      const periodCount = {'1d':200,'1w':200,'1m':200,'5m':280,'15m':280,'30m':280,'60m':280};
+      const adjust = this.adjust || '';
+      // K线默认展示 120 根（BOLL(20) 仅需窗前约 20 根作回看）；
+      // 请求量按「展示数+缓冲」收敛，避免盲目拉大量根数造成 pytdx 与传输浪费（BOLL 值保持一致）
+      const periodCount = {'1d':200,'1w':200,'1m':200,'5m':280,'15m':280,'30m':280,'60m':280,'1min':280};
       const cnt = periodCount[period] || 200;
       try{
-        const res = await fetch('/market/kline/' + encodeURIComponent(this.code) + '?period=' + encodeURIComponent(period) + '&count=' + cnt + '&_=' + Date.now(), { cache: 'no-store' });
-        const js = await res.json();
+        const js = await reqJSON('/market/kline/' + encodeURIComponent(this.code) + '?period=' + encodeURIComponent(period) + '&adjust=' + encodeURIComponent(adjust) + '&count=' + cnt + '&_=' + Date.now(), { cache: 'no-store' });
         const full = (js && js.data) || [];
-        const isMin = ['5m','15m','30m','60m'].indexOf(period) >= 0;
-        const show = Math.min(isMin ? 240 : 160, full.length);
+        const isMin = ['5m','15m','30m','60m','1min'].indexOf(period) >= 0;
+        // 默认展示 120 根；分钟/1分钟周期请求量略多（含缓冲）以满足 BOLL(20) 回看；用户可在看盘工具栏调整显示数量
+        const defShow = 120;
+        const show = this.count && this.count > 0 ? Math.min(this.count, full.length) : defShow;
         const data = full.slice(-show);
         this.src = (js && js.src) || (js && js.ok ? 'ok' : '');
         if(!data.length){ chart.clear(); return; }
-        chart.setOption(buildMiniKlineOption(data, full));
+        chart.setOption(buildMiniKlineOption(data, full), true);
         chart.resize();
       }catch(e){
         this.src = 'err';
@@ -483,7 +576,7 @@ Vue.component('board-kline', {
       }
     }
   },
-  beforeDestroy(){ if(this._timer){ clearInterval(this._timer); this._timer = null; } if(this._chart){ try{ this._chart.dispose(); }catch(e){} this._chart = null; } }
+  beforeDestroy(){ if(this._io){ try{ this._io.disconnect(); }catch(e){} this._io = null; } if(this._timer){ clearInterval(this._timer); this._timer = null; } if(this._chart){ try{ this._chart.dispose(); }catch(e){} this._chart = null; } }
 });
 
 // 固定交易时段轴：上午 09:30~11:29 + 下午 13:00~15:00（不含午休 11:30~13:00）
@@ -583,8 +676,10 @@ Vue.component('board-rt', {
       price: { type: Number, default: 0 },
       chgPct: { type: Number, default: 0 },
       kind: { type: String, default: '' },
+      showBook: { type: Boolean, default: true },
+      showTicks: { type: Boolean, default: true },
     },
-  data(){ return { src: '', quote: {}, ticks: [], _timer: null, _rt: null }; },
+  data(){ return { src: '', quote: {}, ticks: [], _timer: null, _rt: null, _visible: false, _io: null }; },
   computed: {
     asksRev(){
       const a = (this.quote && this.quote.asks) || [];
@@ -593,19 +688,72 @@ Vue.component('board-rt', {
     ticksView(){
       // 后端返回按时间正序（最旧在前），逐笔成交通常最新一笔置顶展示
       return (this.ticks || []).slice().reverse().slice(0, 13);
+    },
+    showSide(){
+      // 报价与成交都隐藏时，整体收起侧栏，让分时图占满整行
+      return (this.showBook || this.showTicks) && this.quote && this.quote.bids && this.quote.bids.length;
     }
   },
+  watch: {
+    // 用户手动勾选/取消盘口（报价、成交）时，布局立即变化，需跟随 resize
+    showBook(){ this._resizeChart(); },
+    showTicks(){ this._resizeChart(); },
+    // 盘口数据到达时 showSide 由 false→true，侧栏显隐会改变分时图容器宽度；
+    // 这里监听 showSide（而非仅 showBook/showTicks），确保数据驱动的显隐也立即 resize，
+    // 避免“先窄后自适应”的闪烁（单次 nextTick 易在布局未稳时按过渡宽度 resize）
+    showSide(){ this._resizeChart(); }
+  },
   mounted(){
-    // 首屏立即出分时与盘口
-    this._refresh();
-    // 完成首屏加载后，每 10 秒整体刷新一次：分时图重绘 + 五档盘口 + 逐笔成交
-    this._timer = setInterval(() => this._refresh(), 10000);
+    // 仅可见行才拉取/刷新：看盘页 300+ 行全部同时轮询会把单线程 Tornado 后端打满，
+    // 可见性门控把并发请求收敛到可见行数（个位数），避免切换周期时请求超时。
+    this._setupIO();
+    // 监听分时图容器尺寸变化：盘口显隐、窗口缩放、栅格重排导致容器宽度变化时，
+    // 自动 resize，避免“先窄后自适应”的滞后（单次 nextTick resize 易在布局未稳时测错宽度）
+    if(typeof ResizeObserver !== 'undefined'){
+      const el = this.$refs.chart;
+      if(el){
+        this._ro = new ResizeObserver(() => {
+          if(this._chart){ try{ this._chart.resize(); }catch(e){} }
+        });
+        this._ro.observe(el);
+      }
+    }
   },
   beforeDestroy(){
+    if(this._io){ try{ this._io.disconnect(); }catch(e){} this._io = null; }
     if(this._timer){ clearInterval(this._timer); this._timer = null; }
+    if(this._ro){ try{ this._ro.disconnect(); }catch(e){} this._ro = null; }
     if(this._chart){ try{ this._chart.dispose(); }catch(e){} this._chart = null; }
   },
   methods: {
+    _setupIO(){
+      // 仅进入视口的行才拉取/刷新分时与盘口：看盘页 300+ 行全部同时轮询会把单线程 Tornado 后端打满，
+      // 可见性门控把并发请求收敛到可见行数（个位数），避免切换周期时请求超时。
+      const start = () => { if(!this._timer){ this._timer = setInterval(() => this._refresh(), 10000); this._refresh(); } };
+      const stop = () => { if(this._timer){ clearInterval(this._timer); this._timer = null; } };
+      if(typeof IntersectionObserver === 'undefined'){ start(); return; }
+      this._io = new IntersectionObserver((entries) => {
+        const e = entries[0];
+        if(e.isIntersecting){
+          if(!this._visible){ this._visible = true; start(); }
+        } else {
+          this._visible = false;
+          stop();
+        }
+      }, { root: null, threshold: 0.01 });
+      this._io.observe(this.$el);
+    },
+    // 盘口显隐导致分时图容器宽度变化时，立刻按最终布局适配图表。
+    // 先 nextTick 等 DOM 更新（v-show 生效），再 requestAnimationFrame 等浏览器完成一次布局回流，
+    // 双保险避免按“过渡宽度”resize 而先窄/先宽再跳变；ResizeObserver 作为兜底仍能兜底极端时序
+    _resizeChart(){
+      if(!this._chart) return;
+      const doR = () => { try{ this._chart.resize(); }catch(e){} };
+      this.$nextTick(doR);
+      if(typeof requestAnimationFrame !== 'undefined'){
+        requestAnimationFrame(() => this.$nextTick(doR));
+      }
+    },
     // 盘口价格：可转债盘口接口返回 ×100（分）量纲，显示时按转债身份除 100 还原为元
     _fmtP(v){ return fmtNum(this.kind === 'bond' ? num(v) / 100 : num(v), 3); },
     _fmtVol(v){ return fmtWan(v, 0); },
@@ -625,8 +773,7 @@ Vue.component('board-rt', {
     },
     async _drawChart(){
       try{
-        const res = await fetch('/market/minute/' + encodeURIComponent(this.code) + '?ttl=30&_=' + Date.now(), { cache: 'no-store' });
-        const js = await res.json();
+        const js = await reqJSON('/market/minute/' + encodeURIComponent(this.code) + '?ttl=30&_=' + Date.now(), { cache: 'no-store' });
         const data = (js && js.data) || [];
         this.src = (js && js.src) || (js && js.ok ? 'ok' : '');
         if(!data.length){ if(this._chart){ try{ this._chart.clear(); }catch(_){} } return; }
@@ -636,6 +783,8 @@ Vue.component('board-rt', {
           const el = this.$refs.chart;
           if(!el) return;
           try{ this._chart = echarts.init(el); }catch(e){ return; }
+          // 初次创建后立即按当前容器宽度适配一次，避免首帧按 0/过渡宽度绘制
+          try{ this._chart.resize(); }catch(e){}
         }
         this._redraw();
       }catch(e){
@@ -662,8 +811,7 @@ Vue.component('board-rt', {
     },
     async _loadDepth(){
       try{
-        const res = await fetch('/market/depth/' + encodeURIComponent(this.code) + '?ttl=3&_=' + Date.now(), { cache: 'no-store' });
-        const dj = await res.json();
+        const dj = await reqJSON('/market/depth/' + encodeURIComponent(this.code) + '?ttl=3&_=' + Date.now(), { cache: 'no-store' });
         this.quote = (dj && dj.data) || {};
         if(this._chart){
           this.$nextTick(() => { try{ this._chart.resize(); }catch(e){} });
@@ -676,8 +824,7 @@ Vue.component('board-rt', {
     },
     async _loadTicks(){
       try{
-        const res = await fetch('/market/tick/' + encodeURIComponent(this.code) + '?count=40&ttl=3&_=' + Date.now(), { cache: 'no-store' });
-        const tj = await res.json();
+        const tj = await reqJSON('/market/tick/' + encodeURIComponent(this.code) + '?count=40&ttl=3&_=' + Date.now(), { cache: 'no-store' });
         this.ticks = (tj && tj.data) || [];
       }catch(e){}
     }
@@ -685,8 +832,8 @@ Vue.component('board-rt', {
   template:
     '<div class="board-rt">' +
       '<div class="board-rt-chart" ref="chart"></div>' +
-      '<div class="board-rt-side" v-if="quote && quote.bids && quote.bids.length">' +
-        '<div class="board-rt-book">' +
+      '<div class="board-rt-side" v-show="showSide">' +
+        '<div class="board-rt-book" v-show="showBook">' +
           '<div class="book-head">五档买卖盘</div>' +
           '<div class="book-row ask" v-for="(a,i) in asksRev" :key="\'a\'+i">' +
             '<span class="book-tag" v-text="\'卖\'+(5-i)"></span>' +
@@ -703,7 +850,7 @@ Vue.component('board-rt', {
             '<span class="book-vol" v-text="_fmtVol(b[1])"></span>' +
           '</div>' +
         '</div>' +
-        '<div class="board-rt-ticks">' +
+        '<div class="board-rt-ticks" v-show="showTicks">' +
           '<div class="tick-head">详细成交</div>' +
           '<div class="tick-row" v-for="(t,i) in ticksView" :key="i">' +
             '<span class="tick-time" v-text="t.time"></span>' +
@@ -717,7 +864,14 @@ Vue.component('board-rt', {
 
 const PERIODS = [
   {key:'1d', label:'日K'}, {key:'1w', label:'周K'}, {key:'1m', label:'月K'},
-  {key:'5m', label:'5分'}, {key:'15m', label:'15分'}, {key:'30m', label:'30分'}, {key:'60m', label:'60分'},
+  {key:'5m', label:'5分'}, {key:'15m', label:'15分'}, {key:'30m', label:'30分'}, {key:'60m', label:'60分'}, {key:'1min', label:'1分钟'},
+];
+const ADJUSTS = [
+  {key:'', label:'原始'}, {key:'qfq', label:'前复权'}, {key:'hfq', label:'后复权'},
+];
+const KLINE_COUNTS = [
+  {key:0, label:'默认'}, {key:50, label:'50根'}, {key:80, label:'80根'},
+  {key:120, label:'120根'}, {key:160, label:'160根'}, {key:200, label:'200根'}, {key:240, label:'240根'},
 ];
 new Vue({
   delimiters: ['[#', '#]'],
@@ -747,10 +901,14 @@ new Vue({
       popup:{ visible:false, row:null, x:0, y:0, tab:'kline' },
       kline:{ bond:{ data:[], src:'', full:[], show:120, total:0 }, stock:{ data:[], src:'', full:[], show:120, total:0 } },
       klinePeriod:'1d',
+      klineAdjust:'qfq',
       rt:{ bond:{ data:[], src:'' }, stock:{ data:[], src:'' } },
       watchOnly:false,
       boardMode:false,
       boardPeriod:'1d',
+      boardAdjust:'qfq',
+      boardKlineCount:0,
+      boardSide:{},
       watchCodes:[],
     };
   },
@@ -799,6 +957,7 @@ new Vue({
     },
     popupStyle(){ return { left: this.popup.x + 'px', top: this.popup.y + 'px' }; },
     klinePeriodLabel(){ const p = (PERIODS.find(x => x.key === this.klinePeriod) || {}); return p.label || '日K'; },
+    klineAdjustLabel(){ const a = (ADJUSTS.find(x => x.key === this.klineAdjust) || {}); return a.label || '原始'; },
     callTriggeredCount(){
       return this.raw.filter(r=>num(r.call_trigger_pct)>=0 && num(r.call_progress_pct)>=100).length;
     },
@@ -911,6 +1070,10 @@ new Vue({
       const row = this.popup.row;
       if(row) this.fetchKlines(row);
     },
+    changeAdjust(){
+      const row = this.popup.row;
+      if(row) this.fetchKlines(row);
+    },
     async refreshPopup(){
       if(this.popupRefreshing) return;
       const cur = this.popup.row;
@@ -934,14 +1097,15 @@ new Vue({
     async loadKline(code, which){
       try{
         const period = this.klinePeriod;
-        const periodCount = {'1d':5000,'1w':1500,'1m':800,'5m':5000,'15m':5000,'30m':5000,'60m':5000};
+        const adjust = this.klineAdjust;
+        const periodCount = {'1d':5000,'1w':1500,'1m':800,'5m':5000,'15m':5000,'30m':5000,'60m':5000,'1min':5000};
         const cnt = periodCount[period] || 5000;
-        const res = await fetch('/market/kline/' + encodeURIComponent(code) + '?period=' + encodeURIComponent(period) + '&count=' + cnt + '&_=' + Date.now(), {cache:'no-store'});
-        const js = await res.json();
+        const js = await reqJSON('/market/kline/' + encodeURIComponent(code) + '?period=' + encodeURIComponent(period) + '&adjust=' + encodeURIComponent(adjust) + '&count=' + cnt + '&_=' + Date.now(), {cache:'no-store'});
         const full = (js && js.data) || [];
         const total = full.length;
-        const isMin = ['5m','15m','30m','60m'].indexOf(period) >= 0;
-        const show = Math.min(isMin ? 240 : 120, total);
+        const isMin = ['5m','15m','30m','60m','1min'].indexOf(period) >= 0;
+        // 默认展示 120 根
+        const show = Math.min(120, total);
         const data = full.slice(-show);
         this.kline[which] = { data: data, src: (js && js.src) || (js && js.ok ? 'ok' : ''), full: full, show: show, total: total };
         this.$nextTick(() => { this.renderChart(which, data); });
@@ -1007,7 +1171,7 @@ new Vue({
           { name: 'UB', type: 'line', data: boll.upper, xAxisIndex: 0, yAxisIndex: 0, showSymbol: false, lineStyle: { width: 1, color: '#9aa0a6' }, z: 3 },
           { name: 'LB', type: 'line', data: boll.lower, xAxisIndex: 0, yAxisIndex: 0, showSymbol: false, lineStyle: { width: 1, color: '#9aa0a6' }, z: 3 }
         ]
-      });
+      }, true);
       chart.resize();
     },
     async fetchRt(row){
@@ -1015,8 +1179,7 @@ new Vue({
       const fetchOne = async (code) => {
         if(!code) return [];
         try{
-          const res = await fetch('/market/minute/' + encodeURIComponent(code) + '?ttl=30&_=' + Date.now(), { cache: 'no-store' });
-          const js = await res.json();
+          const js = await reqJSON('/market/minute/' + encodeURIComponent(code) + '?ttl=30&_=' + Date.now(), { cache: 'no-store' });
           return (js && js.data) || [];
         }catch(e){ return []; }
       };
@@ -1312,6 +1475,10 @@ new Vue({
       else { this.watchCodes.push(code); }
       this.saveWatch();
     },
+    setRowSide(code, v){
+      // 按自选股分别控制该行正股与可转债分时图的盘口（报价+成交）显隐
+      this.$set(this.boardSide, code, !!v);
+    },
     saveWatch(){ try{ localStorage.setItem(CB_WATCH_KEY, JSON.stringify(this.watchCodes)); }catch(e){} },
     loadWatch(){
       try{
@@ -1379,6 +1546,56 @@ new Vue({
         }catch(e){}
       });
     },
+    // 自选股看盘：用鼠标拖动每行行首 ⠿ 调整顺序。
+    // 复用 watchCodes（自选股顺序的唯一真源）的回写逻辑：拖拽结束后按当前 DOM 顺序重建 watchCodes，
+    // 未出现在看板中的自选股（如数据未加载）保持在原相对位置，最后 saveWatch() 持久化。
+    enableBoardDrag(){
+      const self = this;
+      this.$nextTick(() => {
+        if(!self.boardMode) return;
+        try{
+          if(self._boardSortable){ self._boardSortable.destroy(); self._boardSortable = null; }
+          const wrap = self.$refs.boardRows;
+          if(!wrap) return;
+          self._boardSortable = Sortable.create(wrap, {
+            animation: 150,
+            handle: '.board-drag',
+            ghostClass: 'board-row-ghost',
+            onEnd(evt){
+              if(evt.oldIndex === evt.newIndex) return;
+              const rows = wrap.querySelectorAll('.board-row');
+              const newCodes = [];
+              rows.forEach(r => {
+                const code = r.getAttribute('data-code');
+                if(code) newCodes.push(code);
+              });
+              if(!newCodes.length) return;
+              const inView = new Set(newCodes);
+              const result = []; let p = 0;
+              self.watchCodes.forEach(code => {
+                result.push(inView.has(code) ? newCodes[p++] : code);
+              });
+              self.watchCodes = result;
+              self.saveWatch();
+              self.$nextTick(() => self.enableBoardDrag());
+            }
+          });
+        }catch(e){}
+      });
+    },
+    // 自选股看盘：点击每行行首 ↑/↓ 上移/下移一位（与拖动共享同一顺序真源 watchCodes）。
+    moveRow(code, dir){
+      const arr = this.watchCodes.slice();
+      const i = arr.indexOf(code);
+      if(i < 0) return;
+      const j = i + dir;
+      if(j < 0 || j >= arr.length) return;
+      const t = arr[i]; arr[i] = arr[j]; arr[j] = t;
+      this.watchCodes = arr;
+      this.saveWatch();
+      const self = this;
+      this.$nextTick(() => self.enableBoardDrag());
+    },
   },
   mounted(){
     // 恢复上次设置的自动刷新频率（默认3s）
@@ -1413,11 +1630,12 @@ new Vue({
     }
     // 首次加载 + 启动定时器
     const self=this;
-    this.load().then(()=>{ self.applyRefreshInterval(); self.enableWatchDrag(); });
+    this.load().then(()=>{ self.applyRefreshInterval(); self.enableWatchDrag(); self.enableBoardDrag(); });
   },
   watch:{
     colDlg(v){ if(!v) this.saveCols(); },
     watchOnly(){ this.enableWatchDrag(); },
+    boardMode(){ this.enableBoardDrag(); },
     currentPage(){ this.enableWatchDrag(); },
     pageSize(){ this.enableWatchDrag(); },
   },
@@ -1487,6 +1705,15 @@ new Vue({
   .board-name{ font-weight:700; color:#303133; }
   .board-sub{ font-size:12px; }
   .board-head-spacer{ flex:1; }
+  .board-drag{ cursor:grab; color:#c0c4cc; font-size:15px; line-height:1; user-select:none; padding:0 2px; transition:color .15s; }
+  .board-drag:hover{ color:#409eff; }
+  .board-drag:active{ cursor:grabbing; }
+  .board-move{ cursor:pointer; color:#c0c4cc; font-size:13px; line-height:1; user-select:none; padding:0 1px; transition:color .15s; }
+  .board-move:hover{ color:#409eff; }
+  .board-move.board-move-disabled{ color:#ebeef5; cursor:not-allowed; }
+  .board-move.board-move-disabled:hover{ color:#ebeef5; }
+  .board-row-ghost{ opacity:.5; box-shadow:0 0 0 2px #409eff inset; }
+  .board-rows{ display:block; }
   .board-panels{ display:grid; grid-template-columns:1fr 1fr 1fr 1fr; gap:0; }
   .board-panel{ padding:10px 14px; border-right:1px solid #f0f2f5; }
   .board-panel:last-child{ border-right:none; }
