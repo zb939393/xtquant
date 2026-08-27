@@ -1,0 +1,1248 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<title>期权监控看板</title>
+<meta name="viewport" content="width=device-width,initial-scale=1.0" />
+<link rel="stylesheet" href="https://unpkg.com/element-ui/lib/theme-chalk/index.css" />
+<style>
+  html,body{margin:0;padding:0;height:100%;}
+  body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;background:#f5f7fa;color:#303133;}
+  #app{padding:14px 20px;box-sizing:border-box;min-height:100%;}
+  .topbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:10px;}
+  .topbar h2{margin:0;font-size:20px;}
+  .kpis{display:flex;gap:12px;flex-wrap:wrap;}
+  .kpi{background:#fff;padding:10px 16px;border-radius:6px;box-shadow:0 1px 3px rgba(0,0,0,.06);min-width:120px;}
+  .kpi .label{font-size:12px;color:#909399;}
+  .kpi .val{font-size:18px;font-weight:600;margin-top:2px;color:#303133;}
+  .kpi.warn .val{color:#E6A23C;}
+  .kpi.danger .val{color:#F56C6C;}
+  .kpi.ok .val{color:#67C23A;}
+  .filter-card{background:#fff;border-radius:6px;padding:12px 14px 4px;box-shadow:0 1px 3px rgba(0,0,0,.06);margin-bottom:12px;}
+  .banner{display:flex;align-items:center;gap:8px;padding:10px 16px;border-radius:6px;margin-bottom:12px;font-size:13px;box-shadow:0 1px 3px rgba(0,0,0,.06);}
+  .banner-loading{background:#ecf5ff;border:1px solid #d9ecff;color:#409EFF;}
+  .banner-empty{background:#f4f4f5;border:1px solid #e9e9eb;color:#909399;}
+  .banner-error{background:#fef0f0;border:1px solid #fde2e2;color:#f56c6c;}
+  .el-form--inline .el-form-item{margin-bottom:8px;margin-right:16px;}
+  .table-card{background:#fff;border-radius:6px;padding:12px;box-shadow:0 1px 3px rgba(0,0,0,.06);}
+  .el-table{font-size:12px;}
+  .el-table th{background:#fafafa !important;color:#606266;font-weight:600;}
+  .num{font-variant-numeric:tabular-nums;text-align:right !important;font-family:"JetBrains Mono","Consolas",monospace;}
+  .muted{color:#909399;font-size:12px;}
+  .foot{color:#909399;font-size:12px;margin-top:8px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;}
+  .foot-right{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-left:auto;}
+  .foot-info{white-space:nowrap;}
+  .foot-pager{display:flex;align-items:center;}
+  .cell-gap{display:inline-block;min-width:10px;}
+  .up{color:#e74c3c !important;font-weight:600;}    /* 红涨 */
+  .down{color:#27ae60 !important;font-weight:600;}  /* 绿跌 */
+  .flat{color:#95a5a6 !important;}
+  .tag-call{color:#e74c3c !important;font-weight:600;}
+  .tag-put{color:#27ae60 !important;font-weight:600;}
+  .itm{color:#e67e22 !important;font-weight:600;}
+  .otm{color:#909399 !important;}
+  .warn{color:#E6A23C !important;font-weight:600;}
+  .legend{font-size:12px;color:#909399;margin-left:14px;}
+  .legend b.c{color:#e74c3c;} .legend b.p{color:#27ae60;}
+</style>
+</head>
+<body>
+<div id="app">
+  <div class="topbar">
+    <h2>📈 期权监控看板 <span class="legend">（上交所 / 深交所 ETF 期权 · <b class="c">购</b>/<b class="p">沽</b> · 红涨绿跌）</span></h2>
+    <div>
+      <el-button icon="el-icon-refresh" size="mini" :loading="loading" @click="reload(true)">刷新数据</el-button>
+      <el-select v-model="refreshInterval" size="mini" style="width:138px;margin-left:10px;" clearable @change="applyRefreshInterval">
+        <el-option label="1秒自动刷新" :value="1000"></el-option>
+        <el-option label="3秒自动刷新" :value="3000"></el-option>
+        <el-option label="5秒自动刷新" :value="5000"></el-option>
+        <el-option label="10秒自动刷新" :value="10000"></el-option>
+        <el-option label="手动刷新" :value="0"></el-option>
+      </el-select>
+      <el-button size="mini" type="success" :disabled="!totalRaw" @click="exportCsv">导出 CSV</el-button>
+      <el-button icon="el-icon-date" size="mini" @click="colDlg=true">列设置</el-button>
+      <el-button :icon="boardMode ? 'el-icon-back' : 'el-icon-monitor'" size="mini" :type="boardMode ? '' : 'primary'" @click="goBoard">[# boardMode ? '返回看板' : '📈 看盘' #]</el-button>
+      <el-button icon="el-icon-back" size="mini" @click="goBack">返回看板</el-button>
+    </div>
+  </div>
+
+  <div class="kpis">
+    <div class="kpi"><div class="label">合约总数</div><div class="val">[# totalRaw #]</div></div>
+    <div class="kpi"><div class="label">自选</div><div class="val">[# watchCount #]</div></div>
+    <div class="kpi"><div class="label">筛选后</div><div class="val">[# totalFiltered #]</div></div>
+    <div class="kpi ok"><div class="label">认购 / 认沽</div><div class="val">[# callCount #] / [# putCount #]</div></div>
+    <div class="kpi"><div class="label">有行情</div><div class="val">[# tradedCount #]</div></div>
+    <div class="kpi warn"><div class="label">近月(≤30日)</div><div class="val">[# nearCount #]</div></div>
+    <div class="kpi"><div class="label">数据更新</div><div class="val">[# updatedAt #]</div></div>
+  </div>
+
+  <div v-if="!firstLoaded && loading" class="banner banner-loading">
+    <i class="el-icon-loading"></i>
+    正在拉取全市场期权行情（新浪 CON_OP_ + 本地 BS 指标计算，首次约 10~25 秒）…
+  </div>
+  <div v-else-if="firstLoaded && !loading && totalFiltered === 0" class="banner banner-empty">
+    <i class="el-icon-info"></i>
+    当前筛选条件下暂无数据，请放宽筛选条件或点击「重置」。
+  </div>
+  <div v-if="statusMsg" class="banner banner-error">
+    <i class="el-icon-warning"></i>
+    <span>[# statusMsg #]</span>
+    <el-button size="mini" type="danger" plain icon="el-icon-refresh" @click="fetchData(true)" style="margin-left:10px;">重试</el-button>
+  </div>
+
+  <div v-if="!boardMode" class="filter-card">
+    <el-form :inline="true" size="small" :model="f" label-width="78px" @submit.native.prevent>
+      <el-form-item label="标的">
+        <el-select v-model="f.underlying_like" clearable filterable placeholder="全部标的" style="width:220px">
+          <el-option v-for="u in underlyingOptions" :key="u.code" :label="u.label" :value="u.code"></el-option>
+        </el-select>
+      </el-form-item>
+      <el-form-item label="交易所">
+        <el-select v-model="f.exchange" clearable placeholder="全部" style="width:110px">
+          <el-option label="上交所 SSE" value="SSE"></el-option>
+          <el-option label="深交所 SZSE" value="SZSE"></el-option>
+        </el-select>
+      </el-form-item>
+      <el-form-item label="类型">
+        <el-select v-model="f.type" clearable placeholder="全部" style="width:100px">
+          <el-option label="认购(购)" value="C"></el-option>
+          <el-option label="认沽(沽)" value="P"></el-option>
+        </el-select>
+      </el-form-item>
+      <el-form-item label="行权价"><el-input v-model="f.strike_ge" clearable placeholder="≥" style="width:90px" /><span class="cell-gap"></span><el-input v-model="f.strike_le" clearable placeholder="≤" style="width:90px" /></el-form-item>
+      <el-form-item label="到期天数 ≤"><el-input v-model="f.days_le" clearable placeholder="天" style="width:90px" /></el-form-item>
+      <el-form-item label="合约月份">
+        <el-select v-model="f.month" clearable filterable placeholder="全部月份" style="width:140px">
+          <el-option v-for="m in monthOptions" :key="m.value" :label="m.label" :value="m.value"></el-option>
+        </el-select>
+      </el-form-item>
+      <el-form-item label="期权价"><el-input v-model="f.last_ge" clearable placeholder="≥" style="width:90px" /><span class="cell-gap"></span><el-input v-model="f.last_le" clearable placeholder="≤" style="width:90px" /></el-form-item>
+      <el-form-item label="Delta"><el-input v-model="f.delta_ge" clearable placeholder="≥" style="width:80px" /><span class="cell-gap"></span><el-input v-model="f.delta_le" clearable placeholder="≤" style="width:80px" /></el-form-item>
+      <el-form-item label="隐波%" ><el-input v-model="f.iv_ge" clearable placeholder="≥" style="width:80px" /><span class="cell-gap"></span><el-input v-model="f.iv_le" clearable placeholder="≤" style="width:80px" /></el-form-item>
+      <el-form-item label="溢价率% ≤"><el-input v-model="f.premium_le" clearable placeholder="%" style="width:90px" /></el-form-item>
+      <el-form-item label="杠杆 ≥"><el-input v-model="f.leverage_ge" clearable placeholder="倍" style="width:90px" /></el-form-item>
+      <el-form-item label="状态">
+        <el-checkbox v-model="f.watch">只看自选</el-checkbox>
+        <el-checkbox v-model="f.itm">只看实值</el-checkbox>
+        <el-checkbox v-model="f.otm">只看虚值</el-checkbox>
+        <el-checkbox v-model="f.traded">只看有行情</el-checkbox>
+      </el-form-item>
+      <el-form-item label="排序">
+        <el-select v-model="sort.prop" placeholder="排序字段" style="width:160px" @change="onSortPropChange">
+          <el-option v-for="c in sortableCols" :key="c.prop" :label="c.label" :value="c.prop"></el-option>
+        </el-select>
+        <el-radio-group v-model="sort.order" size="mini" style="margin-left:8px" @change="fetchData">
+          <el-radio-button label="ascending">升序</el-radio-button>
+          <el-radio-button label="descending">降序</el-radio-button>
+        </el-radio-group>
+      </el-form-item>
+      <el-form-item>
+        <el-button size="small" type="primary" icon="el-icon-search" :loading="loading" @click="fetchData(true)">筛选</el-button>
+        <el-button size="small" icon="el-icon-refresh-left" @click="resetFilter">重置</el-button>
+      </el-form-item>
+    </el-form>
+  </div>
+
+  <div v-if="!boardMode" class="table-card">
+    <el-table
+      :data="paged"
+      :key="colSig"
+      :row-key="'code'"
+      stripe border
+      height="calc(100vh - 360px)"
+      :default-sort="{prop: sort.prop, order: sort.order}"
+      @sort-change="onSortChange"
+      :cell-class-name="cellClass"
+      v-loading="loading"
+      element-loading-text="加载中（首次拉取新浪 CON_OP_ 行情 + 计算指标约 10~25 秒）"
+      empty-text="暂无数据"
+    >
+      <el-table-column label="#" type="index" width="48" :fixed="'left'" align="center"></el-table-column>
+      <el-table-column label="★" width="46" :fixed="'left'" align="center" class-name="star-col">
+        <template slot-scope="scope">
+          <span class="star" :class="{'star-on': watchSet[scope.row.code]}" @click="toggleWatch(scope.row)">★</span>
+        </template>
+      </el-table-column>
+      <el-table-column v-for="(c,i) in visibleCols" :key="c.prop"
+        :prop="c.prop" :label="c.label" :width="c.width" :min-width="c.minWidth"
+        :fixed="(i < 2 ? 'left' : false)" :align="c.num?'right':'left'" :sortable="c.sortable?'custom':false"
+        :formatter="fmt" :class-name="(c.num?'num':'')" :show-overflow-tooltip="true">
+      </el-table-column>
+    </el-table>
+
+    <div class="foot">
+      <span class="foot-quick">
+        <el-input size="small" clearable placeholder="快速筛选：合约代码 / 简称 / 标的"
+          prefix-icon="el-icon-search" v-model="quickFilter" @input="onQuickFilter" style="width:260px;"></el-input>
+      </span>
+      <span class="foot-right">
+        <span class="foot-info">
+          显示第 [# pageStart #] - [# pageEnd #] 条<template v-if="quickFilter || f.watch"> / 共 [# displayTotal #] 条（筛选）</template><template v-else> / 筛选后 [# totalFiltered #] 条 / 全市场 [# totalRaw #] 条</template>
+        </span>
+        <span class="foot-pager">
+          <el-pagination background small layout="prev, pager, next, jumper"
+            :page-size="pageSize" :current-page.sync="currentPage"
+            :total="displayTotal" style="display:inline-flex;vertical-align:middle;"></el-pagination>
+          <el-select size="small" v-model="pageSize" @change="onPageSizeChange" style="width:108px;margin-left:10px;">
+            <el-option v-for="s in [20,50,100,200]" :key="s" :label="`${s} 条/页`" :value="s"></el-option>
+          </el-select>
+        </span>
+      </span>
+    </div>
+  </div>
+
+  <div v-if="boardMode" class="board-view">
+    <div class="board-toolbar">
+      <span class="board-title">📈 自选股看盘</span>
+      <span class="muted">每 4 个自选期权一行：分时图（实时）· 五档盘口 · 逐笔成交（数据来自扩展行情 pytdx）</span>
+      <span class="board-toolbar-right">
+        <el-button size="mini" icon="el-icon-refresh" :loading="loadingBoard" @click="reload">刷新行情</el-button>
+        <span class="muted">共 [# boardRows.length #] 个自选<span v-if="boardExpiredCount">（[# boardExpiredCount #] 个已到期/无行情）</span> · 实时刷新：[# refreshInterval/1000 #] 秒</span>
+      </span>
+    </div>
+    <div v-if="!boardRows.length" class="board-empty">
+      暂无自选期权，请先在列表左侧 ☆ 星标加入，或在「只看自选」筛选下点击 ★ 添加。
+    </div>
+    <div class="board-rows" ref="boardRows">
+      <div v-for="(chunk, ci) in boardChunks" :key="'chunk-' + ci" class="board-row-chunk">
+        <div v-for="(row, ri) in chunk" :key="row.code" class="board-cell" :class="{'board-cell-dragover': boardDragOverCode === row.code}" :data-code="row.code" @dragover.prevent="onBoardDragOver(row.code)" @drop.prevent="onBoardDrop(row.code)">
+          <div class="board-row-head" :draggable="true" @dragstart="onBoardDragStart(row.code, $event)" @dragend="onBoardDragEnd()">
+            <span class="board-move" :class="{'board-move-disabled': (globalIdx(row.code) % boardPerRow) === 0}" title="左移一位" @click="moveDir(row.code, 'left')">←</span>
+            <span class="board-move" :class="{'board-move-disabled': globalIdx(row.code) < boardPerRow}" title="上移一行" @click="moveDir(row.code, 'up')">↑</span>
+            <span class="board-move" :class="{'board-move-disabled': (globalIdx(row.code) + boardPerRow) >= boardRows.length}" title="下移一行" @click="moveDir(row.code, 'down')">↓</span>
+            <span class="board-move" :class="{'board-move-disabled': (globalIdx(row.code) % boardPerRow) === (boardPerRow - 1)}" title="右移一位" @click="moveDir(row.code, 'right')">→</span>
+            <span class="board-head-spacer"></span>
+            <el-checkbox size="mini" :value="boardSide[row.code] !== false" @change="setRowSide(row.code, $event)" border title="显示/隐藏本行盘口（报价+成交）">盘口</el-checkbox>
+            <el-button size="mini" icon="el-icon-close" @click="toggleWatch(row)" title="移出自选">移出</el-button>
+          </div>
+          <div class="board-panel board-panel-chart">
+            <div class="board-chart-head">
+              <span class="board-badge" :class="row.expired ? 'flat' : updownCls(row.change_pct)" v-text="row.code"></span>
+              <span class="board-name" v-text="row.contract_name || row.code"></span>
+              <span v-if="row.expired" class="board-expired-tag">已到期</span>
+              <span class="board-chart-spacer"></span>
+              <template v-if="!row.expired">
+                <span class="board-chg" :class="updownCls(row.change_pct)">[# fmtNum(num(row.last) - num(row.preclose), 4) #]</span>
+                <span class="board-chg-pct" :class="updownCls(row.change_pct)">[# fmtPct(row.change_pct, 2, true) #]</span>
+              </template>
+              <span v-else class="board-chg-pct muted">无行情</span>
+            </div>
+            <opt-board-rt v-if="!row.expired" :code="row.code" :prev-close="num(row.preclose)" :price="num(row.last)" :chg-pct="num(row.change_pct)" :delta="num(row.delta)" kind="option" :show-book="boardSide[row.code] !== false" :show-ticks="boardSide[row.code] !== false"></opt-board-rt>
+            <div v-else class="board-expired-panel muted">该合约已到期/已下市，暂无实时行情</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <el-dialog title="列设置" :visible.sync="colDlg" width="460px">
+    <p class="muted" style="margin-top:0;">拖拽「显示中的列」或用 ▲▼ 按钮调整顺序；勾选 / 取消控制显示与隐藏。</p>
+    <div class="col-cfg">
+      <div class="col-sec-title">显示中的列</div>
+      <div
+        v-for="(c, i) in visibleColObjs"
+        :key="c.prop"
+        class="col-row"
+        :class="{ 'drag-over': dragOverIndex === i }"
+        draggable="true"
+        @dragstart="onDragStart(i, $event)"
+        @dragover.prevent="onDragOver(i)"
+        @drop="onDrop(i)"
+      >
+        <span class="drag-handle" title="拖拽排序">⠿</span>
+        <el-checkbox :checked="visibleProps.indexOf(c.prop) >= 0" @change="v => setVisible(c.prop, v)">[# c.label #]</el-checkbox>
+        <span class="col-move">
+          <el-button size="mini" :disabled="i === 0" @click="moveCol(i, -1)" title="上移">▲</el-button>
+          <el-button size="mini" :disabled="i === visibleColObjs.length - 1" @click="moveCol(i, 1)" title="下移">▼</el-button>
+        </span>
+      </div>
+      <div class="col-sec-title">可添加列</div>
+      <div
+        v-for="c in hiddenCols"
+        :key="c.prop"
+        class="col-row col-row-hidden"
+      >
+        <el-checkbox :checked="visibleProps.indexOf(c.prop) >= 0" @change="v => setVisible(c.prop, v)">[# c.label #]</el-checkbox>
+      </div>
+    </div>
+    <div slot="footer">
+      <el-button size="small" @click="resetCols">默认</el-button>
+      <el-button size="small" type="primary" @click="colDlg=false">确定</el-button>
+    </div>
+  </el-dialog>
+</div>
+
+<script src="https://unpkg.com/vue@2.7.16/dist/vue.min.js"></script>
+<script src="https://unpkg.com/element-ui/lib/index.js"></script>
+<script src="https://unpkg.com/echarts@5.5.0/dist/echarts.min.js"></script>
+<script>
+const COLUMNS = [
+  {prop:'code',            label:'合约代码',   width:110, num:false, sortable:true,  fmt:'text'},
+  {prop:'exchange',        label:'交易所',     width:72,  num:false, sortable:true,  fmt:'text'},
+  {prop:'underlying_code', label:'标的代码',   width:92,  num:false, sortable:true,  fmt:'text'},
+  {prop:'underlying_name', label:'标的名称',   width:110, num:false, sortable:true,  fmt:'text'},
+  {prop:'type',            label:'类型',       width:56,  num:false, sortable:true,  fmt:'type'},
+  {prop:'contract_name',   label:'合约简称',   width:160, num:false, sortable:true,  fmt:'text'},
+  {prop:'contract_code',   label:'合约代码(所)',width:110, num:false, sortable:true,  fmt:'text'},
+  {prop:'strike',          label:'行权价',     width:80,  num:true,  sortable:true,  fmt:'price4'},
+  {prop:'expiry',          label:'到期日',     width:110, num:false, sortable:true,  fmt:'text'},
+  {prop:'days',            label:'剩余天数',   width:84,  num:true,  sortable:true,  fmt:'days'},
+  {prop:'last',            label:'现价',       width:80,  num:true,  sortable:true,  fmt:'price4'},
+  {prop:'change_pct',      label:'涨跌幅',     width:80,  num:true,  sortable:true,  fmt:'pct'},
+  {prop:'bid',             label:'买价',       width:74,  num:true,  sortable:true,  fmt:'price4'},
+  {prop:'ask',             label:'卖价',       width:74,  num:true,  sortable:true,  fmt:'price4'},
+  {prop:'volume',          label:'成交量',     width:100, num:true,  sortable:true,  fmt:'int'},
+  {prop:'oi',              label:'持仓量',     width:100, num:true,  sortable:true,  fmt:'int'},
+  {prop:'amount',          label:'成交额',     width:110, num:true,  sortable:true,  fmt:'amount'},
+  {prop:'activity',        label:'成交量/分',  width:120, num:true,  sortable:true,  fmt:'vol_pm'},
+  {prop:'high',            label:'最高',       width:80,  num:true,  sortable:true,  fmt:'price4'},
+  {prop:'low',             label:'最低',       width:80,  num:true,  sortable:true,  fmt:'price4'},
+  {prop:'amplitude',       label:'振幅',       width:80,  num:true,  sortable:true,  fmt:'pct'},
+  {prop:'underlying_price',label:'标的价格',   width:90,  num:true,  sortable:true,  fmt:'price4'},
+  {prop:'intrinsic',       label:'内在价值',   width:90,  num:true,  sortable:true,  fmt:'price4'},
+  {prop:'time_value',      label:'时间价值',   width:90,  num:true,  sortable:true,  fmt:'price4'},
+  {prop:'moneyness',       label:'虚实度',     width:90,  num:true,  sortable:true,  fmt:'pctOf'},
+  {prop:'premium_rate',    label:'溢价率',     width:90,  num:true,  sortable:true,  fmt:'pctOf'},
+  {prop:'leverage_ratio',  label:'杠杆比率',   width:90,  num:true,  sortable:true,  fmt:'ratio4'},
+  {prop:'effective_leverage',label:'实际杠杆', width:90,  num:true,  sortable:true,  fmt:'ratio4'},
+  {prop:'delta',           label:'Delta',      width:80,  num:true,  sortable:true,  fmt:'ratio4'},
+  {prop:'gamma',           label:'Gamma',      width:80,  num:true,  sortable:true,  fmt:'ratio6'},
+  {prop:'vega',            label:'Vega',       width:80,  num:true,  sortable:true,  fmt:'ratio4'},
+  {prop:'theta',           label:'Theta',      width:80,  num:true,  sortable:true,  fmt:'ratio4'},
+  {prop:'iv',              label:'隐含波动率', width:92,  num:true,  sortable:true,  fmt:'pctOf'},
+  {prop:'preclose',        label:'昨收',       width:80,  num:true,  sortable:true,  fmt:'price4'},
+];
+const PROP_TYPE = {}; COLUMNS.forEach(c => { PROP_TYPE[c.prop] = c.fmt; });
+const DEFAULT_VISIBLE = ['code','exchange','underlying_name','type','contract_name','strike','expiry','days',
+  'last','change_pct','bid','ask','volume','oi','activity','underlying_price','intrinsic','time_value',
+  'moneyness','premium_rate','leverage_ratio','effective_leverage','delta','iv'];
+const COLS_STORAGE_KEY = 'option_cols_v1';
+const OPT_WATCH_ORDER_KEY = 'option_watch_order_v1';
+
+// 合并标的项：在「标的」下拉中聚合两只同指数 ETF（不同交易所）的期权合约。
+// key 为下拉选中值（MERGE: 前缀），后端按 underlying_in 精确多选过滤。
+const MERGED_UNDERLYINGS = [
+  { key: 'MERGE:510500,159922', label: '中证500ETF(合并) 510500+159922' },
+  { key: 'MERGE:510300,159919', label: '沪深300ETF(合并) 510300+159919' },
+  { key: 'MERGE:588000,588080', label: '科创50ETF(合并) 588000+588080' },
+];
+
+function fmtAmountWan(n, unit) {
+  if (!isFinite(n)) return '—';
+  var w = n / 1e4;
+  if (Math.abs(w) >= 1e4) return (w / 1e4).toFixed(2) + '亿' + unit;
+  if (Math.abs(w) >= 1) return w.toFixed(1) + '万' + unit;
+  return Math.round(n).toLocaleString('en-US') + unit;
+}
+
+// ===== 自选股看盘：扩展行情(ExHq) 分时图 + 五档盘口 + 逐笔成交 =====
+// 与可转债看板 board-rt 完全同款视觉与交互（buildRtOption / 盘口显隐 / 逐笔置顶 / 可见性门控轮询），
+// 仅数据源切到 /option/exquote/minute|quote|tick（后端走 pytdx 扩展行情）。
+
+// 行情请求调度器：并发上限 + 请求去重 + 超时（与可转债看板一致，避免一次性大量请求打垮 pytdx 连接）
+(function(){
+  const MAX = 6;
+  const TIMEOUT = 12000;
+  const _inflight = new Set();
+  const _pending = [];
+  const _inFlightP = new Map();
+  function _pump(){
+    while(_inflight.size < MAX && _pending.length){
+      const job = _pending.shift();
+      _inflight.add(job.key);
+      let ctrl = null;
+      if(typeof AbortController !== 'undefined'){ try{ ctrl = new AbortController(); }catch(e){ ctrl = null; } }
+      const opts = Object.assign({}, job.opts || {});
+      if(ctrl) opts.signal = ctrl.signal;
+      const timer = setTimeout(() => { if(ctrl){ try{ ctrl.abort(); }catch(e){} } }, TIMEOUT);
+      fetch(job.url, opts).then(async (res) => {
+        let body;
+        try{ body = await res.json(); }
+        catch(e1){ try{ const t = await res.text(); body = t ? { _text: t } : null; }catch(e2){ body = null; } }
+        if(!res.ok) throw new Error('HTTP ' + res.status);
+        return body;
+      }).then((body) => {
+        clearTimeout(timer);
+        _inFlightP.delete(job.key);
+        _inflight.delete(job.key);
+        job.resolve(body);
+        _pump();
+      }).catch((err) => {
+        clearTimeout(timer);
+        _inFlightP.delete(job.key);
+        _inflight.delete(job.key);
+        job.reject(err);
+        _pump();
+      });
+    }
+  }
+  window.reqJSON = function(url, opts){
+    if(_inFlightP.has(url)) return _inFlightP.get(url);
+    const p = new Promise((resolve, reject) => {
+      _pending.push({ key: url, url: url, opts: opts, resolve: resolve, reject: reject });
+      _pump();
+    });
+    _inFlightP.set(url, p);
+    return p;
+  };
+})();
+
+function num(v){ if(v===null||v===undefined||v==='') return NaN; const n=parseFloat(v); return isNaN(n)?NaN:n; }
+function fmtNum(v,d=2){ const n=num(v); return isNaN(n)?'--':(n.toFixed(d)); }
+function fmtPct(v,d=2,signed=false){ const n=num(v); if(isNaN(n)) return '--'; const s=n.toFixed(d)+'%'; return signed&&n>0?('+'+s):s; }
+function fmtWan(v,d=0){ const n=num(v); if(isNaN(n)) return '--'; if(Math.abs(n)>=1e8) return (n/1e8).toFixed(2)+'亿'; if(Math.abs(n)>=1e4) return (n/1e4).toFixed(d)+'万'; return n.toFixed(d); }
+function fmtAvgVol(v){ const n=num(v); if(isNaN(n)) return '--'; if(Math.abs(n)>=1e4) return fmtWan(n); if(n>=10) return Math.round(n).toString(); return n.toFixed(1); }
+function rtOpenMinutes(t){ if(!t || typeof t !== 'string') return 0; const p = t.split(':'); if(p.length < 2) return 0; const h = parseInt(p[0], 10), m = parseInt(p[1], 10); if(isNaN(h) || isNaN(m)) return 0; if(h < 9 || (h === 9 && m < 30)) return 1; if(h < 11 || (h === 11 && m <= 30)) return Math.max(1, (h - 9) * 60 + (m - 30)); if(h < 13) return 120; return Math.max(1, 120 + (h - 13) * 60 + m); }
+
+function rtSessionAxis(){
+  const session = [];
+  const pushRange = function(h0, m0, h1, m1){
+    for(let h = h0; h <= h1; h++){
+      for(let m = 0; m < 60; m++){
+        if((h === h0 && m < m0) || (h === h1 && m > m1)) continue;
+        session.push(('0' + h).slice(-2) + ':' + ('0' + m).slice(-2));
+      }
+    }
+  };
+  pushRange(9, 30, 11, 30);
+  pushRange(13, 0, 15, 0);
+  return session;
+}
+function rtMapToSession(session, data){
+  const idxOf = {};
+  session.forEach(function(t, i){ idxOf[t] = i; });
+  const prices = new Array(session.length).fill(null);
+  const avgs = new Array(session.length).fill(null);
+  const vols = new Array(session.length).fill(null);
+  (data || []).forEach(function(d){
+    const i = idxOf[d.time];
+    if(i === undefined) return;
+    prices[i] = Number(d.price);
+    avgs[i] = Number(d.avg_price);
+    vols[i] = Number(d.vol);
+  });
+  return { prices: prices, avgs: avgs, vols: vols };
+}
+function buildRtOption(data, prevClose, kind, avgVolPerMin, delta){
+  const session = rtSessionAxis();
+  const mapped = rtMapToSession(session, data);
+  const prices = mapped.prices, avgs = mapped.avgs, vols = mapped.vols;
+  let last = 0;
+  for(let i = prices.length - 1; i >= 0; i--){ if(prices[i] != null && isFinite(prices[i])){ last = prices[i]; break; } }
+  const up = prevClose > 0 ? (last >= prevClose) : true;
+  const upColor = '#e74c3c', downColor = '#27ae60';
+  const color = kind === 'stock' ? '#409EFF' : (up ? upColor : downColor);
+  const hasPrev = prevClose && isFinite(prevClose) && prevClose > 0;
+  let ext = 0;
+  if(hasPrev){
+    let dmax = 0;
+    prices.forEach(function(p){ if(p != null && isFinite(p)){ const dev = Math.abs(p - prevClose) / prevClose; if(dev > dmax) dmax = dev; } });
+    if(dmax < 0.005) dmax = 0.005;
+    ext = dmax * 1.08;
+  }
+  const leftMin = hasPrev ? prevClose * (1 - ext) : undefined;
+  const leftMax = hasPrev ? prevClose * (1 + ext) : undefined;
+  const rightMin = hasPrev ? -ext * 100 : undefined;
+  const rightMax = hasPrev ? ext * 100 : undefined;
+  const volColors = prices.map(function(p, i){
+    const base = i === 0 ? prevClose : (prices[i - 1] != null ? prices[i - 1] : prevClose);
+    return (p >= base) ? upColor : downColor;
+  });
+  return {
+    backgroundColor: '#fff',
+    animation: false,
+    title: { show: avgVolPerMin > 0 || (isFinite(num(delta)) && num(delta) !== 0), text: '均量/分 ' + fmtAvgVol(num(avgVolPerMin)) + (isFinite(num(delta)) && num(delta) !== 0 ? '　Δ ' + fmtNum(num(delta), 2) : ''), left: 4, top: 3, textStyle: { fontSize: 11, color: '#909399', fontWeight: 'normal' } },
+    grid: [{ left: 46, right: hasPrev ? 40 : 12, top: 22, height: '56%' }, { left: 46, right: hasPrev ? 40 : 12, top: '80%', height: '16%' }],
+    tooltip: { trigger: 'axis', axisPointer: { type: 'line' }, formatter: function(params){
+        if(!params || !params.length) return '';
+        const idx = params[0].dataIndex;
+        const t = session[idx];
+        const p = prices[idx], a = avgs[idx], v = vols[idx];
+        let cum = 0; for(let k = 0; k <= idx; k++){ if(vols[k] != null) cum += vols[k]; }
+        const avg = rtOpenMinutes(t) > 0 ? (cum / rtOpenMinutes(t)) : null;
+        let s = '<div style="font-size:11px;margin-bottom:2px;">' + (t || '') + '</div>';
+        s += '价 ' + (p != null ? fmtNum(p, 4) : '--') + '　均 ' + (a != null ? fmtNum(a, 4) : '--') + '<br/>';
+        s += '量(累计) ' + (v != null ? fmtWan(v) : '--') + '　均量/分 ' + (avg != null ? fmtAvgVol(avg) : '--');
+        return s;
+      } },
+    xAxis: [
+      { type: 'category', data: session, boundaryGap: false, axisLabel: { show: false }, axisLine: { lineStyle: { color: '#dcdfe6' } } },
+      { type: 'category', gridIndex: 1, data: session, boundaryGap: false, axisLabel: { show: false } }
+    ],
+    yAxis: [
+      { type: 'value', min: leftMin, max: leftMax, scale: true, splitLine: { lineStyle: { color: '#f2f2f2' } }, axisLabel: { color: '#909399', fontSize: 9 } },
+      { gridIndex: 1, type: 'value', scale: true, splitLine: { show: false }, axisLabel: { show: false } },
+      { gridIndex: 0, position: 'right', type: 'value', min: rightMin, max: rightMax, scale: true, splitLine: { show: false },
+        axisLabel: { color: function(v){ return v > 0 ? '#e74c3c' : (v < 0 ? '#27ae60' : '#909399'); }, fontSize: 9, formatter: function(v){ return (hasPrev ? fmtPct(v, 2, true) : fmtNum(v, 2)); } } }
+    ],
+    series: [
+      { name: '价', type: 'line', data: prices, showSymbol: false, smooth: false, connectNulls: true,
+        lineStyle: { width: 1.2, color: color },
+        areaStyle: { color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+          { offset: 0, color: up ? 'rgba(231,76,60,0.25)' : 'rgba(39,174,96,0.25)' },
+          { offset: 1, color: 'rgba(255,255,255,0)' } ]) },
+        markLine: { silent: true, symbol: 'none', lineStyle: { color: '#c0c4cc', type: 'dashed', width: 1 },
+          data: [{ yAxis: prevClose }], label: { formatter: hasPrev ? ('昨收 ' + fmtNum(prevClose, 2)) : '', fontSize: 9, color: '#909399' } } },
+      { name: '均', type: 'line', data: avgs, showSymbol: false, smooth: false, connectNulls: true, lineStyle: { width: 1, color: '#f5a623' } },
+      { name: '量', type: 'bar', xAxisIndex: 1, yAxisIndex: 1, data: vols,
+        itemStyle: { color: function(p){ return volColors[p.dataIndex] || upColor; } } }
+    ]
+  };
+}
+
+Vue.component('opt-board-rt', {
+  props: {
+      code: { type: String, default: '' },
+      prevClose: { type: Number, default: 0 },
+      price: { type: Number, default: 0 },
+      chgPct: { type: Number, default: 0 },
+      delta: { type: Number, default: 0 },
+      kind: { type: String, default: '' },
+      showBook: { type: Boolean, default: true },
+      showTicks: { type: Boolean, default: true },
+    },
+  data(){ return { src: '', quote: {}, ticks: [], avgVolPerMin: 0, _timer: null, _rt: null, _visible: false, _io: null }; },
+  computed: {
+    asksRev(){
+      const a = (this.quote && this.quote.asks) || [];
+      return a.slice().reverse();
+    },
+    ticksView(){
+      return (this.ticks || []).slice().reverse().slice(0, 13);
+    },
+    showSide(){
+      return (this.showBook || this.showTicks) && this.quote && this.quote.bids && this.quote.bids.length;
+    }
+  },
+  watch: {
+    showBook(){ this._resizeChart(); },
+    showTicks(){ this._resizeChart(); },
+    showSide(){ this._resizeChart(); }
+  },
+  mounted(){
+    this._setupIO();
+    if(typeof ResizeObserver !== 'undefined'){
+      const el = this.$refs.chart;
+      if(el){
+        this._ro = new ResizeObserver(() => {
+          if(this._chart){ try{ this._chart.resize(); }catch(e){} }
+        });
+        this._ro.observe(el);
+      }
+    }
+  },
+  beforeDestroy(){
+    if(this._io){ try{ this._io.disconnect(); }catch(e){} this._io = null; }
+    if(this._timer){ clearInterval(this._timer); this._timer = null; }
+    if(this._ro){ try{ this._ro.disconnect(); }catch(e){} this._ro = null; }
+    if(this._chart){ try{ this._chart.dispose(); }catch(e){} this._chart = null; }
+  },
+  methods: {
+    _setupIO(){
+      const start = () => { if(!this._timer){ this._timer = setInterval(() => this._refresh(), 10000); this._refresh(); } };
+      const stop = () => { if(this._timer){ clearInterval(this._timer); this._timer = null; } };
+      if(typeof IntersectionObserver === 'undefined'){ start(); return; }
+      this._io = new IntersectionObserver((entries) => {
+        const e = entries[0];
+        if(e.isIntersecting){
+          if(!this._visible){ this._visible = true; start(); }
+        } else {
+          this._visible = false;
+          stop();
+        }
+      }, { root: null, threshold: 0.01 });
+      this._io.observe(this.$el);
+    },
+    _resizeChart(){
+      if(!this._chart) return;
+      const doR = () => { try{ this._chart.resize(); }catch(e){} };
+      this.$nextTick(doR);
+      if(typeof requestAnimationFrame !== 'undefined'){
+        requestAnimationFrame(() => this.$nextTick(doR));
+      }
+    },
+    _fmtP(v){ return fmtNum(num(v), 4); },
+    _fmtVol(v){ return fmtWan(v, 0); },
+    _updown(price, base){ const n = num(price), b = num(base); if(isNaN(n) || isNaN(b)) return ''; return n > b ? 'up' : (n < b ? 'down' : 'flat'); },
+    _tickCls(t){ return t === 0 ? 'buy' : (t === 1 ? 'sell' : 'neutral'); },
+    _refresh(){
+      if(!this.code) return;
+      this._drawChart();
+      this._refreshLive();
+    },
+    _refreshLive(){
+      if(!this.code) return;
+      this._loadQuote();
+      this._loadTicks();
+    },
+    async _drawChart(){
+      try{
+        const js = await reqJSON('/option/exquote/minute/' + encodeURIComponent(this.code) + '?ttl=30&_=' + Date.now(), { cache: 'no-store' });
+        const data = (js && js.data) || [];
+        this.src = (js && js.src) || (js && js.ok ? 'ok' : '');
+        if(!data.length){ if(this._chart){ try{ this._chart.clear(); }catch(_){} } return; }
+        this._rt = data;
+        let avg = 0;
+        let total = 0;
+        data.forEach(function(d){ const v = Number(d.vol); if(isFinite(v)) total += v; });
+        let mins = rtOpenMinutes((this.quote && this.quote.servertime) || '');
+        if(!mins){
+          const bars = data.filter(function(d){ const v = Number(d.vol); return isFinite(v) && v > 0; });
+          if(bars.length) mins = rtOpenMinutes(bars[bars.length - 1].time);
+        }
+        if(mins > 0) avg = total / mins;
+        this.avgVolPerMin = avg;
+        if(!this._chart){
+          const el = this.$refs.chart;
+          if(!el) return;
+          try{ this._chart = echarts.init(el); }catch(e){ return; }
+          try{ this._chart.resize(); }catch(e){}
+        }
+        this._redraw();
+      }catch(e){
+        this.src = 'err';
+      }
+    },
+    _calcPrevClose(){
+      let pc = Number(this.prevClose) || 0;
+      if(!pc){
+        const p = num(this.price), c = num(this.chgPct);
+        if(isFinite(p) && p > 0 && isFinite(c)) pc = p / (1 + c / 100);
+      }
+      if(!pc){ const lc = Number(this.quote && this.quote.last_close) || 0; pc = lc; }
+      return pc;
+    },
+    _redraw(){
+      if(!this._chart || !this._rt) return;
+      const pc = this._calcPrevClose();
+      this._chart.setOption(buildRtOption(this._rt, pc, this.kind, this.avgVolPerMin, this.delta), true);
+      this._chart.resize();
+    },
+    async _loadQuote(){
+      try{
+        const dj = await reqJSON('/option/exquote/quote/' + encodeURIComponent(this.code) + '?ttl=3&_=' + Date.now(), { cache: 'no-store' });
+        this.quote = (dj && dj.data) || {};
+        if(this._chart){
+          this.$nextTick(() => { try{ this._chart.resize(); }catch(e){} });
+        }
+        if(!Number(this.prevClose)){
+          this._redraw();
+        }
+      }catch(e){}
+    },
+    async _loadTicks(){
+      try{
+        const tj = await reqJSON('/option/exquote/tick/' + encodeURIComponent(this.code) + '?count=40&ttl=3&_=' + Date.now(), { cache: 'no-store' });
+        this.ticks = (tj && tj.data) || [];
+      }catch(e){}
+    },
+    async copyCode(){
+      const code = this.code;
+      if(!code) return;
+      const clip = async () => {
+        if(navigator.clipboard && navigator.clipboard.writeText){
+          await navigator.clipboard.writeText(code);
+          return true;
+        }
+        return false;
+      };
+      const legacy = () => {
+        try{
+          const ta = document.createElement('textarea');
+          ta.value = code;
+          ta.setAttribute('readonly', '');
+          ta.style.position = 'fixed';
+          ta.style.top = '-1000px';
+          ta.style.opacity = '0';
+          document.body.appendChild(ta);
+          ta.select();
+          ta.setSelectionRange(0, ta.value.length);
+          const ok = document.execCommand('copy');
+          document.body.removeChild(ta);
+          return ok;
+        }catch(e){ return false; }
+      };
+      let ok = false;
+      try{ ok = await clip(); }catch(e){ ok = false; }
+      if(!ok) ok = legacy();
+      if(ok){
+        if(this.$message && this.$message.success) this.$message.success('已复制期权代码：' + code);
+      } else {
+        if(this.$message && this.$message.warning) this.$message.warning('复制失败，期权代码：' + code);
+      }
+    }
+  },
+  template:
+    '<div class="board-rt">' +
+      '<div class="board-rt-chart" ref="chart" title="点击复制期权代码" @click="copyCode"></div>' +
+      '<div class="board-rt-side" v-show="showSide">' +
+        '<div class="board-rt-book" v-show="showBook">' +
+          '<div class="book-head">五档买卖盘</div>' +
+          '<div class="book-row ask" v-for="(a,i) in asksRev" :key="\'a\'+i">' +
+            '<span class="book-tag" v-text="\'卖\'+(5-i)"></span>' +
+            '<span class="book-price" v-text="_fmtP(a[0])"></span>' +
+            '<span class="book-vol" v-text="_fmtVol(a[1])"></span>' +
+          '</div>' +
+          '<div class="book-mid">' +
+            '<span class="book-last" :class="_updown(quote.price, quote.last_close)" v-text="_fmtP(quote.price)"></span>' +
+            '<span class="book-time" v-text="quote.servertime"></span>' +
+          '</div>' +
+          '<div class="book-row bid" v-for="(b,i) in quote.bids" :key="\'b\'+i">' +
+            '<span class="book-tag" v-text="\'买\'+(i+1)"></span>' +
+            '<span class="book-price" v-text="_fmtP(b[0])"></span>' +
+            '<span class="book-vol" v-text="_fmtVol(b[1])"></span>' +
+          '</div>' +
+        '</div>' +
+        '<div class="board-rt-ticks" v-show="showTicks">' +
+          '<div class="tick-head">详细成交</div>' +
+          '<div class="tick-row" v-for="(t,i) in ticksView" :key="i">' +
+            '<span class="tick-time" v-text="t.time"></span>' +
+            '<span class="tick-price" :class="_tickCls(t.buyorsell)" v-text="_fmtP(t.price)"></span>' +
+            '<span class="tick-vol" v-text="_fmtVol(t.vol)"></span>' +
+          '</div>' +
+        '</div>' +
+      '</div>' +
+    '</div>'
+});
+
+new Vue({
+  el: '#app',
+  delimiters: ['[#', '#]'],
+  data() {
+    return {
+      loading: false,
+      loadingBoard: false,
+      firstLoaded: false,
+      statusMsg: '',
+      rows: [],
+      allRows: [],
+      totalRaw: 0,
+      totalFiltered: 0,
+      updatedAt: '',
+      f: { underlying_like:'', exchange:'', type:'', month:'', strike_ge:'', strike_le:'',
+           days_le:'', last_ge:'', last_le:'', delta_ge:'', delta_le:'',
+           iv_ge:'', iv_le:'', premium_le:'', leverage_ge:'',
+           watch:false, itm:false, otm:false, traded:false },
+      watchSet: {},
+      watchCodes: [],
+      boardMode: false,
+      boardSide: {},
+      boardPerRow: 4,
+      sort: { prop:'days', order:'ascending' },
+      refreshInterval: 5000,
+      timer: null,
+      forceNext: false,
+      quickFilter: '',
+      currentPage: 1,
+      pageSize: 50,
+      allCols: COLUMNS,
+      visibleProps: DEFAULT_VISIBLE.slice(),
+      defaultVisibleProps: DEFAULT_VISIBLE,
+      colDlg: false,
+      dragIndex: null,
+      dragOverIndex: null,
+      boardDragCode: null,
+      boardDragOverCode: null,
+      underlyingList: [],
+    };
+  },
+  computed: {
+    colSig() { return this.visibleProps.join(','); },
+    visibleColObjs() { const m = {}; COLUMNS.forEach(c => { m[c.prop] = c; }); return this.visibleProps.map(p => m[p]).filter(Boolean); },
+    hiddenCols() { return COLUMNS.filter(c => this.visibleProps.indexOf(c.prop) < 0); },
+    visibleCols() { return this.visibleColObjs; },
+    sortableCols() { return COLUMNS.filter(c => c.sortable).map(c => ({prop:c.prop, label:c.label})); },
+    filteredRows() {
+      const q = (this.quickFilter || '').trim().toLowerCase();
+      const watch = this.f.watch;
+      let rows = this.rows;
+      if (watch) rows = rows.filter(r => !!this.watchSet[r.code]);
+      if (!q) return rows;
+      return rows.filter(r =>
+        String(r.code||'').toLowerCase().indexOf(q) >= 0 ||
+        String(r.contract_name||'').toLowerCase().indexOf(q) >= 0 ||
+        String(r.underlying_name||'').toLowerCase().indexOf(q) >= 0 ||
+        String(r.underlying_code||'').toLowerCase().indexOf(q) >= 0);
+    },
+    displayTotal() { return this.filteredRows.length; },
+    paged() {
+      const start = (this.currentPage - 1) * this.pageSize;
+      return this.filteredRows.slice(start, start + this.pageSize);
+    },
+    pageStart() { return this.displayTotal === 0 ? 0 : (this.currentPage - 1) * this.pageSize + 1; },
+    pageEnd() { return Math.min(this.currentPage * this.pageSize, this.displayTotal); },
+    callCount() { return this.rows.filter(r => r.type === 'C').length; },
+    putCount() { return this.rows.filter(r => r.type === 'P').length; },
+    watchCount() { return Object.keys(this.watchSet).length; },
+    boardRows() {
+      const hasFull = !!(this.allRows && this.allRows.length);
+      const src = hasFull ? this.allRows : this.rows;
+      const m = {};
+      src.forEach(r => { if (r && r.code != null) m[r.code] = r; });
+      let codes = this.watchCodes;
+      if (!codes || !codes.length) codes = Object.keys(this.watchSet);
+      return codes.map(code => {
+        const rec = m[code];
+        if (rec) return rec;
+        if (hasFull) return { code: code, expired: true, contract_name: '', change_pct: '', last: '', preclose: '' };
+        return null;
+      }).filter(Boolean);
+    },
+    boardExpiredCount() {
+      let n = 0;
+      this.boardRows.forEach(r => { if (r && r.expired) n++; });
+      return n;
+    },
+    boardChunks() {
+      const per = this.boardPerRow || 4;
+      const rows = this.boardRows;
+      const out = [];
+      for (let i = 0; i < rows.length; i += per) out.push(rows.slice(i, i + per));
+      return out;
+    },
+    tradedCount() { return this.rows.filter(r => { const v = Number(r.last); return !isNaN(v) && v > 0; }).length; },
+    nearCount() { return this.rows.filter(r => { const v = Number(r.days); return !isNaN(v) && v >= 0 && v <= 30; }).length; },
+    underlyingOptions() {
+      const seen = {};
+      const list = [];
+      this.underlyingList.forEach(r => {
+        const code = String(r.underlying_code || '').trim();
+        if (!code || seen[code]) return;
+        seen[code] = true;
+        const name = String(r.underlying_name || '').trim();
+        list.push({ code: code, label: (name ? name + ' ' : '') + code });
+      });
+      list.sort((a, b) => a.code.localeCompare(b.code));
+      MERGED_UNDERLYINGS.forEach(m => {
+        if (!seen[m.key]) list.push({ code: m.key, label: m.label });
+      });
+      return list;
+    },
+    monthOptions() {
+      const seen = {};
+      const list = [];
+      this.rows.forEach(r => {
+        const m = String(r.expiry || '').slice(0, 7);
+        if (m && m.length === 7 && !seen[m]) { seen[m] = true; list.push(m); }
+      });
+      list.sort();
+      return list.map(m => ({ value: m, label: m }));
+    },
+  },
+  methods: {
+    fmt(row, column, value) {
+      const t = PROP_TYPE[column.property];
+      if (t === 'type') return value === 'C' ? '购' : (value === 'P' ? '沽' : (value || '—'));
+      if (value === '' || value === null || value === undefined) return '—';
+      if (t === 'text' || !t) return String(value);
+      const n = Number(value);
+      if (isNaN(n)) return '—';
+      switch (t) {
+        case 'pct':   return n.toFixed(2) + '%';
+        case 'pctOf': return (n * 100).toFixed(2) + '%';
+        case 'price4':return n.toFixed(4);
+        case 'ratio4':return n.toFixed(4);
+        case 'ratio6':return n.toFixed(6);
+        case 'int':   return Math.round(n).toLocaleString('en-US');
+        case 'days':  return String(Math.round(n));
+        case 'amount':    return fmtAmountWan(n, '');
+        case 'amount_pm': return fmtAmountWan(n, '/分');
+        case 'vol_pm':    return Math.round(n).toLocaleString('en-US') + '/分';
+        default:      return String(value);
+      }
+    },
+    cellClass({row, column, rowIndex, columnIndex}) {
+      if (!column) return '';
+      const p = column.property;
+      const v = row[p];
+      if (p === 'change_pct' || p === 'amplitude') {
+        const n = Number(v); if (isNaN(n)) return '';
+        return n > 0 ? 'up' : (n < 0 ? 'down' : 'flat');
+      }
+      if (p === 'type') return v === 'C' ? 'tag-call' : (v === 'P' ? 'tag-put' : '');
+      if (p === 'intrinsic' || p === 'moneyness') {
+        const n = Number(v); if (isNaN(n)) return '';
+        return n > 0 ? 'itm' : 'otm';
+      }
+      if (p === 'days') { const n = Number(v); if (!isNaN(n) && n >= 0 && n <= 7) return 'warn'; }
+      return '';
+    },
+    buildParams(force) {
+      const p = new URLSearchParams();
+      const ul = (this.f.underlying_like || '').trim();
+      if (ul) {
+        if (ul.indexOf('MERGE:') === 0) p.set('underlying_in', ul.slice('MERGE:'.length));
+        else p.set('underlying_like', ul);
+      }
+      for (const k in this.f) {
+        if (k === 'underlying_like') continue;
+        const val = this.f[k];
+        if (val === '' || val === null || val === undefined) continue;
+        if (typeof val === 'boolean') { if (val) p.set(k, '1'); }
+        else p.set(k, val);
+      }
+      p.set('sort', this.sort.prop || '');
+      p.set('asc', this.sort.order === 'ascending' ? '1' : '0');
+      p.set('limit', '0');
+      p.set('offset', '0');
+      if (force) p.set('force', '1');
+      return p.toString();
+    },
+    fetchData(force) {
+      if (force) this.loading = true;
+      if (force) this.statusMsg = '';
+      const qs = this.buildParams(force);
+      return fetch('/option/full?' + qs, {cache:'no-store'})
+        .then(r => r.json())
+        .then(resp => {
+          if (!resp.ok) throw new Error(resp.error || 'backend error');
+          this._mergeRows(resp.data || []);
+          this._syncUnderlyings();
+          this.totalRaw = resp.total_raw || 0;
+          this.totalFiltered = resp.total_filtered || 0;
+          this.firstLoaded = true;
+          this.statusMsg = '';
+          this.updatedAt = new Date().toLocaleTimeString('zh-CN', {hour12:false});
+          const maxPage = Math.max(1, Math.ceil(this.filteredRows.length / this.pageSize));
+          if (this.currentPage > maxPage) this.currentPage = maxPage;
+        })
+        .catch(err => {
+          this.statusMsg = '期权数据加载失败：' + err.message;
+          this.$message.error(this.statusMsg);
+        })
+        .finally(() => { this.loading = false; });
+    },
+    _mergeRows(incoming) {
+      if (!Array.isArray(incoming) || incoming.length === 0) { this.rows = incoming; return; }
+      const byCode = {};
+      this.rows.forEach(r => { if (r && r.code != null) byCode[r.code] = r; });
+      const next = new Array(incoming.length);
+      for (let i = 0; i < incoming.length; i++) {
+        const rec = incoming[i];
+        const existing = byCode[rec.code];
+        if (existing) {
+          for (const k in rec) {
+            if (rec[k] !== existing[k]) existing[k] = rec[k];
+          }
+          next[i] = existing;
+        } else {
+          next[i] = Object.assign({}, rec);
+        }
+      }
+      this.rows = next;
+    },
+    _syncUnderlyings() {
+      if ((this.f.underlying_like || '').trim()) return;
+      const seen = {};
+      const list = [];
+      this.rows.forEach(r => {
+        const code = String(r.underlying_code || '').trim();
+        if (!code || seen[code]) return;
+        seen[code] = true;
+        list.push({ underlying_code: code, underlying_name: String(r.underlying_name || '').trim() });
+      });
+      this.underlyingList = list;
+    },
+    reload(force) {
+      if (this.boardMode) this.fetchBoardData(!!force);
+      else this.fetchData(!!force);
+    },
+    fetchBoardData(force) {
+      const p = new URLSearchParams();
+      p.set('limit', '0');
+      p.set('offset', '0');
+      if (force) p.set('force', '1');
+      if (force) this.loadingBoard = true;
+      return fetch('/option/full?' + p.toString(), {cache:'no-store'})
+        .then(r => r.json())
+        .then(resp => {
+          if (!resp.ok) throw new Error(resp.error || 'backend error');
+          this.allRows = resp.data || [];
+          this.updatedAt = new Date().toLocaleTimeString('zh-CN', {hour12:false});
+        })
+        .catch(err => {
+          this.$message.error('自选股看盘数据加载失败：' + err.message);
+        })
+        .finally(() => { this.loadingBoard = false; });
+    },
+    resetFilter() {
+      this.f = { underlying_like:'', exchange:'', type:'', month:'', strike_ge:'', strike_le:'',
+                 days_le:'', last_ge:'', last_le:'', delta_ge:'', delta_le:'',
+                 iv_ge:'', iv_le:'', premium_le:'', leverage_ge:'',
+                 watch:false, itm:false, otm:false, traded:false };
+      this.sort = { prop:'days', order:'ascending' };
+      this.currentPage = 1;
+      this.fetchData(true);
+    },
+    loadWatchlist() {
+      return fetch('/option/watchlist', {cache:'no-store'})
+        .then(r => r.json())
+        .then(resp => {
+          if (!resp.ok) return;
+          const set = {};
+          (resp.codes || []).forEach(c => { set[c] = true; });
+          this.watchSet = set;
+          this._reconcileWatchCodes((resp.codes || []));
+        })
+        .catch(() => {});
+    },
+    _reconcileWatchCodes(serverCodes) {
+      const server = Array.isArray(serverCodes) ? serverCodes : Object.keys(this.watchSet);
+      let local = [];
+      try {
+        const raw = localStorage.getItem(OPT_WATCH_ORDER_KEY);
+        if (raw) { const arr = JSON.parse(raw); if (Array.isArray(arr)) local = arr.filter(x => !!x); }
+      } catch (e) {}
+      const inWatch = new Set(server);
+      const kept = local.filter(c => inWatch.has(c));
+      const seen = new Set(kept);
+      server.forEach(c => { if (!seen.has(c)) { kept.push(c); seen.add(c); } });
+      this.watchCodes = kept;
+      try { localStorage.setItem(OPT_WATCH_ORDER_KEY, JSON.stringify(this.watchCodes)); } catch (e) {}
+    },
+    saveWatchOrder() {
+      try { localStorage.setItem(OPT_WATCH_ORDER_KEY, JSON.stringify(this.watchCodes)); } catch (e) {}
+    },
+    toggleWatch(row) {
+      const code = row.code;
+      if (!code) return;
+      const on = !this.watchSet[code];
+      const next = Object.assign({}, this.watchSet);
+      next[code] = on;
+      this.watchSet = next;
+      if (on) {
+        if (this.watchCodes.indexOf(code) < 0) this.watchCodes = this.watchCodes.concat([code]);
+      } else {
+        this.watchCodes = this.watchCodes.filter(c => c !== code);
+      }
+      this.saveWatchOrder();
+      const url = on ? '/option/watchlist/add' : '/option/watchlist/remove';
+      fetch(url, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({code: code})
+      })
+        .then(r => r.json())
+        .then(resp => {
+          if (!resp.ok) throw new Error(resp.error || 'fail');
+          const set = {};
+          (resp.codes || []).forEach(c => { set[c] = true; });
+          this.watchSet = set;
+          this._reconcileWatchCodes((resp.codes || []));
+        })
+        .catch(err => {
+          const revert = Object.assign({}, this.watchSet);
+          delete revert[code];
+          this.watchSet = revert;
+          this.watchCodes = this.watchCodes.slice();
+          this.$message.error('自选操作失败：' + err.message);
+        });
+    },
+    resetCols() { this.visibleProps = this.defaultVisibleProps.slice(); this.saveCols(); },
+    setVisible(prop, v) {
+      const idx = this.visibleProps.indexOf(prop);
+      if (v && idx < 0) this.visibleProps = this.visibleProps.concat([prop]);
+      else if (!v && idx >= 0) this.visibleProps = this.visibleProps.filter(p => p !== prop);
+      this.saveCols();
+    },
+    onDragStart(i, e) {
+      this.dragIndex = i;
+      if (e && e.dataTransfer) { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text', String(i)); }
+    },
+    onDragOver(i) { this.dragOverIndex = i; },
+    onDrop(i) {
+      const from = this.dragIndex;
+      if (from == null || from === i) { this.dragIndex = null; this.dragOverIndex = null; return; }
+      const arr = this.visibleProps.slice();
+      const moved = arr.splice(from, 1)[0];
+      arr.splice(i, 0, moved);
+      this.visibleProps = arr;
+      this.dragIndex = null;
+      this.dragOverIndex = null;
+      this.saveCols();
+    },
+    moveCol(i, delta) {
+      const arr = this.visibleProps.slice();
+      const j = i + delta;
+      if (j < 0 || j >= arr.length) return;
+      const tmp = arr[i]; arr[i] = arr[j]; arr[j] = tmp;
+      this.visibleProps = arr;
+      this.saveCols();
+    },
+    loadCols() {
+      try {
+        const raw = localStorage.getItem(COLS_STORAGE_KEY);
+        if (!raw) { this.visibleProps = DEFAULT_VISIBLE.slice(); return; }
+        const saved = JSON.parse(raw);
+        if (!Array.isArray(saved) || saved.length === 0) { this.visibleProps = DEFAULT_VISIBLE.slice(); return; }
+        const valid = saved.filter(p => COLUMNS.some(c => c.prop === p));
+        const fixed = ['code','exchange'].filter(p => valid.indexOf(p) >= 0);
+        const rest = valid.filter(p => fixed.indexOf(p) < 0);
+        this.visibleProps = fixed.concat(rest);
+      } catch (e) {
+        this.visibleProps = DEFAULT_VISIBLE.slice();
+      }
+    },
+    saveCols() {
+      try { localStorage.setItem(COLS_STORAGE_KEY, JSON.stringify(this.visibleProps)); } catch (e) {}
+    },
+    onSortPropChange() { this.fetchData(); },
+    onSortChange({prop, order}) {
+      if (!prop) return;
+      this.sort = {prop, order: order || 'ascending'};
+      this.fetchData();
+    },
+    onQuickFilter() { this.currentPage = 1; },
+    onPageSizeChange() { this.currentPage = 1; },
+    applyRefreshInterval() {
+      if (this.timer) { clearInterval(this.timer); this.timer = null; }
+      if (this.refreshInterval && this.refreshInterval > 0) {
+        this.timer = setInterval(() => {
+          if (this.boardMode) this.fetchBoardData(false);
+          else this.fetchData(false);
+        }, this.refreshInterval);
+      }
+    },
+    exportCsv() {
+      const qs = this.buildParams(false) + '&format=csv';
+      window.open('/option/full?' + qs, '_blank');
+    },
+    goBack() { window.location.href = '/'; },
+    updownCls(v) {
+      const n = num(v);
+      if (isNaN(n)) return '';
+      return n > 0 ? 'up' : (n < 0 ? 'down' : 'flat');
+    },
+    moveDir(code, dir) {
+      const per = this.boardPerRow || 4;
+      const arr = this.watchCodes.slice();
+      const i = arr.indexOf(code);
+      if (i < 0) return;
+      let j = -1;
+      if (dir === 'left')  { if (i % per !== 0) j = i - 1; }
+      else if (dir === 'right') { if (i % per !== per - 1) j = i + 1; }
+      else if (dir === 'up')    { if (i - per >= 0) j = i - per; }
+      else if (dir === 'down')  { if (i + per < arr.length) j = i + per; }
+      if (j < 0) return;
+      const t = arr[i]; arr[i] = arr[j]; arr[j] = t;
+      this.watchCodes = arr;
+      this.saveWatchOrder();
+    },
+    onBoardDragStart(code, e) {
+      this.boardDragCode = code;
+      if (e && e.dataTransfer) {
+        e.dataTransfer.effectAllowed = 'move';
+        try { e.dataTransfer.setData('text/plain', String(code)); } catch (_) {}
+      }
+    },
+    onBoardDragOver(code) { this.boardDragOverCode = code; },
+    onBoardDrop(targetCode) {
+      const from = this.boardDragCode;
+      const to = targetCode;
+      this.boardDragCode = null;
+      this.boardDragOverCode = null;
+      if (!from || !to || from === to) return;
+      const arr = this.watchCodes.slice();
+      const fi = arr.indexOf(from);
+      if (fi < 0) return;
+      const ti = arr.indexOf(to);
+      if (ti < 0) return;
+      arr.splice(fi, 1);
+      arr.splice(ti, 0, from);
+      this.watchCodes = arr;
+      this.saveWatchOrder();
+    },
+    onBoardDragEnd() { this.boardDragCode = null; this.boardDragOverCode = null; },
+    globalIdx(code) {
+      return this.boardRows.findIndex(r => r && r.code === code);
+    },
+    setRowSide(code, v) {
+      this.$set(this.boardSide, code, !!v);
+    },
+    goBoard() {
+      if (this.boardMode) {
+        this.boardMode = false;
+        document.title = '期权全指标看板';
+      } else {
+        this.boardMode = true;
+        document.title = '📈 自选股看盘';
+        if (!this.allRows || !this.allRows.length) this.fetchBoardData(false);
+      }
+    },
+  },
+  mounted() {
+    this.loadCols();
+    this.loadWatchlist();
+    this.fetchData(true).then(() => this.applyRefreshInterval());
+  },
+  beforeDestroy() { if (this.timer) clearInterval(this.timer); },
+});
+</script>
+<style>
+  .col-cfg{max-height:430px;overflow:auto;padding-right:6px;}
+  .col-sec-title{font-size:12px;color:#909399;margin:6px 0 4px;font-weight:600;}
+  .col-row{display:flex;align-items:center;padding:5px 8px;border:1px solid #ebeef5;border-radius:4px;margin-bottom:6px;background:#fff;}
+  .col-row.drag-over{border-color:#409eff;background:#ecf5ff;}
+  .col-row-hidden{background:#fafafa;color:#909399;}
+  .drag-handle{cursor:grab;color:#c0c4cc;margin-right:8px;user-select:none;font-size:14px;}
+  .drag-handle:active{cursor:grabbing;}
+  .col-move{margin-left:auto;display:flex;gap:4px;flex-shrink:0;}
+  .col-move .el-button{padding:2px 6px;font-size:12px;line-height:1;}
+  .star-col .cell{display:flex;justify-content:center;align-items:center;}
+  .star{cursor:pointer;font-size:16px;color:#dcdfe6;transition:color .15s,transform .15s;user-select:none;}
+  .star:hover{color:#e6a23c;transform:scale(1.2);}
+  .star.star-on{color:#f7ba2a;}
+
+  .board-view{ padding:10px 14px 40px; }
+  .board-toolbar{ display:flex; align-items:center; gap:12px; flex-wrap:wrap; padding:8px 12px; margin-bottom:12px; background:#fff; border:1px solid #ebeef5; border-radius:8px; }
+  .board-title{ font-size:16px; font-weight:700; color:#303133; }
+  .board-toolbar-right{ margin-left:auto; display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+  .board-empty{ padding:60px 0; text-align:center; color:#909399; font-size:14px; }
+  .board-rows{ display:block; }
+  .board-row-chunk{ display:grid; grid-template-columns:repeat(4, minmax(0, 1fr)); gap:12px; margin-bottom:12px; }
+  .board-cell{ min-width:0; background:#fff; border:1px solid #ebeef5; border-radius:10px; overflow:hidden; box-shadow:0 1px 4px rgba(0,0,0,.03); }
+  .board-cell.board-cell-dragover{ outline:2px dashed #409eff; outline-offset:-3px; }
+  .board-row-head{ display:flex; align-items:center; gap:10px; padding:8px 14px; background:#fafbfc; border-bottom:1px solid #f0f2f5; cursor:grab; }
+  .board-row-head:active{ cursor:grabbing; }
+  .board-badge{ font-weight:700; font-size:13px; padding:1px 8px; border-radius:10px; background:#f0f2f5; color:#606266; }
+  .board-expired-tag{ font-size:11px; font-weight:700; color:#fff; background:#c0c4cc; padding:1px 7px; border-radius:9px; }
+  .board-expired-panel{ display:flex; align-items:center; justify-content:center; min-height:300px; font-size:13px; text-align:center; padding:0 12px; border-top:1px solid #ebeef5; }
+  .board-name{ font-weight:700; color:#303133; }
+  .board-chart-head{ display:flex; align-items:baseline; gap:8px; padding:7px 12px 5px; }
+  .board-chart-head .board-name{ font-size:13px; }
+  .board-chart-spacer{ flex:1 1 auto; }
+  .board-chg, .board-chg-pct{ font-weight:700; font-variant-numeric:tabular-nums; font-size:12px; }
+  .board-chg-pct{ margin-left:1px; }
+  .board-head-spacer{ flex:1; }
+  .board-move{ cursor:pointer; color:#c0c4cc; font-size:13px; line-height:1; user-select:none; padding:0 1px; transition:color .15s; }
+  .board-move:hover{ color:#409eff; }
+  .board-move.board-move-disabled{ color:#ebeef5; cursor:not-allowed; }
+  .board-move.board-move-disabled:hover{ color:#ebeef5; }
+  .board-panels{ display:grid; grid-template-columns:1fr; gap:0; }
+  .board-panel{ padding:10px 14px; }
+  .board-panel-title{ font-size:12px; font-weight:600; color:#909399; margin-bottom:8px; padding-left:2px; border-left:3px solid #409eff; }
+  .board-rt{ width:100%; height:330px; display:flex; flex-direction:row; gap:6px; position:relative; }
+  .board-rt-chart{ flex:3 1 0; min-width:0; height:100%; cursor:pointer; position:relative; }
+  .board-rt-side{ flex:1 1 0; min-width:0; height:100%; display:flex; flex-direction:column; gap:4px; }
+  .board-rt-book, .board-rt-ticks{ min-width:0; border:1px solid #eef0f3; border-radius:6px; padding:1px 3px; overflow:hidden; }
+  .board-rt-book{ flex:0 0 auto; }
+  .board-rt-ticks{ flex:1 1 auto; }
+  .book-head, .tick-head{ font-size:9px; color:#909399; font-weight:600; line-height:12px; border-bottom:1px solid #f2f4f7; margin-bottom:1px; }
+  .book-row{ display:flex; align-items:center; gap:1px; font-size:9px; line-height:11px; font-variant-numeric:tabular-nums; }
+  .book-tag{ flex:0 0 16px; color:#909399; }
+  .book-price{ flex:1 1 auto; text-align:right; }
+  .book-vol{ flex:0 0 34px; text-align:right; color:#909399; }
+  .book-row.ask .book-price{ color:#27ae60; }
+  .book-row.bid .book-price{ color:#e74c3c; }
+  .book-mid{ display:flex; align-items:center; justify-content:space-between; border-top:1px dashed #e9ebee; border-bottom:1px dashed #e9ebee; margin:2px 0; padding:1px 0; }
+  .book-last{ font-size:12px; font-weight:700; font-variant-numeric:tabular-nums; }
+  .book-last.up{ color:#e74c3c; } .book-last.down{ color:#27ae60; } .book-last.flat{ color:#303133; }
+  .book-time{ font-size:9px; color:#c0c4cc; }
+  .tick-row{ display:flex; align-items:center; gap:1px; font-size:9px; line-height:11px; font-variant-numeric:tabular-nums; }
+  .tick-time{ flex:0 0 36px; color:#909399; }
+  .tick-price{ flex:1 1 auto; text-align:right; }
+  .tick-price.buy{ color:#e74c3c; } .tick-price.sell{ color:#27ae60; } .tick-price.neutral{ color:#606266; }
+  .tick-vol{ flex:0 0 34px; text-align:right; color:#909399; }
+</style>
+</body>
+</html>

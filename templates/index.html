@@ -190,6 +190,9 @@
       <span class="cb-refresh" title="刷新行情" :class="{spinning:popupRefreshing}" @click="refreshPopup" @mousedown.stop>⟳</span>
     </div>
     <div class="cb-popup-body" v-show="popup.tab==='rt'">
+      <div class="cb-rt-bar">
+        <el-button size="mini" icon="el-icon-picture" @click="saveRtImage">保存分时图片</el-button>
+      </div>
       <div class="cb-block">
         <div class="cb-block-title">可转债实时行情</div>
         <div class="cb-grid">
@@ -238,6 +241,7 @@
         <el-select size="mini" v-model="klineAdjust" @change="changeAdjust" :popper-append-to-body="false" style="width:84px;">
           <el-option v-for="a in ADJUSTS" :key="a.key" :label="a.label" :value="a.key"></el-option>
         </el-select>
+        <el-button size="mini" icon="el-icon-picture" @click="saveKlineImage" style="margin-left:8px;">保存图片</el-button>
       </div>
       <div class="cb-kline-ctrl">
         <el-button size="mini" :disabled="kline.stock.show<=20" @click="adjustKlineAll(-20)">减少</el-button>
@@ -654,14 +658,14 @@ function buildRtOption(data, prevClose, kind){
         axisLabel: { color: function(v){ return v > 0 ? '#e74c3c' : (v < 0 ? '#27ae60' : '#909399'); }, fontSize: 9, formatter: function(v){ return (hasPrev ? fmtPct(v, 2, true) : fmtNum(v, 2)); } } }
     ],
     series: [
-      { name: '价', type: 'line', data: prices, showSymbol: false, smooth: false,
+      { name: '价', type: 'line', data: prices, showSymbol: false, smooth: false, connectNulls: true,
         lineStyle: { width: 1.2, color: color },
         areaStyle: { color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
           { offset: 0, color: up ? 'rgba(231,76,60,0.25)' : 'rgba(39,174,96,0.25)' },
           { offset: 1, color: 'rgba(255,255,255,0)' } ]) },
         markLine: { silent: true, symbol: 'none', lineStyle: { color: '#c0c4cc', type: 'dashed', width: 1 },
           data: [{ yAxis: prevClose }], label: { formatter: hasPrev ? ('昨收 ' + fmtNum(prevClose, 2)) : '', fontSize: 9, color: '#909399' } } },
-      { name: '均', type: 'line', data: avgs, showSymbol: false, smooth: false, lineStyle: { width: 1, color: '#f5a623' } },
+      { name: '均', type: 'line', data: avgs, showSymbol: false, smooth: false, connectNulls: true, lineStyle: { width: 1, color: '#f5a623' } },
       { name: '量', type: 'bar', xAxisIndex: 1, yAxisIndex: 1, data: vols,
         itemStyle: { color: function(p){ return volColors[p.dataIndex] || upColor; } } }
     ]
@@ -827,11 +831,46 @@ Vue.component('board-rt', {
         const tj = await reqJSON('/market/tick/' + encodeURIComponent(this.code) + '?count=40&ttl=3&_=' + Date.now(), { cache: 'no-store' });
         this.ticks = (tj && tj.data) || [];
       }catch(e){}
+    },
+    async copyCode(){
+      const code = this.code;
+      if(!code) return;
+      const clip = async () => {
+        if(navigator.clipboard && navigator.clipboard.writeText){
+          await navigator.clipboard.writeText(code);
+          return true;
+        }
+        return false;
+      };
+      const legacy = () => {
+        try{
+          const ta = document.createElement('textarea');
+          ta.value = code;
+          ta.setAttribute('readonly', '');
+          ta.style.position = 'fixed';
+          ta.style.top = '-1000px';
+          ta.style.opacity = '0';
+          document.body.appendChild(ta);
+          ta.select();
+          ta.setSelectionRange(0, ta.value.length);
+          const ok = document.execCommand('copy');
+          document.body.removeChild(ta);
+          return ok;
+        }catch(e){ return false; }
+      };
+      let ok = false;
+      try{ ok = await clip(); }catch(e){ ok = false; }
+      if(!ok) ok = legacy();
+      if(ok){
+        if(this.$message && this.$message.success) this.$message.success('已复制代码：' + code);
+      } else {
+        if(this.$message && this.$message.warning) this.$message.warning('复制失败，代码：' + code);
+      }
     }
   },
   template:
     '<div class="board-rt">' +
-      '<div class="board-rt-chart" ref="chart"></div>' +
+      '<div class="board-rt-chart" ref="chart" title="点击复制代码" @click="copyCode"></div>' +
       '<div class="board-rt-side" v-show="showSide">' +
         '<div class="board-rt-book" v-show="showBook">' +
           '<div class="book-head">五档买卖盘</div>' +
@@ -1174,6 +1213,39 @@ new Vue({
       }, true);
       chart.resize();
     },
+    saveChartImage(chart, filename){
+      if(!chart){ if(this.$message) this.$message({type:'warning', message:'图表尚未渲染，暂无可保存图片'}); return; }
+      try{
+        const url = chart.getDataURL({ type: 'png', pixelRatio: 2, backgroundColor: '#fff' });
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename || ('chart_' + Date.now() + '.png');
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        if(this.$message) this.$message({type:'success', message:'图片已保存：' + a.download});
+      }catch(e){
+        if(this.$message) this.$message({type:'error', message:'导出图片失败：' + ((e && e.message) || e)});
+      }
+    },
+    saveKlineImage(){
+      const row = this.popup.row || {};
+      const tag = (this.klinePeriodLabel || 'K线') + (this.klineAdjustLabel ? '_' + this.klineAdjustLabel : '');
+      const ts = this._imgStamp();
+      if(this._stockChart) this.saveChartImage(this._stockChart, (row.stock_code || 'stock') + '_' + tag + '_' + ts + '.png');
+      if(this._bondChart) this.saveChartImage(this._bondChart, (row.bond_code || 'bond') + '_' + tag + '_' + ts + '.png');
+    },
+    saveRtImage(){
+      const row = this.popup.row || {};
+      const ts = this._imgStamp();
+      if(this._rtStockChart) this.saveChartImage(this._rtStockChart, (row.stock_code || 'stock') + '_分时_' + ts + '.png');
+      if(this._rtBondChart) this.saveChartImage(this._rtBondChart, (row.bond_code || 'bond') + '_分时_' + ts + '.png');
+    },
+    _imgStamp(){
+      const d = new Date();
+      const p = (n) => ('0' + n).slice(-2);
+      return '' + d.getFullYear() + p(d.getMonth() + 1) + p(d.getDate()) + '_' + p(d.getHours()) + p(d.getMinutes()) + p(d.getSeconds());
+    },
     async fetchRt(row){
       this.rt = { bond: { data: [], src: '' }, stock: { data: [], src: '' } };
       const fetchOne = async (code) => {
@@ -1216,8 +1288,8 @@ new Vue({
         if(which === 'bond') this._rtBondChart = chart; else this._rtStockChart = chart;
       }
       if(!data || !data.length){ chart.clear(); return; }
-      // 固定时间轴：上午 09:30~11:29 + 下午 13:00~15:00，不含午休(11:30~13:00)
-      // 注意：分钟数据最后一根上午柱为 11:29，不存在 11:30 数据点，故上午止于 11:29
+      // 固定时间轴：上午 09:30~11:30 + 下午 13:00~15:00，不含午休(11:30~13:00)
+      // 实测分钟数据：上午最后一根为 11:30，午后首根为 13:01（无 13:00 / 无 12:xx）；轴对齐到 11:30，折线 connectNulls 跨午休连成无缝
       const session = [];
       const pushRange = (h0, m0, h1, m1) => {
         for(let h = h0; h <= h1; h++){
@@ -1227,7 +1299,7 @@ new Vue({
           }
         }
       };
-      pushRange(9, 30, 11, 29);
+      pushRange(9, 30, 11, 30);
       pushRange(13, 0, 15, 0);
       const idxOf = {};
       session.forEach((t, i) => { idxOf[t] = i; });
@@ -1282,8 +1354,8 @@ new Vue({
         xAxis: { type: 'category', data: session, boundaryGap: false, axisLabel: { color: '#909399', fontSize: 10, interval: Math.max(0, Math.floor(session.length / 6)) }, axisLine: { lineStyle: { color: '#dcdfe6' } } },
         yAxis: yAxis,
         series: [
-          { name: '价格', type: 'line', yAxisIndex: 0, data: prices, showSymbol: false, smooth: true, lineStyle: { width: 1.5, color: c }, areaStyle: { color: 'rgba(64,158,255,0.08)' }, markLine: markLine },
-          { name: '均价', type: 'line', yAxisIndex: 0, data: avgs, showSymbol: false, smooth: true, lineStyle: { width: 1, color: '#f5a623' } }
+          { name: '价格', type: 'line', yAxisIndex: 0, data: prices, showSymbol: false, smooth: true, connectNulls: true, lineStyle: { width: 1.5, color: c }, areaStyle: { color: 'rgba(64,158,255,0.08)' }, markLine: markLine },
+          { name: '均价', type: 'line', yAxisIndex: 0, data: avgs, showSymbol: false, smooth: true, connectNulls: true, lineStyle: { width: 1, color: '#f5a623' } }
         ]
       }, true);
       chart.resize();
@@ -1386,11 +1458,44 @@ new Vue({
       const ms=Number(this.refreshInterval)||0;
       if(ms>0){
         this.$message({type:'info',message:`已设置自动刷新：${ms/1000}秒/次`,duration:1200});
-        // 看盘模式下不轮询全量 /cb/full：各面板已通过 /market/* 自取实时行情，
-        // 全量表仅在进入看盘时加载一次，避免每 3s 重传整张可转债宇宙并触发全局响应式更新
-        this.rtTimerId=setInterval(()=>{ if(!this.boardMode) this.load(false, true); }, ms);
+        // 看盘模式：仅用 code_in 拉取自选股少量代码的实时全指标（避免每 3s 重传整张可转债宇宙），
+        // 合并回 this.rows 使各卡片的 价格/涨跌幅/昨收 等行数据实时刷新；看板模式仍整表轮询。
+        this.rtTimerId=setInterval(()=>{
+          if(this.boardMode) this.boardAutoRefresh();
+          else this.load(false, true);
+        }, ms);
       }else{
         this.$message({type:'info',message:'已切换为手动刷新',duration:1200});
+      }
+    },
+    async boardAutoRefresh(){
+      // 看盘模式轻量刷新：仅按自选股代码拉取实时全指标（后端复用全量缓存并 code_in 过滤，开销极小），
+      // 原地合并回 this.rows，使各卡片的 价格/涨跌幅/昨收/涨跌色 实时刷新；不重排、不触发整表 loading。
+      if(this.rtInFlight) return;
+      if(!this.watchCodes || !this.watchCodes.length) return;
+      this.rtInFlight=true;
+      try{
+        const usp=new URLSearchParams();
+        usp.set('code_in', this.watchCodes.join(','));
+        const url='/cb/full?'+usp.toString()+'&_='+Date.now();
+        const res=await fetch(url, {cache:'no-store'});
+        const js=await res.json();
+        const data=js.data||[];
+        if(data.length){
+          const byCode={};
+          data.forEach(r=>{ const c=(r.bond_code||'').toString(); if(c) byCode[c]=r; });
+          for(let i=0;i<this.rows.length;i++){
+            const c=(this.rows[i].bond_code||'').toString();
+            if(byCode[c]){ Object.assign(this.rows[i], byCode[c]); }
+          }
+        }
+        const d=new Date();
+        const pad=n=>String(n).padStart(2,'0');
+        this.updatedAt=`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+      }catch(e){
+        // 看盘模式静默失败，不打扰用户
+      }finally{
+        this.rtInFlight=false;
       }
     },
     async load(force, auto){
@@ -1671,6 +1776,7 @@ new Vue({
   .cb-v{font-weight:600;font-variant-numeric:tabular-nums;}
   .cb-chart-title{font-weight:600;margin:6px 0 2px;color:#606266;}
   .cb-kline-period{display:flex;align-items:center;gap:8px;margin:2px 0 4px;}
+  .cb-rt-bar{margin:6px 0 2px;}
   .cb-kline-period-label{font-size:12px;color:#909399;}
   .cb-kline-ctrl{display:flex;align-items:center;gap:10px;margin:2px 0 6px;}
   .cb-kline-cnt{font-size:12px;color:#606266;font-variant-numeric:tabular-nums;}
@@ -1725,7 +1831,7 @@ new Vue({
   .board-panel-chart{ padding:10px 10px 6px; }
   .board-kline{ width:100%; height:300px; }
   .board-rt{ width:100%; height:330px; display:flex; flex-direction:row; gap:6px; }
-  .board-rt-chart{ flex:3 1 0; min-width:0; height:100%; }
+  .board-rt-chart{ flex:3 1 0; min-width:0; height:100%; cursor:pointer; }
   .board-rt-side{ flex:1 1 0; min-width:0; height:100%; display:flex; flex-direction:column; gap:4px; }
   .board-rt-book, .board-rt-ticks{ min-width:0; border:1px solid #eef0f3; border-radius:6px; padding:1px 3px; overflow:hidden; }
   .board-rt-book{ flex:0 0 auto; }

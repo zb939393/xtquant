@@ -3,11 +3,13 @@
 import logging, os, signal
 from datetime import datetime
 from flask import Flask, jsonify, render_template
+from waitress import serve
 
 from config import Config
 from api.market_bp import market_bp
 from api.trade_bp  import trade_bp
 from api.cb_bp     import cb_bp
+from api.option_bp import option_bp
 
 
 def create_app():
@@ -30,11 +32,22 @@ def create_app():
     app.register_blueprint(market_bp, url_prefix="/market")
     app.register_blueprint(trade_bp,  url_prefix="/trade")
     app.register_blueprint(cb_bp,     url_prefix="/cb")
+    app.register_blueprint(option_bp, url_prefix="/option")
 
-    # 预热 /cb/full 顶层缓存，避免首屏阻塞（后台线程，启动即算）
+    # 预热顶层缓存，避免首屏阻塞。
+    #  /cb/full：后台线程预热，不阻塞启动；
+    #  /option/full：后台线程预热，并启动期有限等待（最多 30s）让首份全量数据就绪，
+    #               确保期权看板首屏无感（首屏冷加载已由并发化+缓存压缩到约 9s）。
     try:
         import threading as _th
         _th.Thread(target=cb_bp._warm_full_cache, daemon=True).start()
+        _opt_warm = _th.Thread(target=option_bp._warm_full_cache, daemon=True)
+        _opt_warm.start()
+        _opt_warm.join(timeout=30)
+        if _opt_warm.is_alive():
+            logging.getLogger(__name__).warning(
+                "[option/full] 预热未在 30s 内完成，继续后台进行（首屏可能短暂变慢）"
+            )
     except Exception:
         pass
 
@@ -49,6 +62,10 @@ def create_app():
             "service": "xtquant-flask",
             "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         })
+
+    @app.route("/favicon.ico")
+    def favicon():
+        return "", 204
 
     @app.route("/api")
     def endpoints():
@@ -71,6 +88,9 @@ def create_app():
                 "GET  /cb/full",
                 "GET  /cb/full/<code>",
                 "GET  /cb/full_stats",
+                "GET  /option/full",
+                "GET  /option/full/<code>",
+                "GET  /option/full/stats",
             ],
         })
 
@@ -89,24 +109,26 @@ def create_app():
         # 自选股看盘：复用同一前端模板，由前端根据路径进入看盘模式（每行4面板）
         return render_template("index.html")
 
+    @app.route("/option/board")
+    def option_board():
+        # 期权监控看板：独立前端模板（复用同一 Vue2/Element-UI/ECharts 技术栈）
+        return render_template("option.html")
+
     return app
 
 
 if __name__ == "__main__":
     app = create_app()
 
-    # 关键修复：改用多线程 WSGI 服务（werkzeug），彻底解决阻塞请求串行化问题。
-    # 原方案用 tornado.wsgi.WSGIContainer，所有请求在单个 IOLoop 线程中串行执行；
-    # 而 /market/kline、/market/quote 等接口会「同步阻塞」调用 PyTDX
-    # （冷缓存约 12~23s），一个慢请求会冻结全部请求，这正是
-    # 「日K 正常、切换其它周期卡死/超时」的根因。
-    # ak_service 的 PyTDX 连接基于 threading.local 按线程隔离（_PYTDX_POOL），
-    # 因此多线程并发调用是安全且预期内的：每个阻塞请求在独立线程执行，互不冻结。
+    # 关键修复：改用生产级 WSGI 服务 waitress（替代 Flask 内置的 werkzeug 开发服务器，
+    # 后者每次启动都会打印 "This is a development server" 警告）。waitress 天然多线程，
+    # 每个请求在独立线程执行，能像原 threaded=True 一样撑住并发的 PyTDX 阻塞调用，
+    # 且 ak_service 的 PyTDX 连接基于 threading.local 按线程隔离（_PYTDX_POOL），并发安全。
     app.config["TEMPLATES_AUTO_RELOAD"] = True  # 编辑 index.html 后热重载
 
     logging.getLogger(__name__).info(
-        "多线程 WSGI 服务启动: http://%s:%d (DEBUG=%s)",
-        Config.HOST, Config.PORT, Config.DEBUG,
+        "生产级 WSGI(waitress)服务启动: http://%s:%d (DEBUG=%s, threads=%d)",
+        Config.HOST, Config.PORT, Config.DEBUG, 32,
     )
-    print("Threaded WSGI serving Flask at http://%s:%d" % (Config.HOST, Config.PORT))
-    app.run(host=Config.HOST, port=Config.PORT, threaded=True, use_reloader=False, debug=False)
+    print("waitress serving Flask at http://%s:%d" % (Config.HOST, Config.PORT))
+    serve(app, host=Config.HOST, port=Config.PORT, threads=32)

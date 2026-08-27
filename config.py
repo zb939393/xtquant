@@ -33,6 +33,19 @@ class Config:
     # ============== akshare ==============
     AK_CACHE_TTL = 300  # 秒
 
+    # ============== 期权监控模块 ==============
+    # 合约列表（静态信息：标的/行权价/到期日/类型）缓存 TTL（秒）。
+    # 期权合约日内不会变动（仅在每月 rollover 时调整），采用「日内长缓存 + 每日盘前失效」：
+    # 此处 TTL 仅作为磁盘缓存不被判定「过期」的兜底（须 ≥ 一个自然日），真正的「跨天自动重抓」
+    # 由 core/option_service.option_contracts 内的日期闸门控制（自然日变化即失效）。
+    OPTION_STATIC_TTL = 86400
+    # 实时行情 + 指标计算 缓存 TTL（秒）—— 前端 3~5s 轮询，10s 刷新足够平滑
+    OPTION_RT_TTL = 10
+    # Black-Scholes 无风险利率（年化）
+    OPTION_RISK_FREE_RATE = 0.02
+    # Black-Scholes 默认波动率（当年化隐波无法反解时回退，例如深度实值无时间价值）
+    OPTION_VOL_DEFAULT = 0.25
+
     # ============== PyTDX 实时行情抓取 ==============
     # 并行抓取线程上限（线程级连接池：每线程一个持久连接）
     RT_WORKERS = 48

@@ -2370,7 +2370,7 @@ def _cb_merge_rt_qmt_bridge(df, overwrite_if_filled=True):
     # ============== 正股合并 ==============
     if "stock_code" in df.columns:
         for col in ["stock_chg_pct","stock_amplitude","stock_price","stock_high","stock_low","stock_open",
-                    "stock_volume_zhang","stock_amount_yuan"]:
+                    "stock_pre_close_rt","stock_volume_zhang","stock_amount_yuan"]:
             df = _ensure_float_col(df, col)
         fills_s = set()
         sc_arr = df["stock_code"].astype(str).values
@@ -2477,7 +2477,7 @@ def _cb_merge_rt_pytdx(df: pd.DataFrame, rt=None) -> pd.DataFrame:
     if "bond_code" in df.columns:
         # 1) 预先确保所有目标列 dtype float（含成交量/成交额）
         for col in ["bond_chg_pct","amplitude_pct","bond_price","high","low","open",
-                    "daily_amplitude_calc","volume_zhang","amount_yuan"]:
+                    "pre_close_rt","daily_amplitude_calc","volume_zhang","amount_yuan"]:
             df = _ensure_float_col(df, col)
         # 2) 逐行赋值
         fills_b = set()
@@ -2495,6 +2495,7 @@ def _cb_merge_rt_pytdx(df: pd.DataFrame, rt=None) -> pd.DataFrame:
             if _set_if_blank(df, idx, "open",            p.get("open"),            overwrite_if_numeric_filled=True): fills_b.add("open")
             if _set_if_blank(df, idx, "volume_zhang",    p.get("vol"),             overwrite_if_numeric_filled=True): fills_b.add("volume_zhang")
             if _set_if_blank(df, idx, "amount_yuan",     p.get("amount"),           overwrite_if_numeric_filled=True): fills_b.add("amount_yuan")
+            if _set_if_blank(df, idx, "pre_close_rt",    p.get("pre_close_rt"),     overwrite_if_numeric_filled=True): fills_b.add("pre_close_rt")
         # 3) 同步 daily_amplitude_calc
         if "daily_amplitude_calc" in df.columns and "amplitude_pct" in df.columns:
             amp_vals = df["amplitude_pct"].values
@@ -2530,6 +2531,7 @@ def _cb_merge_rt_pytdx(df: pd.DataFrame, rt=None) -> pd.DataFrame:
             if _set_if_blank(df, idx, "stock_open",          p.get("stock_open"),      overwrite_if_numeric_filled=True): fills_s.add("stock_open")
             if _set_if_blank(df, idx, "stock_volume_zhang",  p.get("stock_vol"),       overwrite_if_numeric_filled=True): fills_s.add("stock_volume_zhang")
             if _set_if_blank(df, idx, "stock_amount_yuan",   p.get("stock_amount"),    overwrite_if_numeric_filled=True): fills_s.add("stock_amount_yuan")
+            if _set_if_blank(df, idx, "stock_pre_close_rt",  p.get("stock_pre_close_rt"), overwrite_if_numeric_filled=True): fills_s.add("stock_pre_close_rt")
         log.info("[pytdx rt 正股] 合并列: %s", sorted(fills_s))
     return df
 
