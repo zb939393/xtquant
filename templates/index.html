@@ -406,6 +406,14 @@ function defaultVisibleProps(){ return COLUMNS.map(c=>c.prop).filter(p=>!DEFAULT
 
 function num(v){ if(v===null||v===undefined||v==='') return NaN; const n=parseFloat(v); return isNaN(n)?NaN:n; }
 function fmtNum(v,d=2){ const n=num(v); return isNaN(n)?'--':(n.toFixed(d)); }
+// 通用 tooltip 数值格式化：数组(如K线OHLC)逐项处理，数字保留3位小数(兼容转债)并去除尾部0
+function fmtTip(v){
+  if(v == null) return '--';
+  if(Array.isArray(v)) return v.map(fmtTip).join('  ');
+  const n = Number(v);
+  if(!isFinite(n)) return String(v);
+  return parseFloat(n.toFixed(3)).toString();
+}
 function fmtPct(v,d=2,signed=false){ const n=num(v); if(isNaN(n)) return '--'; const s=n.toFixed(d)+'%'; return signed&&n>0?('+'+s):s; }
 function fmtWan(v,d=0){ const n=num(v); if(isNaN(n)) return '--'; if(Math.abs(n)>=1e8) return (n/1e8).toFixed(2)+'亿'; if(Math.abs(n)>=1e4) return (n/1e4).toFixed(d)+'万'; return n.toFixed(d); }
 
@@ -1402,7 +1410,7 @@ new Vue({
         animation: false,
         legend: { data: ['BOLL', 'UB', 'LB'], top: 2, right: 8, itemWidth: 14, itemHeight: 8, textStyle: { fontSize: 10, color: '#909399' } },
         grid: [{ left: 52, right: 14, top: 22, height: '52%' }, { left: 52, right: 14, top: '76%', height: '18%' }],
-        tooltip: { trigger: 'axis', axisPointer: { type: 'cross' } },
+        tooltip: { trigger: 'axis', axisPointer: { type: 'cross' }, valueFormatter: fmtTip },
         xAxis: [
           { type: 'category', data: dates, axisLabel: { show: false }, axisLine: { lineStyle: { color: '#dcdfe6' } } },
           { type: 'category', gridIndex: 1, data: dates, axisLabel: { show: false } }
@@ -1558,7 +1566,7 @@ new Vue({
         animation: false,
         grid: { left: 56, right: hasPrev ? 50 : 14, top: 20, bottom: 22 },
         legend: { data: ['价格', '均价'], top: 0, right: 6, itemWidth: 14, itemHeight: 8, textStyle: { fontSize: 10, color: '#909399' } },
-        tooltip: { trigger: 'axis' },
+        tooltip: { trigger: 'axis', valueFormatter: fmtTip },
         xAxis: { type: 'category', data: session, boundaryGap: false, axisLabel: { color: '#909399', fontSize: 10, interval: Math.max(0, Math.floor(session.length / 6)) }, axisLine: { lineStyle: { color: '#dcdfe6' } } },
         yAxis: yAxis,
         series: [

@@ -39,6 +39,14 @@
 </div>
 
 <script>
+// ===== 通用 tooltip 数值格式化（保留2位小数，去除尾部0）=====
+function fmtTip(v){
+  if(v == null) return '--';
+  if(Array.isArray(v)) return v.map(fmtTip).join('  ');
+  const n = Number(v);
+  if(!isFinite(n)) return String(v);
+  return parseFloat(n.toFixed(2)).toString();
+}
 // ===== 全局状态 =====
 var onTop = true;
 var timer = null;
@@ -121,7 +129,7 @@ function makechart_s(data){
   var option = {
     animation: false,
     title: { text: "期指行情", textStyle: { fontSize: 12 } },
-    tooltip: { trigger: "axis" },
+    tooltip: { trigger: "axis", valueFormatter: fmtTip },
     legend: { data: ["ih", "if", "ic", "im"] },
     grid: { left: 50, right: 16, top: 36, bottom: 30 },
     xAxis: [{
@@ -267,7 +275,7 @@ function makechart(chartdata){
   var option = {
     animation: false,
     title: { text: "资金", textStyle: { fontSize: 12 } },
-    tooltip: { trigger: "axis" },
+    tooltip: { trigger: "axis", valueFormatter: fmtTip },
     legend: { data: ['ih', 'if', 'ic', 'im'], textStyle: { fontSize: 9 } },
     grid: { left: 56, right: 16, top: 36, bottom: 30 },
     xAxis: [{

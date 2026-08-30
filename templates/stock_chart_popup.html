@@ -116,6 +116,14 @@ function fmtNum(v,d=2){ const n=num(v); return isNaN(n)?'--':(n.toFixed(d)); }
 function fmtPct(v,d=2,signed=false){ const n=num(v); if(isNaN(n)) return '--'; const s=n.toFixed(d)+'%'; return signed&&n>0?('+'+s):s; }
 function fmtWan(v,d=0){ const n=num(v); if(isNaN(n)) return '--'; if(Math.abs(n)>=1e8) return (n/1e8).toFixed(2)+'亿'; if(Math.abs(n)>=1e4) return (n/1e4).toFixed(d)+'万'; return n.toFixed(d); }
 function fmtPx(v){ const n=num(v); if(isNaN(n)) return '--'; return (Math.abs(n) < 100 ? n.toFixed(3) : n.toFixed(2)); }
+// 通用 tooltip 数值格式化：数组(如K线OHLC)逐项处理；价格按 fmtPx(转债<100取3位)，去尾部0，整数直显
+function fmtTip(v){
+  if(v == null) return '--';
+  if(Array.isArray(v)) return v.map(fmtTip).join('  ');
+  const n = Number(v);
+  if(!isFinite(n)) return String(v);
+  return parseFloat(fmtPx(n)).toString();
+}
 function fmtAvgVol(v){ const n=num(v); if(isNaN(n)) return '--'; if(Math.abs(n)>=1e4) return fmtWan(n); if(n>=10) return Math.round(n).toString(); return n.toFixed(1); }
 function rtOpenMinutes(t){ if(!t || typeof t !== 'string') return 0; const p = t.split(':'); if(p.length < 2) return 0; const h = parseInt(p[0], 10), m = parseInt(p[1], 10); if(isNaN(h) || isNaN(m)) return 0; if(h < 9 || (h === 9 && m < 30)) return 1; if(h < 11 || (h === 11 && m <= 30)) return Math.max(1, (h - 9) * 60 + (m - 30)); if(h < 13) return 120; return Math.max(1, 120 + (h - 13) * 60 + m); }
 function reqJSON(url, opts){
@@ -331,7 +339,7 @@ function buildMiniKlineOption(data, full, indicator, indVals){
       { left: 44, right: 8, top: '69%', height: '11%' },
       { left: 44, right: 8, top: '81%', height: '17%' }
     ],
-    tooltip: { trigger: 'axis', axisPointer: { type: 'cross' } },
+    tooltip: { trigger: 'axis', axisPointer: { type: 'cross' }, valueFormatter: fmtTip },
     xAxis: [
       { type: 'category', data: dates, boundaryGap: true, axisLabel: { show: false }, axisLine: { lineStyle: { color: '#dcdfe6' } }, axisPointer: { label: { show: false } } },
       { type: 'category', gridIndex: 1, data: dates, axisLabel: { show: false } },

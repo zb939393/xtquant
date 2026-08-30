@@ -135,7 +135,7 @@ new Vue({
           axisPointer: { type: 'shadow' },
           formatter: function(params){
             const p = params[0];
-            return p.name + '　' + p.value + ' 家';
+            return p.name + '　' + Math.round(p.value) + ' 家';
           },
         },
         xAxis: {

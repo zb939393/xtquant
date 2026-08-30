@@ -40,6 +40,7 @@
   .board-chg-pct{ margin-left:1px; }
   .board-panel{ padding:10px 14px; }
   .board-rt{ width:100%; height:360px; display:flex; flex-direction:row; gap:6px; position:relative; }
+  .board-kline-cell{ position:relative; width:100%; height:360px; }
   .board-rt-chart{ flex:3 1 0; min-width:0; height:100%; cursor:pointer; position:relative; }
   .board-rt-side{ flex:1 1 0; min-width:0; height:100%; display:flex; flex-direction:column; gap:4px; }
   .board-rt-book, .board-rt-ticks{ min-width:0; border:1px solid #eef0f3; border-radius:6px; padding:1px 3px; overflow:hidden; }
@@ -131,10 +132,41 @@
       <div class="board-view">
         <div class="board-toolbar">
           <span class="board-title">📈 期指看盘</span>
-          <span class="muted">分时图（实时）· 五档盘口 · 逐笔成交（数据来自扩展行情 pytdx · 中金所 CFFEX）</span>
+          <span class="muted" v-if="!showKline">分时图（实时）· 五档盘口 · 逐笔成交（数据来自扩展行情 pytdx · 中金所 CFFEX）</span>
+          <span class="muted" v-else>K线（[# periodLabel(klinePeriod) #]）· 蜡烛图 + BOLL · 成交量 · [# indicator === 'mfi' ? 'MFI' : (indicator === 'adx' ? 'ADX' : 'ATR') #] 指标</span>
           <span class="board-toolbar-right">
-            <el-switch v-model="showBands" size="mini" active-text="±σ通道" style="margin-right:12px;"></el-switch>
-            <span class="muted">实时刷新：[# refreshInterval ? (refreshInterval/1000) + ' 秒' : '手动' #]</span>
+            <el-switch v-model="showKline" size="mini" active-text="K线" inactive-text="分时" active-color="#409EFF"></el-switch>
+            <template v-if="showKline">
+              <el-select v-model="klinePeriod" size="mini" style="width:96px;margin-left:10px;" placeholder="周期">
+                <el-option label="1 分钟" value="1min"></el-option>
+                <el-option label="5 分钟" value="5min"></el-option>
+                <el-option label="30 分钟" value="30min"></el-option>
+                <el-option label="60 分钟" value="60min"></el-option>
+                <el-option label="日线" value="day"></el-option>
+                <el-option label="周线" value="week"></el-option>
+                <el-option label="月线" value="month"></el-option>
+              </el-select>
+              <el-select v-model="klineCount" size="mini" style="width:96px;margin-left:10px;" placeholder="K线数">
+                <el-option label="60" :value="60"></el-option>
+                <el-option label="90" :value="90"></el-option>
+                <el-option label="120" :value="120"></el-option>
+                <el-option label="150" :value="150"></el-option>
+                <el-option label="180" :value="180"></el-option>
+                <el-option label="240" :value="240"></el-option>
+                <el-option label="300" :value="300"></el-option>
+                <el-option label="400" :value="400"></el-option>
+                <el-option label="500" :value="500"></el-option>
+                <el-option label="600" :value="600"></el-option>
+                <el-option label="700" :value="700"></el-option>
+              </el-select>
+              <el-select v-model="indicator" size="mini" style="width:108px;margin-left:10px;" placeholder="指标">
+                <el-option label="MFI" value="mfi"></el-option>
+                <el-option label="ADX" value="adx"></el-option>
+                <el-option label="ATR" value="atr"></el-option>
+              </el-select>
+            </template>
+            <el-switch v-else v-model="showBands" size="mini" active-text="±σ通道" style="margin-left:12px;"></el-switch>
+            <span class="muted" style="margin-left:12px;">实时刷新：[# refreshInterval ? (refreshInterval/1000) + ' 秒' : '手动' #]</span>
           </span>
         </div>
         <div class="board-rows" ref="boardRows">
@@ -148,7 +180,10 @@
                 <span class="board-chg-pct" :class="updownCls(row.change_pct)">[# fmtPct(row.change_pct, 2, true) #]</span>
               </div>
               <div class="board-panel board-panel-chart">
-                <fut-board-rt :code="row.code" :prev-close="num(row.prev_close)" :price="num(row.price)" :chg-pct="num(row.change_pct)" kind="futures" :show-book="showBook" :show-ticks="showTicks" :show-bands="showBands"></fut-board-rt>
+                <fut-board-rt v-if="!showKline" :code="row.code" :prev-close="num(row.prev_close)" :price="num(row.price)" :chg-pct="num(row.change_pct)" kind="futures" :show-book="showBook" :show-ticks="showTicks" :show-bands="showBands"></fut-board-rt>
+                <div v-else class="board-kline-cell">
+                  <fut-kline :code="row.code" :period="klinePeriod" :count="klineCount" :indicator="indicator" kind="futures"></fut-kline>
+                </div>
               </div>
             </div>
           </div>
@@ -270,6 +305,14 @@
 
 function num(v){ if(v===null||v===undefined||v==='') return NaN; const n=parseFloat(v); return isNaN(n)?NaN:n; }
 function fmtNum(v,d=2){ const n=num(v); return isNaN(n)?'--':(n.toFixed(d)); }
+// 通用 tooltip 数值格式化：数组(如K线OHLC)逐项处理，数字保留2位小数并去除尾部0
+function fmtTip(v){
+  if(v == null) return '--';
+  if(Array.isArray(v)) return v.map(fmtTip).join('  ');
+  const n = Number(v);
+  if(!isFinite(n)) return String(v);
+  return parseFloat(n.toFixed(2)).toString();
+}
 function fmtPct(v,d=2,signed=false){ const n=num(v); if(isNaN(n)) return '--'; const s=n.toFixed(d)+'%'; return signed&&n>0?('+'+s):s; }
 function fmtWan(v,d=0){ const n=num(v); if(isNaN(n)) return '--'; if(Math.abs(n)>=1e8) return (n/1e8).toFixed(2)+'亿'; if(Math.abs(n)>=1e4) return (n/1e4).toFixed(d)+'万'; return n.toFixed(d); }
 function fmtAvgVol(v){ const n=num(v); if(isNaN(n)) return '--'; if(Math.abs(n)>=1e4) return fmtWan(n); if(n>=10) return Math.round(n).toString(); return n.toFixed(1); }
@@ -478,7 +521,7 @@ function buildMiniKlineOption(data, full, indicator){
       { left: 44, right: 8, top: '69%', height: '11%' },
       { left: 44, right: 8, top: '81%', height: '17%' }
     ],
-    tooltip: { trigger: 'axis', axisPointer: { type: 'cross' } },
+    tooltip: { trigger: 'axis', axisPointer: { type: 'cross' }, valueFormatter: fmtTip },
     xAxis: [
       { type: 'category', data: dates, boundaryGap: true, axisLabel: { show: false }, axisLine: { lineStyle: { color: '#dcdfe6' } }, axisPointer: { label: { show: false } } },
       { type: 'category', gridIndex: 1, data: dates, axisLabel: { show: false } },
@@ -1049,10 +1092,12 @@ new Vue({
       showBook: true,
       showTicks: true,
       showBands: true,
+      showKline: false,
+      klinePeriod: 'day',
       activeTab: 'rt',
       indicator: 'mfi',
       indicatorVals: {},
-      klineCount: 120,
+      klineCount: 240,
       popupLaunching: false,
       compTimeframes: [
         { key: 'rt', label: '分时行情（不带盘口）' },
@@ -1089,6 +1134,9 @@ new Vue({
     },
     onSideChange() {
       // 仅切换可见性；各 fut-board-rt 组件会监听 showBook/showTicks 并重绘。
+    },
+    periodLabel(p) {
+      return { '1min': '1分钟', '5min': '5分钟', '30min': '30分钟', '60min': '60分钟', day: '日线', week: '周线', month: '月线' }[p] || p;
     },
     launchPopup() {
       this.popupLaunching = true;

@@ -109,17 +109,22 @@ def _safe_query(fn):
 
 # ExHq 历史K线周期 -> get_instrument_bars category 映射（pytdx.params.TDXParams.KLINE_TYPE_*）
 #   1min = KLINE_TYPE_1MIN(8), 5min = KLINE_TYPE_5MIN(0), 30min = KLINE_TYPE_30MIN(2)
+#   60min = KLINE_TYPE_1HOUR(3), day = KLINE_TYPE_DAILY(4), week = KLINE_TYPE_WEEKLY(5), month = KLINE_TYPE_MONTHLY(6)
 _FUT_BARS_CATEGORY = {
     "1min": 8,
     "5min": 0,
     "30min": 2,
+    "60min": 3,
+    "day": 4,
+    "week": 5,
+    "month": 6,
 }
 
 
 def fut_bars(code, category="1min", count=240):
     """期指历史K线：ExHq get_instrument_bars（category 在前，market/code 在后）。
 
-    category 支持 '1min' / '5min' / '30min'（默认 1min）。
+    category 支持 '1min' / '5min' / '30min' / '60min' / 'day' / 'week' / 'month'（默认 1min）。
     返回 [{'date','open','high','low','close','vol','position'}, ...}：
       - OHLC 单位元；vol=成交量(手)；position=持仓(手)。
       - 原始字段 price(恒为0) / amount(异常值) 为冗余/错误字段，已舍弃。
