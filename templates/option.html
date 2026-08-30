@@ -196,6 +196,7 @@
       <span class="board-title">📈 自选股看盘</span>
       <span class="muted">每 4 个自选期权一行：分时图（实时）· 五档盘口 · 逐笔成交（数据来自扩展行情 pytdx）</span>
       <span class="board-toolbar-right">
+        <el-switch v-model="showBands" size="mini" active-text="±σ通道" style="margin-right:12px;"></el-switch>
         <el-button size="mini" icon="el-icon-refresh" :loading="loadingBoard" @click="reload">刷新行情</el-button>
         <span class="muted">共 [# boardRows.length #] 个自选<span v-if="boardExpiredCount">（[# boardExpiredCount #] 个已到期/无行情）</span> · 实时刷新：[# refreshInterval/1000 #] 秒</span>
       </span>
@@ -227,7 +228,7 @@
               </template>
               <span v-else class="board-chg-pct muted">无行情</span>
             </div>
-            <opt-board-rt v-if="!row.expired" :code="row.code" :prev-close="num(row.preclose)" :price="num(row.last)" :chg-pct="num(row.change_pct)" :delta="num(row.delta)" kind="option" :show-book="boardSide[row.code] !== false" :show-ticks="boardSide[row.code] !== false"></opt-board-rt>
+            <opt-board-rt v-if="!row.expired" :code="row.code" :prev-close="num(row.preclose)" :price="num(row.last)" :chg-pct="num(row.change_pct)" :delta="num(row.delta)" kind="option" :show-book="boardSide[row.code] !== false" :show-ticks="boardSide[row.code] !== false" :show-bands="showBands"></opt-board-rt>
             <div v-else class="board-expired-panel muted">该合约已到期/已下市，暂无实时行情</div>
           </div>
         </div>
@@ -423,12 +424,45 @@ function rtMapToSession(session, data){
   });
   return { prices: prices, avgs: avgs, vols: vols };
 }
-function buildRtOption(data, prevClose, kind, avgVolPerMin, delta){
+function buildRtOption(data, prevClose, kind, avgVolPerMin, delta, showBands){
   const session = rtSessionAxis();
   const mapped = rtMapToSession(session, data);
   const prices = mapped.prices, avgs = mapped.avgs, vols = mapped.vols;
   let last = 0;
   for(let i = prices.length - 1; i >= 0; i--){ if(prices[i] != null && isFinite(prices[i])){ last = prices[i]; break; } }
+  // VWAP 偏离度：累计加权均价偏离 = (价 - VWAP) / VWAP * 100%
+  const vwapDev = new Array(prices.length).fill(null);
+  let _cv = 0, _cvp = 0;
+  for(let i = 0; i < prices.length; i++){
+    const p = prices[i], v = vols[i];
+    if(p != null && isFinite(p) && v != null && isFinite(v) && v > 0){
+      _cv += p * v; _cvp += v;
+      if(_cvp > 0){ const vw = _cv / _cvp; vwapDev[i] = (p - vw) / vw * 100; }
+    }
+  }
+  let lastDev = null;
+  for(let i = vwapDev.length - 1; i >= 0; i--){ if(vwapDev[i] != null && isFinite(vwapDev[i])){ lastDev = vwapDev[i]; break; } }
+  // 标准差通道：以 VWAP(均线 avgs) 为中轴，±1σ / ±2σ 通道带
+  let _sigma = 0;
+  {
+    let _s = 0, _n = 0;
+    for(let i = 0; i < prices.length; i++){
+      const p = prices[i], a = avgs[i];
+      if(p != null && isFinite(p) && a != null && isFinite(a)){ const d = p - a; _s += d * d; _n++; }
+    }
+    _sigma = _n > 0 ? Math.sqrt(_s / _n) : 0;
+  }
+  const up1 = [], dn1 = [], up2 = [], dn2 = [], band1 = [], band2 = [];
+  for(let i = 0; i < prices.length; i++){
+    const a = avgs[i];
+    if(a != null && isFinite(a)){
+      up1.push(a + _sigma); dn1.push(a - _sigma);
+      up2.push(a + 2 * _sigma); dn2.push(a - 2 * _sigma);
+      band1.push(2 * _sigma); band2.push(4 * _sigma);
+    } else {
+      up1.push(null); dn1.push(null); up2.push(null); dn2.push(null); band1.push(null); band2.push(null);
+    }
+  }
   const up = prevClose > 0 ? (last >= prevClose) : true;
   const upColor = '#e74c3c', downColor = '#27ae60';
   const color = kind === 'stock' ? '#409EFF' : (up ? upColor : downColor);
@@ -442,6 +476,11 @@ function buildRtOption(data, prevClose, kind, avgVolPerMin, delta){
   }
   const leftMin = hasPrev ? prevClose * (1 - ext) : undefined;
   const leftMax = hasPrev ? prevClose * (1 + ext) : undefined;
+  let _devMax = ext * 100;
+  vwapDev.forEach(function(d){ if(d != null && isFinite(d)){ const a = Math.abs(d); if(a > _devMax) _devMax = a; } });
+  if(_devMax < 0.01) _devMax = 0.01;
+  const vwapMin = hasPrev ? -_devMax * 1.08 : undefined;
+  const vwapMax = hasPrev ? _devMax * 1.08 : undefined;
   const rightMin = hasPrev ? -ext * 100 : undefined;
   const rightMax = hasPrev ? ext * 100 : undefined;
   const volColors = prices.map(function(p, i){
@@ -451,7 +490,7 @@ function buildRtOption(data, prevClose, kind, avgVolPerMin, delta){
   return {
     backgroundColor: '#fff',
     animation: false,
-    title: { show: avgVolPerMin > 0 || (isFinite(num(delta)) && num(delta) !== 0), text: '均量/分 ' + fmtAvgVol(num(avgVolPerMin)) + (isFinite(num(delta)) && num(delta) !== 0 ? '　Δ ' + fmtNum(num(delta), 2) : ''), left: 4, top: 3, textStyle: { fontSize: 11, color: '#909399', fontWeight: 'normal' } },
+    title: { show: avgVolPerMin > 0 || (lastDev != null && isFinite(lastDev)) || (isFinite(num(delta)) && num(delta) !== 0), text: '均量/分 ' + fmtAvgVol(num(avgVolPerMin)) + (isFinite(num(delta)) && num(delta) !== 0 ? '　Δ ' + fmtNum(num(delta), 4) : '') + (lastDev != null && isFinite(lastDev) ? '　VWAP偏离 ' + fmtPct(num(lastDev), 2, true) : ''), left: 4, top: 3, textStyle: { fontSize: 11, color: '#909399', fontWeight: 'normal' } },
     grid: [{ left: 46, right: hasPrev ? 40 : 12, top: 22, height: '56%' }, { left: 46, right: hasPrev ? 40 : 12, top: '80%', height: '16%' }],
     tooltip: { trigger: 'axis', axisPointer: { type: 'line' }, formatter: function(params){
         if(!params || !params.length) return '';
@@ -462,6 +501,7 @@ function buildRtOption(data, prevClose, kind, avgVolPerMin, delta){
         const avg = rtOpenMinutes(t) > 0 ? (cum / rtOpenMinutes(t)) : null;
         let s = '<div style="font-size:11px;margin-bottom:2px;">' + (t || '') + '</div>';
         s += '价 ' + (p != null ? fmtNum(p, 4) : '--') + '　均 ' + (a != null ? fmtNum(a, 4) : '--') + '<br/>';
+        s += 'VWAP偏离 ' + (vwapDev[idx] != null ? fmtPct(vwapDev[idx], 2, true) : '--') + '<br/>';
         s += '量(累计) ' + (v != null ? fmtWan(v) : '--') + '　均量/分 ' + (avg != null ? fmtAvgVol(avg) : '--');
         return s;
       } },
@@ -472,18 +512,32 @@ function buildRtOption(data, prevClose, kind, avgVolPerMin, delta){
     yAxis: [
       { type: 'value', min: leftMin, max: leftMax, scale: true, splitLine: { lineStyle: { color: '#f2f2f2' } }, axisLabel: { color: '#909399', fontSize: 9 } },
       { gridIndex: 1, type: 'value', scale: true, splitLine: { show: false }, axisLabel: { show: false } },
-      { gridIndex: 0, position: 'right', type: 'value', min: rightMin, max: rightMax, scale: true, splitLine: { show: false },
-        axisLabel: { color: function(v){ return v > 0 ? '#e74c3c' : (v < 0 ? '#27ae60' : '#909399'); }, fontSize: 9, formatter: function(v){ return (hasPrev ? fmtPct(v, 2, true) : fmtNum(v, 2)); } } }
+      { gridIndex: 0, position: 'right', type: 'value', min: rightMin, max: rightMax, scale: true, splitLine: { show: false }, name: '幅度%', nameLocation: 'end', nameGap: 2, nameTextStyle: { fontSize: 9, color: '#909399' },
+        axisLabel: { color: function(v){ return v > 0 ? '#e74c3c' : (v < 0 ? '#27ae60' : '#909399'); }, fontSize: 9, formatter: function(v){ return (hasPrev ? fmtPct(v, 2, true) : fmtNum(v, 2)); } } },
+      { gridIndex: 0, type: 'value', min: vwapMin, max: vwapMax, scale: true, show: false, axisLabel: { show: false }, splitLine: { show: false }, axisPointer: { show: false } }
     ],
     series: [
-      { name: '价', type: 'line', data: prices, showSymbol: false, smooth: false, connectNulls: true,
+      ...(showBands ? [
+      // 标准差通道带（以 VWAP/均线 为中轴）：±2σ 外侧视为极端偏离，回归概率增大
+      { name: 'σ带2下', type: 'line', xAxisIndex: 0, yAxisIndex: 0, data: dn2, showSymbol: false, smooth: false, connectNulls: true, stack: 'b2', lineStyle: { opacity: 0 }, areaStyle: { opacity: 0 }, silent: true, z: 1 },
+      { name: 'σ带2', type: 'line', xAxisIndex: 0, yAxisIndex: 0, data: band2, showSymbol: false, smooth: false, connectNulls: true, stack: 'b2', lineStyle: { opacity: 0 }, areaStyle: { color: 'rgba(230,162,60,0.07)' }, silent: true, z: 1 },
+      { name: 'σ带1下', type: 'line', xAxisIndex: 0, yAxisIndex: 0, data: dn1, showSymbol: false, smooth: false, connectNulls: true, stack: 'b1', lineStyle: { opacity: 0 }, areaStyle: { opacity: 0 }, silent: true, z: 1 },
+      { name: 'σ带1', type: 'line', xAxisIndex: 0, yAxisIndex: 0, data: band1, showSymbol: false, smooth: false, connectNulls: true, stack: 'b1', lineStyle: { opacity: 0 }, areaStyle: { color: 'rgba(64,158,255,0.10)' }, silent: true, z: 1 },
+      { name: '±2σ', type: 'line', xAxisIndex: 0, yAxisIndex: 0, data: up2, showSymbol: false, smooth: false, connectNulls: true, lineStyle: { color: 'rgba(230,162,60,0.6)', width: 1, type: 'dashed' }, silent: true, z: 2 },
+      { name: '∓2σ', type: 'line', xAxisIndex: 0, yAxisIndex: 0, data: dn2, showSymbol: false, smooth: false, connectNulls: true, lineStyle: { color: 'rgba(230,162,60,0.6)', width: 1, type: 'dashed' }, silent: true, z: 2 },
+      { name: '±1σ', type: 'line', xAxisIndex: 0, yAxisIndex: 0, data: up1, showSymbol: false, smooth: false, connectNulls: true, lineStyle: { color: 'rgba(64,158,255,0.5)', width: 1 }, silent: true, z: 2 },
+      { name: '∓1σ', type: 'line', xAxisIndex: 0, yAxisIndex: 0, data: dn1, showSymbol: false, smooth: false, connectNulls: true, lineStyle: { color: 'rgba(64,158,255,0.5)', width: 1 }, silent: true, z: 2 }
+      ] : []),
+      { name: '价', type: 'line', data: prices, showSymbol: false, smooth: false, connectNulls: true, z: 5,
         lineStyle: { width: 1.2, color: color },
         areaStyle: { color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
           { offset: 0, color: up ? 'rgba(231,76,60,0.25)' : 'rgba(39,174,96,0.25)' },
           { offset: 1, color: 'rgba(255,255,255,0)' } ]) },
         markLine: { silent: true, symbol: 'none', lineStyle: { color: '#c0c4cc', type: 'dashed', width: 1 },
-          data: [{ yAxis: prevClose }], label: { formatter: hasPrev ? ('昨收 ' + fmtNum(prevClose, 2)) : '', fontSize: 9, color: '#909399' } } },
-      { name: '均', type: 'line', data: avgs, showSymbol: false, smooth: false, connectNulls: true, lineStyle: { width: 1, color: '#f5a623' } },
+          data: [{ yAxis: prevClose }], label: { formatter: hasPrev ? ('昨收 ' + fmtNum(prevClose, 4)) : '', fontSize: 9, color: '#909399' } } },
+      { name: '均', type: 'line', data: avgs, showSymbol: false, smooth: false, connectNulls: true, z: 4, lineStyle: { width: 1, color: '#f5a623' } },
+      { name: 'VWAP偏离', type: 'bar', xAxisIndex: 0, yAxisIndex: 3, data: vwapDev, connectNulls: true, barWidth: '50%', z: 3,
+        itemStyle: { color: function(p){ const v = p.data; return (v > 0) ? 'rgba(231,76,60,0.35)' : (v < 0 ? 'rgba(39,174,96,0.35)' : 'rgba(192,196,204,0.3)'); } } },
       { name: '量', type: 'bar', xAxisIndex: 1, yAxisIndex: 1, data: vols,
         itemStyle: { color: function(p){ return volColors[p.dataIndex] || upColor; } } }
     ]
@@ -500,6 +554,7 @@ Vue.component('opt-board-rt', {
       kind: { type: String, default: '' },
       showBook: { type: Boolean, default: true },
       showTicks: { type: Boolean, default: true },
+      showBands: { type: Boolean, default: true },
     },
   data(){ return { src: '', quote: {}, ticks: [], avgVolPerMin: 0, _timer: null, _rt: null, _visible: false, _io: null }; },
   computed: {
@@ -517,7 +572,8 @@ Vue.component('opt-board-rt', {
   watch: {
     showBook(){ this._resizeChart(); },
     showTicks(){ this._resizeChart(); },
-    showSide(){ this._resizeChart(); }
+    showSide(){ this._resizeChart(); },
+    showBands(){ this._redraw(); }
   },
   mounted(){
     this._setupIO();
@@ -539,7 +595,7 @@ Vue.component('opt-board-rt', {
   },
   methods: {
     _setupIO(){
-      const start = () => { if(!this._timer){ this._timer = setInterval(() => this._refresh(), 10000); this._refresh(); } };
+      const start = () => { if(!this._timer){ this._timer = setInterval(() => this._refresh(), 3000); this._refresh(); } };
       const stop = () => { if(this._timer){ clearInterval(this._timer); this._timer = null; } };
       if(typeof IntersectionObserver === 'undefined'){ start(); return; }
       this._io = new IntersectionObserver((entries) => {
@@ -577,7 +633,7 @@ Vue.component('opt-board-rt', {
     },
     async _drawChart(){
       try{
-        const js = await reqJSON('/option/exquote/minute/' + encodeURIComponent(this.code) + '?ttl=30&_=' + Date.now(), { cache: 'no-store' });
+        const js = await reqJSON('/option/exquote/minute/' + encodeURIComponent(this.code) + '?ttl=10&_=' + Date.now(), { cache: 'no-store' });
         const data = (js && js.data) || [];
         this.src = (js && js.src) || (js && js.ok ? 'ok' : '');
         if(!data.length){ if(this._chart){ try{ this._chart.clear(); }catch(_){} } return; }
@@ -615,7 +671,7 @@ Vue.component('opt-board-rt', {
     _redraw(){
       if(!this._chart || !this._rt) return;
       const pc = this._calcPrevClose();
-      this._chart.setOption(buildRtOption(this._rt, pc, this.kind, this.avgVolPerMin, this.delta), true);
+      this._chart.setOption(buildRtOption(this._rt, pc, this.kind, this.avgVolPerMin, this.delta, this.showBands), true);
       this._chart.resize();
     },
     async _loadQuote(){
@@ -726,6 +782,7 @@ new Vue({
       watchSet: {},
       watchCodes: [],
       boardMode: false,
+      showBands: true,
       boardSide: {},
       boardPerRow: 4,
       sort: { prop:'days', order:'ascending' },

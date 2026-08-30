@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>外围股市</title>
+<script src="/static/vue.min.js"></script>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html, body { height:100%; }
+  body { font-family:"Microsoft YaHei",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; background:#f5f7fa; color:#303133; overflow:hidden; }
+  #app { position:relative; height:100%; }
+  .tb-hover { position:absolute; top:0; left:0; right:0; height:46px; z-index:5; }
+  .toolbar { position:absolute; top:0; left:0; right:0; z-index:10; display:flex; align-items:center; gap:12px; flex-wrap:wrap; padding:10px 16px; background:rgba(255,255,255,.92); opacity:0; pointer-events:none; transition:opacity .18s ease; border-bottom:1px solid #f2f3f5; }
+  .tb-hover:hover + .toolbar, .toolbar:hover { opacity:1; pointer-events:auto; }
+  .title { font-weight:700; font-size:13px; }
+  .title .sub { font-size:10px; font-weight:400; color:#909399; margin-left:6px; }
+  .updated { margin-left:auto; font-size:10px; color:#909399; }
+  .btn { background:#fff; color:#409eff; border:1px solid #409eff; border-radius:6px; padding:3px 8px; font-size:10px; cursor:pointer; }
+  .btn:hover { background:#ecf5ff; }
+  .btn.active { background:#409eff; color:#fff; }
+  .content { position:absolute; inset:0; display:flex; flex-wrap:wrap; align-content:flex-start; justify-content:space-around; gap:12px; padding:10px 16px 3vh; overflow-y:auto; }
+  .cell { flex:0 0 calc(50% - 12px); min-width:50px; min-height:50px; background:#fff; border:1px solid #ebeef5; border-radius:10px; padding:8px; box-shadow:0 1px 3px rgba(0,0,0,.04); }
+  .cell .name { font-size:12px; font-weight:600; text-align:center; margin-bottom:6px; color:#303133; }
+  .cell img { display:block; width:100%; height:auto; border-radius:4px; }
+  .cell .err { font-size:11px; color:#f56c6c; text-align:center; padding:14px 0; }
+  @media (min-width:401px){ .cell{ flex:0 0 calc(25% - 12px); } }
+</style>
+</head>
+<body>
+<div id="app">
+  <div class="tb-hover"></div>
+  <div class="toolbar">
+    <span class="title">外围</span>
+    <span class="updated" v-if="updatedAt">更新 [# updatedAt #]</span>
+    <button class="btn" :class="{active:onTop}" @click="toggleTop">[# onTop ? '置顶' : '未置顶' #]</button>
+  </div>
+  <div class="content">
+    <div class="cell" v-for="item in items" :key="item.nid">
+      <div class="name">[# item.name #]</div>
+      <img v-if="!item.failed" :src="item.src" @error="onImgError(item)" :alt="item.name">
+      <div class="err" v-else>图片加载失败</div>
+    </div>
+  </div>
+</div>
+
+<script>
+const NAMES = {
+  "103.NQ00Y": "纳斯达克",
+  "103.ES00Y": "标普500",
+  "103.YM00Y": "道琼斯",
+  "104.CN00Y": "富时A50",
+  "100.HSI": "恒生指数",
+  "100.N225": "日经225",
+  "100.KS11": "韩国综合",
+  "100.TWII": "台湾加权",
+};
+function buildSrc(nid){ return '/futures/external/img?nid=' + encodeURIComponent(nid) + '&_random=' + Math.random(); }
+new Vue({
+  el: '#app',
+  delimiters: ['[#', '#]'],
+  data: {
+    items: Object.keys(NAMES).map(nid => ({ nid: nid, name: NAMES[nid], src: buildSrc(nid), retry: 0, failed: false })),
+    updatedAt: '',
+    onTop: true,
+    timer: null,
+  },
+  created(){
+    this.timer = setInterval(() => this.refreshAll(), 5000);
+  },
+  beforeDestroy(){ if(this.timer) clearInterval(this.timer); },
+  methods: {
+    refreshAll(){
+      this.items.forEach(it => { it.retry = 0; it.failed = false; it.src = buildSrc(it.nid); });
+      this.updatedAt = new Date().toLocaleTimeString('zh-CN', { hour12: false });
+    },
+    onImgError(item){
+      item.retry++;
+      if(item.retry <= 3){
+        setTimeout(() => { item.src = buildSrc(item.nid); }, 1000 * item.retry);
+      } else {
+        item.failed = true;
+      }
+    },
+    toggleTop(){
+      this.onTop = !this.onTop;
+      if(window.pywebview && window.pywebview.api && window.pywebview.api.set_on_top){
+        window.pywebview.api.set_on_top(this.onTop);
+      } else {
+        this.onTop = true;
+      }
+    },
+  },
+});
+</script>
+</body>
+</html>

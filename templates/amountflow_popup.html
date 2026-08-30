@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>两市成交分析</title>
+<script src="https://unpkg.com/vue@2.7.16/dist/vue.min.js"></script>
+<script src="https://unpkg.com/echarts@5.5.0/dist/echarts.min.js"></script>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html, body { height:100%; }
+  body { font-family:"Microsoft YaHei",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; background:#fff; color:#303133; overflow:hidden; }
+  #app { position:relative; height:100%; }
+  .tb-hover { position:absolute; top:0; left:0; right:0; height:46px; z-index:5; }
+  .toolbar { position:absolute; top:0; left:0; right:0; z-index:10; display:flex; align-items:center; gap:12px; flex-wrap:wrap; padding:10px 16px; background:rgba(255,255,255,.92); opacity:0; pointer-events:none; transition:opacity .18s ease; border-bottom:1px solid #f2f3f5; }
+  .tb-hover:hover + .toolbar, .toolbar:hover { opacity:1; pointer-events:auto; }
+  .title { font-weight:700; font-size:13px; }
+  .title .sub { font-size:10px; font-weight:400; color:#909399; margin-left:6px; }
+  .updated { margin-left:auto; font-size:10px; color:#909399; }
+  .btn { background:#fff; color:#409eff; border:1px solid #409eff; border-radius:6px; padding:3px 8px; font-size:10px; cursor:pointer; }
+  .btn:hover { background:#ecf5ff; }
+  .btn.active { background:#409eff; color:#fff; }
+  .content { position:absolute; inset:0; display:flex; flex-direction:column; padding:48px 8px 6px; overflow-y:auto; }
+  .summary { flex:0 0 auto; margin-top:6px; padding:6px 10px 2px; border-top:1px solid #f2f3f5; font-size:11px; line-height:1.6; color:#606266; white-space:pre-wrap; word-break:break-all; font-family:"Consolas","Microsoft YaHei",monospace; }
+  .chart-wrap { position:relative; width:100%; }
+  .chart-label { position:absolute; top:2px; left:12px; z-index:2; font-size:10px; color:#909399; pointer-events:none; }
+  #chartBar, #chartLine { width:100%; }
+  .chart-err { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; color:#f56c6c; font-size:12px; padding:0 20px; text-align:center; }
+</style>
+</head>
+<body>
+<div id="app">
+  <div class="tb-hover"></div>
+  <div class="toolbar">
+    <span class="title">两市成交分析<span class="sub">上证综指 + 深证成指 · 逐分钟成交额</span></span>
+    <span class="updated" v-if="updatedAt">更新 [# updatedAt #]</span>
+    <button class="btn" :class="{active:onTop}" @click="toggleTop">[# onTop ? '置顶' : '未置顶' #]</button>
+    <button class="btn" @click="fetchData(true)">刷新</button>
+  </div>
+  <div class="content">
+    <div class="chart-wrap">
+      <div id="chartBar"></div>
+    </div>
+    <div class="chart-wrap">
+      <div id="chartLine"></div>
+    </div>
+    <div class="summary" v-if="payload.text">
+      <div class="ln" v-for="(line, idx) in payloadLines" :key="idx">[# line #]</div>
+    </div>
+    <div class="summary" v-else>加载中…</div>
+  </div>
+  <div class="chart-err" v-if="chartErr">[# chartErr #]</div>
+</div>
+
+<script>
+function reqJSON(url, opts){
+  const p = Object.assign({}, opts||{});
+  return new Promise((resolve, reject) => {
+    fetch(url, p)
+      .then(r => { if(!r.ok) throw new Error('HTTP '+r.status); return r.json(); })
+      .then(resolve)
+      .catch(reject);
+  });
+}
+const DAY_COLOR = { '今天': '#e74c3c', '昨天': '#f39c12', '前天': '#27ae60', '前2天': '#3498db', '前三天': '#9b59b6' };
+new Vue({
+  el: '#app',
+  delimiters: ['[#', '#]'],
+  data: {
+    payload: { text: '', dates: [], labels: [], milestones: [],
+               bar: { series: [] }, line: { x: [], series: [] }, totals: {} },
+    updatedAt: '',
+    loading: false,
+    barChart: null,
+    lineChart: null,
+    chartErr: '',
+    onTop: true,
+    timer: null,
+  },
+  computed: {
+    payloadLines(){
+      const t = (this.payload && this.payload.text) || '';
+      return t.split('\n').filter(function(s){ return s.length > 0; });
+    },
+  },
+  created(){
+    this.timer = setInterval(() => this.fetchData(false), 60000);
+    window.addEventListener('resize', this.onResize);
+  },
+  mounted(){
+    this.initCharts();
+    this.$nextTick(() => { this.onResize(); this.fetchData(true); });
+  },
+  beforeDestroy(){
+    if(this.timer) clearInterval(this.timer);
+    window.removeEventListener('resize', this.onResize);
+  },
+  methods: {
+    initCharts(){
+      if(typeof echarts === 'undefined'){
+        this.chartErr = 'ECharts 资源未加载（CDN 不可达）';
+        return;
+      }
+      this.barChart = echarts.init(document.getElementById('chartBar'));
+      this.lineChart = echarts.init(document.getElementById('chartLine'));
+    },
+    resizeCharts(){
+      [['chartBar', this.barChart], ['chartLine', this.lineChart]].forEach(([id, chart]) => {
+        const el = document.getElementById(id);
+        if(!el) return;
+        const w = el.clientWidth || (el.parentNode ? el.parentNode.clientWidth : 0);
+        if(!w) return;
+        el.style.height = Math.round(w * 0.6) + 'px';
+        if(chart) chart.resize();
+      });
+    },
+    onResize(){
+      this.resizeCharts();
+    },
+    toggleTop(){
+      this.onTop = !this.onTop;
+      if(window.pywebview && window.pywebview.api && window.pywebview.api.set_on_top){
+        window.pywebview.api.set_on_top(this.onTop);
+      } else {
+        this.onTop = true;
+      }
+    },
+    fetchData(force){
+      if(this.loading) return;
+      this.loading = true;
+      const url = '/futures/amountflow/data?ttl=120&_=' + Date.now();
+      reqJSON(url, { cache:'no-store' })
+        .then(resp => {
+          if(!resp.ok) throw new Error(resp.error || 'backend error');
+          const d = resp.data || {};
+          if(d.ok === false && d.error) throw new Error(d.error);
+          this.payload = d;
+          this.updatedAt = new Date().toLocaleTimeString('zh-CN', {hour12:false});
+          this.render();
+        })
+        .catch(err => { this.updatedAt = '加载失败：' + err.message; })
+        .finally(() => { this.loading = false; });
+    },
+    render(){
+      if(!this.barChart || !this.lineChart) return;
+      this.resizeCharts();
+      const d = this.payload || {};
+      this.renderBar(d);
+      this.renderLine(d);
+    },
+    renderBar(d){
+      const milestones = d.milestones || [];
+      const cats = milestones.map(m => String(m)); // 对齐参考：里程碑为纯数字（亿）
+      const byName = {};
+      (d.bar && d.bar.series || []).forEach(s => { byName[s.name] = s.data; });
+      // 对齐参考柱图系列顺序：旧 -> 新（前三天 … 今天）
+      const order = ['前三天', '前2天', '前天', '昨天', '今天'];
+      const series = order.map(name => ({
+        name: name,
+        type: 'bar',
+        data: byName[name] != null ? byName[name] : [],
+        barMaxWidth: 16,
+        label: { show: true, position: 'top', fontSize: 9, color: '#909399',
+                 formatter: function(p){ return p.value == null ? '' : p.value; } },
+        emphasis: { focus: 'series' },
+        itemStyle: { color: DAY_COLOR[name] },
+      }));
+      const option = {
+        backgroundColor: '#fff',
+        animation: false,
+        grid: { left: '9%', right: '4%', top: '16%', bottom: '12%' },
+        legend: { show: true, top: 2, left: 'center', itemWidth: 10, itemHeight: 10,
+                  textStyle: { fontSize: 9, color: '#606266' },
+                  data: ['今天', '昨天', '前天', '前2天', '前三天'] },
+        tooltip: {
+          trigger: 'axis',
+          axisPointer: { type: 'shadow' },
+          formatter: function(params){
+            let s = params[0].name + ' 亿<br/>';
+            params.forEach(p => {
+              s += p.marker + p.seriesName + '：' + (p.value == null ? '未达' : p.value + ' 分钟') + '<br/>';
+            });
+            return s;
+          },
+        },
+        xAxis: {
+          type: 'category',
+          data: cats,
+          boundaryGap: false, // 对齐参考
+          axisLabel: { fontSize: 9, color: '#606266', hideOverlap: true },
+          axisLine: { lineStyle: { color: '#dcdfe6' } },
+          axisTick: { show: false },
+        },
+        yAxis: {
+          type: 'value',
+          name: '分钟',
+          nameTextStyle: { fontSize: 9, color: '#909399' },
+          axisLabel: { fontSize: 9, color: '#909399' },
+          splitLine: { lineStyle: { color: '#f2f3f5' } },
+        },
+        series: series,
+      };
+      this.barChart.setOption(option, true);
+      this.barChart.resize();
+    },
+    renderLine(d){
+      const x = d.line && d.line.x || [];
+      const byName = {};
+      (d.line && d.line.series || []).forEach(s => { byName[s.name] = s.data; });
+      // 对齐参考线图系列顺序：新 -> 旧（今天 … 前三天）
+      const order = ['今天', '昨天', '前天', '前2天', '前三天'];
+      const series = order.map(name => {
+        const s = {
+          name: name,
+          type: 'line',
+          data: byName[name] != null ? byName[name] : [],
+          showSymbol: false,
+          smooth: false,
+          emphasis: { focus: 'series' },
+          lineStyle: { width: 1.6, color: DAY_COLOR[name] },
+          itemStyle: { color: DAY_COLOR[name] },
+        };
+        if (name === '今天') s.areaStyle = { opacity: 0.3 }; // 对齐参考：今日区域填充
+        return s;
+      });
+      const option = {
+        backgroundColor: '#fff',
+        animation: false,
+        grid: { left: '9%', right: '4%', top: '14%', bottom: '12%' },
+        legend: { show: true, top: 2, left: 'center', itemWidth: 12, itemHeight: 8,
+                  textStyle: { fontSize: 10, color: '#606266' } },
+        tooltip: {
+          trigger: 'axis',
+          axisPointer: { type: 'shadow' }, // 对齐参考
+          formatter: function(params){
+            let s = params[0].axisValue + '<br/>';
+            params.forEach(p => {
+              s += p.marker + p.seriesName + '：' + (p.value == null ? '-' : p.value + ' 亿') + '<br/>';
+            });
+            return s;
+          },
+        },
+        xAxis: {
+          type: 'category',
+          data: x,
+          boundaryGap: false, // 对齐参考
+          axisLabel: { fontSize: 9, color: '#606266', hideOverlap: true },
+          axisLine: { lineStyle: { color: '#dcdfe6' } },
+          axisTick: { show: false },
+        },
+        yAxis: {
+          type: 'value',
+          name: '亿元',
+          nameTextStyle: { fontSize: 9, color: '#909399' },
+          axisLabel: { fontSize: 9, color: '#909399', formatter: function(v){ return v >= 10000 ? (v/10000).toFixed(1) + '万' : v; } },
+          splitLine: { lineStyle: { color: '#f2f3f5' } },
+        },
+        series: series,
+      };
+      this.lineChart.setOption(option, true);
+      this.lineChart.resize();
+    },
+  },
+});
+</script>
+</body>
+</html>

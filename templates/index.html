@@ -53,6 +53,7 @@
       <el-button icon="el-icon-date" size="mini" @click="toggleColCfg">列设置</el-button>
       <el-button :icon="boardMode ? 'el-icon-back' : 'el-icon-monitor'" size="mini" :type="boardMode ? '' : 'primary'" @click="goBoard">[# boardMode ? '返回看板' : '📈 看盘' #]</el-button>
       <el-button :icon="watchOnly ? 'el-icon-back' : 'el-icon-star-off'" size="mini" :type="watchOnly ? '' : 'warning'" @click="goWatchlist">[# watchOnly ? '返回看板' : '⭐ 自选股' #]</el-button>
+      <el-button icon="el-icon-data-line" size="mini" type="danger" @click="goFutures">📊 期指监控</el-button>
     </div>
   </div>
 
@@ -270,6 +271,12 @@
         <el-select size="mini" v-model="boardKlineCount" style="width:96px;" title="K线显示数量">
           <el-option v-for="c in KLINE_COUNTS" :key="c.key" :label="c.label" :value="c.key"></el-option>
         </el-select>
+        <el-select size="mini" v-model="boardKlineIndicator" style="width:96px;" title="K线副图指标">
+          <el-option label="MFI" value="mfi"></el-option>
+          <el-option label="ADX" value="adx"></el-option>
+          <el-option label="ATR" value="atr"></el-option>
+        </el-select>
+        <el-switch v-model="showBands" size="mini" active-text="±σ通道" style="margin-right:12px;"></el-switch>
         <el-button size="mini" icon="el-icon-refresh" :loading="loading" @click="reload">刷新行情</el-button>
         <span class="muted">实时自动刷新：[# refreshInterval/1000 #] 秒</span>
       </span>
@@ -293,19 +300,19 @@
       <div class="board-panels">
         <div class="board-panel board-panel-chart">
           <div class="board-panel-title">正股分时图</div>
-          <board-rt :code="row.stock_code" :prev-close="row.stock_pre_close_rt" :price="row.stock_price" :chg-pct="row.stock_chg_pct" kind="stock" :show-book="boardSide[row.bond_code] === true" :show-ticks="boardSide[row.bond_code] === true"></board-rt>
+          <board-rt :code="row.stock_code" :prev-close="row.stock_pre_close_rt" :price="row.stock_price" :chg-pct="row.stock_chg_pct" kind="stock" :show-book="boardSide[row.bond_code] === true" :show-ticks="boardSide[row.bond_code] === true" :show-bands="showBands"></board-rt>
         </div>
         <div class="board-panel board-panel-chart">
           <div class="board-panel-title">正股 K线</div>
-          <board-kline :code="row.stock_code" :period="boardPeriod" :adjust="boardAdjust" :count="boardKlineCount" kind="stock"></board-kline>
+          <board-kline :code="row.stock_code" :period="boardPeriod" :adjust="boardAdjust" :count="boardKlineCount" :indicator="boardKlineIndicator" kind="stock"></board-kline>
         </div>
         <div class="board-panel board-panel-chart">
           <div class="board-panel-title">可转债分时图</div>
-          <board-rt :code="row.bond_code" :prev-close="row.pre_close_rt" :price="row.bond_price" :chg-pct="row.bond_chg_pct" kind="bond" :show-book="boardSide[row.bond_code] === true" :show-ticks="boardSide[row.bond_code] === true"></board-rt>
+          <board-rt :code="row.bond_code" :prev-close="row.pre_close_rt" :price="row.bond_price" :chg-pct="row.bond_chg_pct" kind="bond" :show-book="boardSide[row.bond_code] === true" :show-ticks="boardSide[row.bond_code] === true" :show-bands="showBands"></board-rt>
         </div>
         <div class="board-panel board-panel-chart">
           <div class="board-panel-title">可转债 K线</div>
-          <board-kline :code="row.bond_code" :period="boardPeriod" :adjust="boardAdjust" :count="boardKlineCount" kind="bond"></board-kline>
+          <board-kline :code="row.bond_code" :period="boardPeriod" :adjust="boardAdjust" :count="boardKlineCount" :indicator="boardKlineIndicator" kind="bond"></board-kline>
         </div>
       </div>
     </div>
@@ -406,37 +413,74 @@ Vue.component('cb-chart', {
   template: '<div class="cb-chart"></div>'
 });
 
-// 通用 K线 option（蜡烛 + 成交量 + BOLL），看盘面板与悬浮窗共用同一视觉
-function buildMiniKlineOption(data, full){
+// 通用 K线 option（蜡烛 + 成交量 + BOLL + 第三栏指标），看盘面板与悬浮窗共用同一视觉
+function buildMiniKlineOption(data, full, indicator){
+  indicator = indicator || 'mfi';
   const dates = data.map(d => d.date);
   const ohlc = data.map(d => [Number(d.open), Number(d.close), Number(d.low), Number(d.high)]);
   const vols = data.map(d => Number(d.vol));
-  const fullCloses = (full && full.length ? full : data).map(d => Number(d.close));
+  const fullData = (full && full.length ? full : data);
+  // BOLL 叠加在 K 线主图（基于完整历史，对齐可见区间）
+  const fullCloses = fullData.map(d => Number(d.close));
   const boll = _calcBoll(fullCloses, 20, 2);
   const mid = boll.mid.slice(-data.length);
   const upper = boll.upper.slice(-data.length);
   const lower = boll.lower.slice(-data.length);
+  // 第三栏指标（基于完整历史，对齐可见区间）。ADX 同时绘制 +DI / -DI。
+  let indSeries = [], indLegend = [], indAxisConf, indMarkLine;
+  if(indicator === 'adx'){
+    const ad = _calcADX(fullData, 14);
+    indLegend = ['ADX', '+DI', '-DI'];
+    indAxisConf = { scale: true };
+    indMarkLine = { silent: true, symbol: 'none', lineStyle: { color: '#c0c4cc', type: 'dashed', width: 1 }, label: { show: true, position: 'insideEndTop', formatter: '25 趋势阈值', color: '#909399', fontSize: 9 }, data: [{ yAxis: 25 }] };
+    indSeries = [
+      { name: 'ADX', type: 'line', xAxisIndex: 2, yAxisIndex: 2, data: ad.adx.slice(-data.length), showSymbol: false, lineStyle: { width: 1, color: '#000000' } },
+      { name: '+DI', type: 'line', xAxisIndex: 2, yAxisIndex: 2, data: ad.pdi.slice(-data.length), showSymbol: false, lineStyle: { width: 1, color: '#e74c3c' } },
+      { name: '-DI', type: 'line', xAxisIndex: 2, yAxisIndex: 2, data: ad.mdi.slice(-data.length), showSymbol: false, lineStyle: { width: 1, color: '#27ae60' } }
+    ];
+    indSeries[0].markLine = indMarkLine;
+  } else if(indicator === 'atr'){
+    indLegend = ['ATR'];
+    indAxisConf = { scale: true };
+    indMarkLine = null;
+    indSeries = [
+      { name: 'ATR', type: 'line', xAxisIndex: 2, yAxisIndex: 2, data: _calcATR(fullData, 14).slice(-data.length), showSymbol: false, lineStyle: { width: 1, color: '#16a085' } }
+    ];
+  } else {
+    indLegend = ['MFI'];
+    indAxisConf = { scale: false, min: 0, max: 100 };
+    indMarkLine = { silent: true, symbol: 'none', lineStyle: { color: '#c0c4cc', type: 'dashed', width: 1 }, label: { show: false }, data: [{ yAxis: 80 }, { yAxis: 20 }] };
+    indSeries = [
+      { name: 'MFI', type: 'line', xAxisIndex: 2, yAxisIndex: 2, data: _calcMFI(fullData, 14).slice(-data.length), showSymbol: false, lineStyle: { width: 1, color: '#8e44ad' }, markLine: indMarkLine }
+    ];
+  }
   return {
     backgroundColor: '#fff',
     animation: false,
-    legend: { data: ['BOLL','UB','LB'], top: 0, right: 6, itemWidth: 12, itemHeight: 8, textStyle: { fontSize: 9, color: '#909399' } },
-    grid: [{ left: 44, right: 8, top: 16, height: '56%' }, { left: 44, right: 8, top: '74%', height: '18%' }],
+    legend: { data: ['K','VOL'].concat(indLegend).concat(['BOLL']), top: 0, right: 6, itemWidth: 12, itemHeight: 8, textStyle: { fontSize: 9, color: '#909399' } },
+    grid: [
+      { left: 44, right: 8, top: 16, height: '52%' },
+      { left: 44, right: 8, top: '69%', height: '11%' },
+      { left: 44, right: 8, top: '81%', height: '17%' }
+    ],
     tooltip: { trigger: 'axis', axisPointer: { type: 'cross' } },
     xAxis: [
-      { type: 'category', data: dates, axisLabel: { show: false }, axisLine: { lineStyle: { color: '#dcdfe6' } } },
-      { type: 'category', gridIndex: 1, data: dates, axisLabel: { show: false } }
+      { type: 'category', data: dates, boundaryGap: true, axisLabel: { show: false }, axisLine: { lineStyle: { color: '#dcdfe6' } }, axisPointer: { label: { show: false } } },
+      { type: 'category', gridIndex: 1, data: dates, axisLabel: { show: false } },
+      { type: 'category', gridIndex: 2, data: dates, axisLabel: { color: '#909399', fontSize: 9, hideOverlap: true } }
     ],
     yAxis: [
       { scale: true, splitLine: { lineStyle: { color: '#f2f2f2' } }, axisLabel: { color: '#909399', fontSize: 9 } },
-      { gridIndex: 1, scale: true, splitLine: { show: false }, axisLabel: { show: false } }
+      { gridIndex: 1, scale: true, splitLine: { show: false }, axisLabel: { show: false } },
+      Object.assign({ gridIndex: 2, splitLine: { show: false }, axisLabel: { color: '#909399', fontSize: 9 } }, indAxisConf)
     ],
     series: [
       { name: 'K', type: 'candlestick', data: ohlc, itemStyle: { color: '#e74c3c', color0: '#27ae60', borderColor: '#e74c3c', borderColor0: '#27ae60' } },
-      { name: 'VOL', type: 'bar', xAxisIndex: 1, yAxisIndex: 1, data: vols, itemStyle: { color: '#bcd4ef' } },
       { name: 'BOLL', type: 'line', data: mid, xAxisIndex: 0, yAxisIndex: 0, showSymbol: false, lineStyle: { width: 1, color: '#f5a623' }, z: 3 },
       { name: 'UB', type: 'line', data: upper, xAxisIndex: 0, yAxisIndex: 0, showSymbol: false, lineStyle: { width: 1, color: '#9aa0a6' }, z: 3 },
-      { name: 'LB', type: 'line', data: lower, xAxisIndex: 0, yAxisIndex: 0, showSymbol: false, lineStyle: { width: 1, color: '#9aa0a6' }, z: 3 }
-    ]
+      { name: 'LB', type: 'line', data: lower, xAxisIndex: 0, yAxisIndex: 0, showSymbol: false, lineStyle: { width: 1, color: '#9aa0a6' }, z: 3 },
+      { name: 'VOL', type: 'bar', xAxisIndex: 1, yAxisIndex: 1, data: vols, itemStyle: { color: '#bcd4ef' } }
+    ].concat(indSeries)
   };
 }
 function _calcBoll(closes, period, mult){
@@ -455,6 +499,86 @@ function _calcBoll(closes, period, mult){
     lower.push(+(m - mult * sd).toFixed(3));
   }
   return { mid: mid, upper: upper, lower: lower };
+}
+// 资金流量指标 MFI（周期默认 14）：典型价 TP=(H+L+C)/3，原始资金流=TP*成交量；
+// 按 TP 较前一刻涨跌归类正负资金流，MoneyRatio=正流/负流，MFI=100-100/(1+Ratio)。
+function _calcMFI(data, period){
+  const n = data.length;
+  const mfi = new Array(n).fill(null);
+  if(n < period + 1) return mfi;
+  const tp = data.map(d => (Number(d.high) + Number(d.low) + Number(d.close)) / 3);
+  const mf = data.map((d, i) => tp[i] * Number(d.vol));
+  for(let i = period; i < n; i++){
+    let pos = 0, neg = 0;
+    for(let j = i - period + 1; j <= i; j++){
+      if(tp[j] > tp[j-1]) pos += mf[j];
+      else if(tp[j] < tp[j-1]) neg += mf[j];
+    }
+    if(neg === 0) mfi[i] = 100;
+    else if(pos === 0) mfi[i] = 0;
+    else { const ratio = pos / neg; mfi[i] = +(100 - 100 / (1 + ratio)).toFixed(2); }
+  }
+  return mfi;
+}
+// 真实波幅 ATR（周期默认 14，Wilder 平滑）：TR=max(H-L,|H-前收|,|L-前收|)，ATR=TR 的 Wilder 移动平均。
+function _calcATR(data, period){
+  const n = data.length;
+  const atr = new Array(n).fill(null);
+  if(n < period + 1) return atr;
+  const tr = new Array(n).fill(0);
+  for(let i = 1; i < n; i++){
+    const h = Number(data[i].high), l = Number(data[i].low), pc = Number(data[i - 1].close);
+    tr[i] = Math.max(h - l, Math.abs(h - pc), Math.abs(l - pc));
+  }
+  let sum = 0;
+  for(let i = 1; i <= period; i++){ sum += tr[i]; }
+  atr[period] = sum / period;
+  for(let i = period + 1; i < n; i++){
+    atr[i] = (atr[i - 1] * (period - 1) + tr[i]) / period;
+  }
+  for(let i = period; i < n; i++){ atr[i] = +atr[i].toFixed(3); }
+  return atr;
+}
+// 趋向指标 ADX（周期默认 14，Wilder 平滑）：+DM/-DM → +DI/-DI → DX → ADX 平滑；同时返回 +DI / -DI 供同图显示。
+function _calcADX(data, period){
+  const n = data.length;
+  const adx = new Array(n).fill(null), pdi = new Array(n).fill(null), mdi = new Array(n).fill(null);
+  if(n < 2 * period) return { adx: adx, pdi: pdi, mdi: mdi };
+  const tr = new Array(n).fill(0), pdm = new Array(n).fill(0), mdm = new Array(n).fill(0);
+  for(let i = 1; i < n; i++){
+    const h = Number(data[i].high), l = Number(data[i].low);
+    const ph = Number(data[i - 1].high), pl = Number(data[i - 1].low);
+    const up = h - ph, dn = pl - l;
+    const pc = Number(data[i - 1].close);
+    tr[i] = Math.max(h - l, Math.abs(h - pc), Math.abs(l - pc));
+    pdm[i] = (up > dn && up > 0) ? up : 0;
+    mdm[i] = (dn > up && dn > 0) ? dn : 0;
+  }
+  let atr = 0, spdm = 0, smdm = 0;
+  for(let i = 1; i <= period; i++){ atr += tr[i]; spdm += pdm[i]; smdm += mdm[i]; }
+  atr /= period; spdm /= period; smdm /= period;
+  const dx = new Array(n).fill(null);
+  for(let i = period; i < n; i++){
+    if(i > period){
+      atr = (atr * (period - 1) + tr[i]) / period;
+      spdm = (spdm * (period - 1) + pdm[i]) / period;
+      smdm = (smdm * (period - 1) + mdm[i]) / period;
+    }
+    const pp = 100 * spdm / atr;
+    const mm = 100 * smdm / atr;
+    pdi[i] = +pp.toFixed(2);
+    mdi[i] = +mm.toFixed(2);
+    dx[i] = 100 * Math.abs(pp - mm) / (pp + mm);
+  }
+  let v = 0;
+  for(let i = period; i < 2 * period; i++){ v += dx[i]; }
+  v /= period;
+  adx[2 * period - 1] = +v.toFixed(2);
+  for(let i = 2 * period; i < n; i++){
+    v = (v * (period - 1) + dx[i]) / period;
+    adx[i] = +v.toFixed(2);
+  }
+  return { adx: adx, pdi: pdi, mdi: mdi };
 }
 
 // 行情请求调度器：统一「并发上限 + 请求去重 + 超时」
@@ -519,11 +643,12 @@ Vue.component('board-kline', {
     adjust: { type: String, default: '' },
     kind: { type: String, default: '' },
     count: { type: Number, default: 0 },
+    indicator: { type: String, default: 'mfi' },
   },
   template: '<div class="board-kline"></div>',
   data(){ return { src: '', _chart: null, _timer: null, _visible: false, _io: null }; },
   mounted(){ this._setupIO(); },
-  watch: { period(){ if(this._visible) this._draw(); }, adjust(){ if(this._visible) this._draw(); }, count(){ if(this._visible) this._draw(); } },
+  watch: { period(){ if(this._visible) this._draw(); }, adjust(){ if(this._visible) this._draw(); }, count(){ if(this._visible) this._draw(); }, indicator(){ if(this._visible) this._draw(); } },
   methods: {
     _setupIO(){
       // 仅进入视口的行才绘制/轮询 K线：看盘页 300+ 行若全部同时轮询，单线程 Tornado 后端会被
@@ -572,7 +697,7 @@ Vue.component('board-kline', {
         const data = full.slice(-show);
         this.src = (js && js.src) || (js && js.ok ? 'ok' : '');
         if(!data.length){ chart.clear(); return; }
-        chart.setOption(buildMiniKlineOption(data, full), true);
+        chart.setOption(buildMiniKlineOption(data, full, this.indicator), true);
         chart.resize();
       }catch(e){
         this.src = 'err';
@@ -582,6 +707,11 @@ Vue.component('board-kline', {
   },
   beforeDestroy(){ if(this._io){ try{ this._io.disconnect(); }catch(e){} this._io = null; } if(this._timer){ clearInterval(this._timer); this._timer = null; } if(this._chart){ try{ this._chart.dispose(); }catch(e){} this._chart = null; } }
 });
+
+// 均量/分 格式化：≥1万 用 fmtWan（如 1.2万），≥10 取整，否则保留 1 位小数
+function fmtAvgVol(v){ const n=num(v); if(isNaN(n)) return '--'; if(Math.abs(n)>=1e4) return fmtWan(n); if(n>=10) return Math.round(n).toString(); return n.toFixed(1); }
+// 按时间字符串 HH:MM 计算 A股 已开盘分钟数（09:30~11:30 + 13:00~15:00）
+function rtOpenMinutes(t){ if(!t || typeof t !== 'string') return 0; const p = t.split(':'); if(p.length < 2) return 0; const h = parseInt(p[0], 10), m = parseInt(p[1], 10); if(isNaN(h) || isNaN(m)) return 0; if(h < 9 || (h === 9 && m < 30)) return 1; if(h < 11 || (h === 11 && m <= 30)) return Math.max(1, (h - 9) * 60 + (m - 30)); if(h < 13) return 120; return Math.max(1, 120 + (h - 13) * 60 + m); }
 
 // 固定交易时段轴：上午 09:30~11:29 + 下午 13:00~15:00（不含午休 11:30~13:00）
 // 与悬浮窗 renderRtLine 保持一致：午休区间无数据点，自然形成断点
@@ -617,12 +747,45 @@ function rtMapToSession(session, data){
 
 // 分时图 option：价格折线 + 均价线 + 成交量，以昨收为中轴
 // 时间轴按固定交易时段对齐（与悬浮窗逻辑一致）；prevClose 由调用方按「现价 / (1+涨跌幅)」推算（量纲与分钟价一致）
-function buildRtOption(data, prevClose, kind){
+function buildRtOption(data, prevClose, kind, avgVolPerMin, delta, showBands){
   const session = rtSessionAxis();
   const mapped = rtMapToSession(session, data);
   const prices = mapped.prices, avgs = mapped.avgs, vols = mapped.vols;
   let last = 0;
   for(let i = prices.length - 1; i >= 0; i--){ if(prices[i] != null && isFinite(prices[i])){ last = prices[i]; break; } }
+  // VWAP 偏离度：累计加权均价偏离 = (价 - VWAP) / VWAP * 100%
+  const vwapDev = new Array(prices.length).fill(null);
+  let _cv = 0, _cvp = 0;
+  for(let i = 0; i < prices.length; i++){
+    const p = prices[i], v = vols[i];
+    if(p != null && isFinite(p) && v != null && isFinite(v) && v > 0){
+      _cv += p * v; _cvp += v;
+      if(_cvp > 0){ const vw = _cv / _cvp; vwapDev[i] = (p - vw) / vw * 100; }
+    }
+  }
+  let lastDev = null;
+  for(let i = vwapDev.length - 1; i >= 0; i--){ if(vwapDev[i] != null && isFinite(vwapDev[i])){ lastDev = vwapDev[i]; break; } }
+  // 标准差通道：以 VWAP(均线 avgs) 为中轴，±1σ / ±2σ 通道带
+  let _sigma = 0;
+  {
+    let _s = 0, _n = 0;
+    for(let i = 0; i < prices.length; i++){
+      const p = prices[i], a = avgs[i];
+      if(p != null && isFinite(p) && a != null && isFinite(a)){ const d = p - a; _s += d * d; _n++; }
+    }
+    _sigma = _n > 0 ? Math.sqrt(_s / _n) : 0;
+  }
+  const up1 = [], dn1 = [], up2 = [], dn2 = [], band1 = [], band2 = [];
+  for(let i = 0; i < prices.length; i++){
+    const a = avgs[i];
+    if(a != null && isFinite(a)){
+      up1.push(a + _sigma); dn1.push(a - _sigma);
+      up2.push(a + 2 * _sigma); dn2.push(a - 2 * _sigma);
+      band1.push(2 * _sigma); band2.push(4 * _sigma);
+    } else {
+      up1.push(null); dn1.push(null); up2.push(null); dn2.push(null); band1.push(null); band2.push(null);
+    }
+  }
   const up = prevClose > 0 ? (last >= prevClose) : true;
   const upColor = '#e74c3c', downColor = '#27ae60';
   const color = kind === 'stock' ? '#409EFF' : (up ? upColor : downColor);
@@ -636,6 +799,11 @@ function buildRtOption(data, prevClose, kind){
   }
   const leftMin = hasPrev ? prevClose * (1 - ext) : undefined;
   const leftMax = hasPrev ? prevClose * (1 + ext) : undefined;
+  let _devMax = ext * 100;
+  vwapDev.forEach(function(d){ if(d != null && isFinite(d)){ const a = Math.abs(d); if(a > _devMax) _devMax = a; } });
+  if(_devMax < 0.01) _devMax = 0.01;
+  const vwapMin = hasPrev ? -_devMax * 1.08 : undefined;
+  const vwapMax = hasPrev ? _devMax * 1.08 : undefined;
   const rightMin = hasPrev ? -ext * 100 : undefined;
   const rightMax = hasPrev ? ext * 100 : undefined;
   const volColors = prices.map(function(p, i){
@@ -645,8 +813,21 @@ function buildRtOption(data, prevClose, kind){
   return {
     backgroundColor: '#fff',
     animation: false,
+    title: { show: avgVolPerMin > 0 || (lastDev != null && isFinite(lastDev)) || (isFinite(num(delta)) && num(delta) !== 0), text: '均量/分 ' + fmtAvgVol(num(avgVolPerMin)) + (isFinite(num(delta)) && num(delta) !== 0 ? '　Δ ' + fmtNum(num(delta), 2) : '') + (lastDev != null && isFinite(lastDev) ? '　VWAP偏离 ' + fmtPct(num(lastDev), 2, true) : ''), left: 4, top: 3, textStyle: { fontSize: 11, color: '#909399', fontWeight: 'normal' } },
     grid: [{ left: 46, right: hasPrev ? 40 : 12, top: 14, height: '58%' }, { left: 46, right: hasPrev ? 40 : 12, top: '74%', height: '18%' }],
-    tooltip: { trigger: 'axis', axisPointer: { type: 'line' } },
+    tooltip: { trigger: 'axis', axisPointer: { type: 'line' }, formatter: function(params){
+        if(!params || !params.length) return '';
+        const idx = params[0].dataIndex;
+        const t = session[idx];
+        const p = prices[idx], a = avgs[idx], v = vols[idx];
+        let cum = 0; for(let k = 0; k <= idx; k++){ if(vols[k] != null) cum += vols[k]; }
+        const avg = rtOpenMinutes(t) > 0 ? (cum / rtOpenMinutes(t)) : null;
+        let s = '<div style="font-size:11px;margin-bottom:2px;">' + (t || '') + '</div>';
+        s += '价 ' + (p != null ? fmtNum(p, 3) : '--') + '　均 ' + (a != null ? fmtNum(a, 3) : '--') + '<br/>';
+        s += 'VWAP偏离 ' + (vwapDev[idx] != null ? fmtPct(vwapDev[idx], 2, true) : '--') + '<br/>';
+        s += '量(累计) ' + (v != null ? fmtWan(v) : '--') + '　均量/分 ' + (avg != null ? fmtAvgVol(avg) : '--');
+        return s;
+      } },
     xAxis: [
       { type: 'category', data: session, boundaryGap: false, axisLabel: { show: false }, axisLine: { lineStyle: { color: '#dcdfe6' } } },
       { type: 'category', gridIndex: 1, data: session, boundaryGap: false, axisLabel: { show: false } }
@@ -654,18 +835,32 @@ function buildRtOption(data, prevClose, kind){
     yAxis: [
       { type: 'value', min: leftMin, max: leftMax, scale: true, splitLine: { lineStyle: { color: '#f2f2f2' } }, axisLabel: { color: '#909399', fontSize: 9 } },
       { gridIndex: 1, type: 'value', scale: true, splitLine: { show: false }, axisLabel: { show: false } },
-      { gridIndex: 0, position: 'right', type: 'value', min: rightMin, max: rightMax, scale: true, splitLine: { show: false },
-        axisLabel: { color: function(v){ return v > 0 ? '#e74c3c' : (v < 0 ? '#27ae60' : '#909399'); }, fontSize: 9, formatter: function(v){ return (hasPrev ? fmtPct(v, 2, true) : fmtNum(v, 2)); } } }
+      { gridIndex: 0, position: 'right', type: 'value', min: rightMin, max: rightMax, scale: true, splitLine: { show: false }, name: '幅度%', nameLocation: 'end', nameGap: 2, nameTextStyle: { fontSize: 9, color: '#909399' },
+        axisLabel: { color: function(v){ return v > 0 ? '#e74c3c' : (v < 0 ? '#27ae60' : '#909399'); }, fontSize: 9, formatter: function(v){ return (hasPrev ? fmtPct(v, 2, true) : fmtNum(v, 2)); } } },
+      { gridIndex: 0, type: 'value', min: vwapMin, max: vwapMax, scale: true, show: false, axisLabel: { show: false }, splitLine: { show: false }, axisPointer: { show: false } }
     ],
     series: [
-      { name: '价', type: 'line', data: prices, showSymbol: false, smooth: false, connectNulls: true,
+      ...(showBands ? [
+      // 标准差通道带（以 VWAP/均线 为中轴）：±2σ 外侧视为极端偏离，回归概率增大
+      { name: 'σ带2下', type: 'line', xAxisIndex: 0, yAxisIndex: 0, data: dn2, showSymbol: false, smooth: false, connectNulls: true, stack: 'b2', lineStyle: { opacity: 0 }, areaStyle: { opacity: 0 }, silent: true, z: 1 },
+      { name: 'σ带2', type: 'line', xAxisIndex: 0, yAxisIndex: 0, data: band2, showSymbol: false, smooth: false, connectNulls: true, stack: 'b2', lineStyle: { opacity: 0 }, areaStyle: { color: 'rgba(230,162,60,0.07)' }, silent: true, z: 1 },
+      { name: 'σ带1下', type: 'line', xAxisIndex: 0, yAxisIndex: 0, data: dn1, showSymbol: false, smooth: false, connectNulls: true, stack: 'b1', lineStyle: { opacity: 0 }, areaStyle: { opacity: 0 }, silent: true, z: 1 },
+      { name: 'σ带1', type: 'line', xAxisIndex: 0, yAxisIndex: 0, data: band1, showSymbol: false, smooth: false, connectNulls: true, stack: 'b1', lineStyle: { opacity: 0 }, areaStyle: { color: 'rgba(64,158,255,0.10)' }, silent: true, z: 1 },
+      { name: '±2σ', type: 'line', xAxisIndex: 0, yAxisIndex: 0, data: up2, showSymbol: false, smooth: false, connectNulls: true, lineStyle: { color: 'rgba(230,162,60,0.6)', width: 1, type: 'dashed' }, silent: true, z: 2 },
+      { name: '∓2σ', type: 'line', xAxisIndex: 0, yAxisIndex: 0, data: dn2, showSymbol: false, smooth: false, connectNulls: true, lineStyle: { color: 'rgba(230,162,60,0.6)', width: 1, type: 'dashed' }, silent: true, z: 2 },
+      { name: '±1σ', type: 'line', xAxisIndex: 0, yAxisIndex: 0, data: up1, showSymbol: false, smooth: false, connectNulls: true, lineStyle: { color: 'rgba(64,158,255,0.5)', width: 1 }, silent: true, z: 2 },
+      { name: '∓1σ', type: 'line', xAxisIndex: 0, yAxisIndex: 0, data: dn1, showSymbol: false, smooth: false, connectNulls: true, lineStyle: { color: 'rgba(64,158,255,0.5)', width: 1 }, silent: true, z: 2 }
+      ] : []),
+      { name: '价', type: 'line', data: prices, showSymbol: false, smooth: false, connectNulls: true, z: 5,
         lineStyle: { width: 1.2, color: color },
         areaStyle: { color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
           { offset: 0, color: up ? 'rgba(231,76,60,0.25)' : 'rgba(39,174,96,0.25)' },
           { offset: 1, color: 'rgba(255,255,255,0)' } ]) },
         markLine: { silent: true, symbol: 'none', lineStyle: { color: '#c0c4cc', type: 'dashed', width: 1 },
-          data: [{ yAxis: prevClose }], label: { formatter: hasPrev ? ('昨收 ' + fmtNum(prevClose, 2)) : '', fontSize: 9, color: '#909399' } } },
-      { name: '均', type: 'line', data: avgs, showSymbol: false, smooth: false, connectNulls: true, lineStyle: { width: 1, color: '#f5a623' } },
+          data: [{ yAxis: prevClose }], label: { formatter: hasPrev ? ('昨收 ' + fmtNum(prevClose, 3)) : '', fontSize: 9, color: '#909399' } } },
+      { name: '均', type: 'line', data: avgs, showSymbol: false, smooth: false, connectNulls: true, z: 4, lineStyle: { width: 1, color: '#f5a623' } },
+      { name: 'VWAP偏离', type: 'bar', xAxisIndex: 0, yAxisIndex: 3, data: vwapDev, connectNulls: true, barWidth: '50%', z: 3,
+        itemStyle: { color: function(p){ const v = p.data; return (v > 0) ? 'rgba(231,76,60,0.35)' : (v < 0 ? 'rgba(39,174,96,0.35)' : 'rgba(192,196,204,0.3)'); } } },
       { name: '量', type: 'bar', xAxisIndex: 1, yAxisIndex: 1, data: vols,
         itemStyle: { color: function(p){ return volColors[p.dataIndex] || upColor; } } }
     ]
@@ -682,6 +877,7 @@ Vue.component('board-rt', {
       kind: { type: String, default: '' },
       showBook: { type: Boolean, default: true },
       showTicks: { type: Boolean, default: true },
+      showBands: { type: Boolean, default: true },
     },
   data(){ return { src: '', quote: {}, ticks: [], _timer: null, _rt: null, _visible: false, _io: null }; },
   computed: {
@@ -705,7 +901,8 @@ Vue.component('board-rt', {
     // 盘口数据到达时 showSide 由 false→true，侧栏显隐会改变分时图容器宽度；
     // 这里监听 showSide（而非仅 showBook/showTicks），确保数据驱动的显隐也立即 resize，
     // 避免“先窄后自适应”的闪烁（单次 nextTick 易在布局未稳时按过渡宽度 resize）
-    showSide(){ this._resizeChart(); }
+    showSide(){ this._resizeChart(); },
+    showBands(){ this._redraw(); }
   },
   mounted(){
     // 仅可见行才拉取/刷新：看盘页 300+ 行全部同时轮询会把单线程 Tornado 后端打满，
@@ -733,7 +930,7 @@ Vue.component('board-rt', {
     _setupIO(){
       // 仅进入视口的行才拉取/刷新分时与盘口：看盘页 300+ 行全部同时轮询会把单线程 Tornado 后端打满，
       // 可见性门控把并发请求收敛到可见行数（个位数），避免切换周期时请求超时。
-      const start = () => { if(!this._timer){ this._timer = setInterval(() => this._refresh(), 10000); this._refresh(); } };
+      const start = () => { if(!this._timer){ this._timer = setInterval(() => this._refresh(), 3000); this._refresh(); } };
       const stop = () => { if(this._timer){ clearInterval(this._timer); this._timer = null; } };
       if(typeof IntersectionObserver === 'undefined'){ start(); return; }
       this._io = new IntersectionObserver((entries) => {
@@ -777,12 +974,21 @@ Vue.component('board-rt', {
     },
     async _drawChart(){
       try{
-        const js = await reqJSON('/market/minute/' + encodeURIComponent(this.code) + '?ttl=30&_=' + Date.now(), { cache: 'no-store' });
+        const js = await reqJSON('/market/minute/' + encodeURIComponent(this.code) + '?ttl=10&_=' + Date.now(), { cache: 'no-store' });
         const data = (js && js.data) || [];
         this.src = (js && js.src) || (js && js.ok ? 'ok' : '');
         if(!data.length){ if(this._chart){ try{ this._chart.clear(); }catch(_){} } return; }
         // 保存原始分钟数据，时间轴对齐与昨收推算统一在 buildRtOption 内处理（与悬浮窗逻辑一致）
         this._rt = data;
+        // 均量/分：累计成交量 / 已开盘分钟数（用于标题展示，与期指一致）
+        let total = 0;
+        data.forEach(function(d){ const v = Number(d.vol); if(isFinite(v)) total += v; });
+        let mins = rtOpenMinutes((this.quote && this.quote.servertime) || '');
+        if(!mins){
+          const bars = data.filter(function(d){ const v = Number(d.vol); return isFinite(v) && v > 0; });
+          if(bars.length) mins = rtOpenMinutes(bars[bars.length - 1].time);
+        }
+        this.avgVolPerMin = mins > 0 ? total / mins : 0;
         if(!this._chart){
           const el = this.$refs.chart;
           if(!el) return;
@@ -810,7 +1016,7 @@ Vue.component('board-rt', {
     _redraw(){
       if(!this._chart || !this._rt) return;
       const pc = this._calcPrevClose();
-      this._chart.setOption(buildRtOption(this._rt, pc, this.kind), true);
+      this._chart.setOption(buildRtOption(this._rt, pc, this.kind, this.avgVolPerMin, 0, this.showBands), true);
       this._chart.resize();
     },
     async _loadDepth(){
@@ -947,6 +1153,8 @@ new Vue({
       boardPeriod:'1d',
       boardAdjust:'qfq',
       boardKlineCount:0,
+      showBands:true,
+      boardKlineIndicator:'mfi',
       boardSide:{},
       watchCodes:[],
     };
@@ -1251,7 +1459,7 @@ new Vue({
       const fetchOne = async (code) => {
         if(!code) return [];
         try{
-          const js = await reqJSON('/market/minute/' + encodeURIComponent(code) + '?ttl=30&_=' + Date.now(), { cache: 'no-store' });
+          const js = await reqJSON('/market/minute/' + encodeURIComponent(code) + '?ttl=10&_=' + Date.now(), { cache: 'no-store' });
           return (js && js.data) || [];
         }catch(e){ return []; }
       };
@@ -1614,6 +1822,9 @@ new Vue({
         if(!this.rows.length) this.load();
         if(location.pathname.indexOf('/cb/watchlist/board') < 0) location.href = '/cb/watchlist/board';
       }
+    },
+    goFutures(){
+      window.location.href = '/futures/board';
     },
     enableWatchDrag(){
       const self = this;

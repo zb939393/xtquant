@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>股指资金</title>
+<script src="/static/jquery.min.js"></script>
+<script src="/static/echarts.min.js"></script>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html, body { height:100%; }
+  body { font-family:"Microsoft YaHei",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; background:#f5f7fa; color:#303133; overflow:hidden; }
+  #app { position:relative; height:100%; }
+  .tb-hover { position:absolute; top:0; left:0; right:0; height:46px; z-index:5; }
+  .toolbar { position:absolute; top:0; left:0; right:0; z-index:10; display:flex; align-items:center; gap:12px; flex-wrap:wrap; padding:10px 16px; background:rgba(255,255,255,.92); opacity:0; pointer-events:none; transition:opacity .18s ease; border-bottom:1px solid #f2f3f5; }
+  .tb-hover:hover + .toolbar, .toolbar:hover { opacity:1; pointer-events:auto; }
+  .title { font-weight:700; font-size:13px; }
+  .title .sub { font-size:10px; font-weight:400; color:#909399; margin-left:6px; }
+  .updated { margin-left:auto; font-size:10px; color:#909399; }
+  .btn { background:#fff; color:#409eff; border:1px solid #409eff; border-radius:6px; padding:3px 8px; font-size:10px; cursor:pointer; }
+  .btn:hover { background:#ecf5ff; }
+  .btn.active { background:#409eff; color:#fff; }
+  .charts { position:absolute; inset:0; display:flex; flex-direction:row; flex-wrap:wrap; align-content:flex-start; align-items:flex-start; gap:0; padding:6px 8px; overflow:auto; }
+  #main, #main1 { flex:1 1 320px; min-width:0; min-height:0; aspect-ratio:5 / 3; }
+</style>
+</head>
+<body>
+<div id="app">
+  <div class="tb-hover"></div>
+  <div class="toolbar">
+    <span class="title">股指<span class="sub">期指行情 / 资金流</span></span>
+    <span class="updated" id="updated"></span>
+    <button class="btn active" id="topBtn" onclick="toggleTop()">置顶</button>
+  </div>
+  <div class="charts">
+    <div id="main"></div>
+    <div id="main1"></div>
+  </div>
+</div>
+
+<script>
+// ===== 全局状态 =====
+var onTop = true;
+var timer = null;
+var chartS = null;   // 期指行情 图表实例
+var chartF = null;   // 资金 图表实例
+
+// 窗口尺寸变化时，让两个图表自适应重绘（只注册一次）
+window.addEventListener("resize", function () {
+  if (chartS) chartS.resize();
+  if (chartF) chartF.resize();
+});
+
+// 容器尺寸变化（含 flex 换行导致的尺寸改变）时立即重绘画布，避免堆叠后出现空白
+if (window.ResizeObserver) {
+  var ro = new ResizeObserver(function () {
+    if (chartS) chartS.resize();
+    if (chartF) chartF.resize();
+  });
+  ro.observe(document.getElementById("main"));
+  ro.observe(document.getElementById("main1"));
+}
+
+// ===== 置顶切换 =====
+function toggleTop(){
+  onTop = !onTop;
+  var btn = document.getElementById("topBtn");
+  btn.textContent = onTop ? "置顶" : "未置顶";
+  btn.className = "btn" + (onTop ? " active" : "");
+  if(window.pywebview && window.pywebview.api && window.pywebview.api.set_on_top){
+    window.pywebview.api.set_on_top(onTop);
+  } else {
+    onTop = true;
+    btn.textContent = "置顶";
+    btn.className = "btn active";
+  }
+}
+
+// ===== 交易时段判断 =====
+function checkAuditTime(beginTime, endTime) {
+  var nowDate = new Date();
+  var beginDate = new Date(nowDate);
+  var endDate = new Date(nowDate);
+
+  var beginIndex = beginTime.lastIndexOf(":");
+  var beginHour = beginTime.substring(0, beginIndex);
+  var beginMinue = beginTime.substring(beginIndex + 1, beginTime.length);
+  beginDate.setHours(beginHour, beginMinue, 0, 0);
+
+  var endIndex = endTime.lastIndexOf(":");
+  var endHour = endTime.substring(0, endIndex);
+  var endMinue = endTime.substring(endIndex + 1, endTime.length);
+  endDate.setHours(endHour, endMinue, 0, 0);
+  return nowDate.getTime() - beginDate.getTime() >= 0 && nowDate.getTime() <= endDate.getTime();
+}
+
+// ===== 期指行情（新浪分时，经后端代理 /futures/capital/sina）=====
+function readdata1(nid){
+  var url = "/futures/capital/sina?sym=" + encodeURIComponent(nid);
+  var s = document.createElement('script');
+  s.type = 'text/javascript';
+  s.async = true;
+  s.src = url;
+  var x = document.getElementsByTagName('script')[0];
+  x.parentNode.insertBefore(s, x);
+}
+
+function realdata1(data){
+  var arr = [];
+  var prePrice = data[0][5];
+  for (var i = 0; i < data.length; i++){
+    var ss = (data[i][1] / prePrice - 1) * 100;
+    ss = ss.toFixed(3);
+    arr.push(ss);
+  }
+  return arr;
+}
+
+function makechart_s(data){
+  var mychart = echarts.init(document.getElementById("main"));
+  var option = {
+    animation: false,
+    title: { text: "期指行情", textStyle: { fontSize: 12 } },
+    tooltip: { trigger: "axis" },
+    legend: { data: ["ih", "if", "ic", "im"] },
+    grid: { left: 50, right: 16, top: 36, bottom: 30 },
+    xAxis: [{
+      type: 'category',
+      data: data.x,
+      axisPointer: { show: true },
+      axisLabel: { interval: 29 }
+    }],
+    yAxis: [{ type: 'value', min: "dataMin", max: "dataMax", axisLabel: { formatter: "{value}%" } }],
+    series: [
+      { name: "ih", type: "line", data: data.y.ih, showSymbol: false },
+      { name: "if", type: "line", data: data.y.if, showSymbol: false },
+      { name: "ic", type: "line", data: data.y.ic, showSymbol: false },
+      { name: "im", type: "line", data: data.y.im, showSymbol: false },
+      {
+        name: "分割线", type: "line",
+        markLine: {
+          label: { show: false }, symbol: "none",
+          data: [{ xAxis: data.bb[1] }, { xAxis: data.bb[2] }, { xAxis: data.bb[3] }, { xAxis: data.bb[4] }]
+        }
+      }
+    ]
+  };
+  mychart.setOption(option);
+  chartS = mychart;
+  return mychart;
+}
+
+function chart_s(){
+  readdata1('ih0');
+  readdata1('if0');
+  readdata1('ic0');
+  readdata1('im0');
+  setTimeout(function(){
+    var data = {};
+    data.bb = ['8:30', '10:30', '11:30', '14:00', '15:00'];
+    data.x = ['09:30', '09:31', '09:32', '09:33', '09:34', '09:35', '09:36', '09:37', '09:38', '09:39', '09:40', '09:41',
+      '09:42', '09:43', '09:44', '09:45', '09:46', '09:47', '09:48', '09:49', '09:50', '09:51', '09:52', '09:53',
+      '09:54', '09:55', '09:56', '09:57', '09:58', '09:59', '10:00', '10:01', '10:02', '10:03', '10:04', '10:05',
+      '10:06', '10:07', '10:08', '10:09', '10:10', '10:11', '10:12', '10:13', '10:14', '10:15', '10:16', '10:17',
+      '10:18', '10:19', '10:20', '10:21', '10:22', '10:23', '10:24', '10:25', '10:26', '10:27', '10:28', '10:29',
+      '10:30', '10:31', '10:32', '10:33', '10:34', '10:35', '10:36', '10:37', '10:38', '10:39', '10:40', '10:41',
+      '10:42', '10:43', '10:44', '10:45', '10:46', '10:47', '10:48', '10:49', '10:50', '10:51', '10:52', '10:53',
+      '10:54', '10:55', '10:56', '10:57', '10:58', '10:59', '11:00', '11:01', '11:02', '11:03', '11:04', '11:05',
+      '11:06', '11:07', '11:08', '11:09', '11:10', '11:11', '11:12', '11:13', '11:14', '11:15', '11:16', '11:17',
+      '11:18', '11:19', '11:20', '11:21', '11:22', '11:23', '11:24', '11:25', '11:26', '11:27', '11:28', '11:29',
+      '11:30', '13:01', '13:02', '13:03', '13:04', '13:05', '13:06', '13:07', '13:08', '13:09', '13:10', '13:11',
+      '13:12', '13:13', '13:14', '13:15', '13:16', '13:17', '13:18', '13:19', '13:20', '13:21', '13:22', '13:23',
+      '13:24', '13:25', '13:26', '13:27', '13:28', '13:29', '13:30', '13:31', '13:32', '13:33', '13:34', '13:35',
+      '13:36', '13:37', '13:38', '13:39', '13:40', '13:41', '13:42', '13:43', '13:44', '13:45', '13:46', '13:47',
+      '13:48', '13:49', '13:50', '13:51', '13:52', '13:53', '13:54', '13:55', '13:56', '13:57', '13:58', '13:59',
+      '14:00', '14:01', '14:02', '14:03', '14:04', '14:05', '14:06', '14:07', '14:08', '14:09', '14:10', '14:11',
+      '14:12', '14:13', '14:14', '14:15', '14:16', '14:17', '14:18', '14:19', '14:20', '14:21', '14:22', '14:23',
+      '14:24', '14:25', '14:26', '14:27', '14:28', '14:29', '14:30', '14:31', '14:32', '14:33', '14:34', '14:35',
+      '14:36', '14:37', '14:38', '14:39', '14:40', '14:41', '14:42', '14:43', '14:44', '14:45', '14:46', '14:47',
+      '14:48', '14:49', '14:50', '14:51', '14:52', '14:53', '14:54', '14:55', '14:56', '14:57', '14:58', '14:59',
+      '15:00'];
+    data.y = {};
+    data.y.ih = realdata1(t1nf_ih0);
+    data.y.if = realdata1(t1nf_if0);
+    data.y.ic = realdata1(t1nf_ic0);
+    data.y.im = realdata1(t1nf_im0);
+    var f2 = makechart_s(data);
+    var f1 = updatechart();
+    if (f1 && f2) echarts.connect([f1, f2]);
+  }, 1000);
+}
+
+// ===== 资金流（东方财富 fflow，经后端代理 /futures/capital/fflow）=====
+function readdata(nid) {
+  var gg = +new Date();
+  var url = "/futures/capital/fflow?nid=" + encodeURIComponent(nid) + "&_=" + gg;
+  var jdata;
+  $.ajax({
+    type: "get",
+    async: false,
+    url: url,
+    success: function (json) {
+      jdata = json;
+    },
+    error: function () {
+      jdata = null;
+    }
+  });
+  if (jdata && jdata.data && jdata.data.klines) {
+    return jdata;
+  }
+  return { data: { name: "", code: "", klines: [] } };
+}
+
+function hq_deal(hqdata){
+  var dict = {};
+  dict.date = [];
+  dict.price = [0];
+  for (var i = 0; i < hqdata.length; i++){
+    var tt = hqdata[i].split(",");
+    dict.date.push(tt[0]);
+    dict.price.push(Number(tt[1]));
+  }
+  return dict;
+}
+
+function chartdata(dic){
+  var data1 = dic.data1.data;
+  var data2 = dic.data2.data;
+  var data3 = dic.data3.data;
+  var data4 = dic.data4.data;
+
+  var chartdata = {};
+  var stock1 = data1.klines;
+  var stock2 = data2.klines;
+  var stock3 = data3.klines;
+  var stock4 = data4.klines;
+
+  var stock1dict = hq_deal(stock1);
+  var stock2dict = hq_deal(stock2);
+  var stock3dict = hq_deal(stock3);
+  var stock4dict = hq_deal(stock4);
+  var todaydate = ['09:30', '09:31', '09:32', '09:33', '09:34', '09:35', '09:36', '09:37', '09:38', '09:39', '09:40', '09:41', '09:42', '09:43', '09:44', '09:45', '09:46', '09:47', '09:48', '09:49', '09:50', '09:51', '09:52', '09:53', '09:54', '09:55', '09:56', '09:57', '09:58', '09:59', '10:00', '10:01', '10:02', '10:03', '10:04', '10:05', '10:06', '10:07', '10:08', '10:09', '10:10', '10:11', '10:12', '10:13', '10:14', '10:15', '10:16', '10:17', '10:18', '10:19', '10:20', '10:21', '10:22', '10:23', '10:24', '10:25', '10:26', '10:27', '10:28', '10:29', '10:30', '10:31', '10:32', '10:33', '10:34', '10:35', '10:36', '10:37', '10:38', '10:39', '10:40', '10:41', '10:42', '10:43', '10:44', '10:45', '10:46', '10:47', '10:48', '10:49', '10:50', '10:51', '10:52', '10:53', '10:54', '10:55', '10:56', '10:57', '10:58', '10:59', '11:00', '11:01', '11:02', '11:03', '11:04', '11:05', '11:06', '11:07', '11:08', '11:09', '11:10', '11:11', '11:12', '11:13', '11:14', '11:15', '11:16', '11:17', '11:18', '11:19', '11:20', '11:21', '11:22', '11:23', '11:24', '11:25', '11:26', '11:27', '11:28', '11:29', '11:30', '13:01', '13:02', '13:03', '13:04', '13:05', '13:06', '13:07', '13:08', '13:09', '13:10', '13:11', '13:12', '13:13', '13:14', '13:15', '13:16', '13:17', '13:18', '13:19', '13:20', '13:21', '13:22', '13:23', '13:24', '13:25', '13:26', '13:27', '13:28', '13:29', '13:30', '13:31', '13:32', '13:33', '13:34', '13:35', '13:36', '13:37', '13:38', '13:39', '13:40', '13:41', '13:42', '13:43', '13:44', '13:45', '13:46', '13:47', '13:48', '13:49', '13:50', '13:51', '13:52', '13:53', '13:54', '13:55', '13:56', '13:57', '13:58', '13:59', '14:00', '14:01', '14:02', '14:03', '14:04', '14:05', '14:06', '14:07', '14:08', '14:09', '14:10', '14:11', '14:12', '14:13', '14:14', '14:15', '14:16', '14:17', '14:18', '14:19', '14:20', '14:21', '14:22', '14:23', '14:24', '14:25', '14:26', '14:27', '14:28', '14:29', '14:30', '14:31', '14:32', '14:33', '14:34', '14:35', '14:36', '14:37', '14:38', '14:39', '14:40', '14:41', '14:42', '14:43', '14:44', '14:45', '14:46', '14:47', '14:48', '14:49', '14:50', '14:51', '14:52', '14:53', '14:54', '14:55', '14:56', '14:57', '14:58', '14:59', '15:00'];
+
+  chartdata.date = todaydate;
+  chartdata.stock1price = stock1dict.price;
+  chartdata.stock2price = stock2dict.price;
+  chartdata.stock3price = stock3dict.price;
+  chartdata.stock4price = stock4dict.price;
+
+  chartdata.stock1name = data1.name;
+  chartdata.stock2name = data2.name;
+  chartdata.stock3name = data3.name;
+  chartdata.stock4name = data4.name;
+
+  chartdata.stock1code = data1.code;
+  chartdata.stock2code = data2.code;
+  chartdata.stock3code = data3.code;
+  chartdata.stock4code = data4.code;
+
+  return chartdata;
+}
+
+function makechart(chartdata){
+  var f1 = 60, f2 = 120, f3 = 180, f4 = 240;
+  var mychart = echarts.init(document.getElementById("main1"));
+  var option = {
+    animation: false,
+    title: { text: "资金", textStyle: { fontSize: 12 } },
+    tooltip: { trigger: "axis" },
+    legend: { data: ['ih', 'if', 'ic', 'im'], textStyle: { fontSize: 9 } },
+    grid: { left: 56, right: 16, top: 36, bottom: 30 },
+    xAxis: [{
+      type: 'category',
+      data: chartdata.date,
+      axisPointer: { show: true },
+      axisLabel: { interval: 29 }
+    }],
+    yAxis: {
+      type: 'value',
+      name: '百万',
+      nameLocation: 'end',
+      axisLabel: {
+        formatter: function (value) {
+          return (value / 10000000000).toFixed(1);
+        }
+      },
+      min: "dataMin",
+      max: "dataMax"
+    },
+    series: [
+      { name: "ih", type: "line", data: chartdata.stock1price, showSymbol: false },
+      { name: "if", type: "line", data: chartdata.stock2price, showSymbol: false },
+      { name: "ic", type: "line", data: chartdata.stock3price, showSymbol: false },
+      { name: "im", type: "line", data: chartdata.stock4price, showSymbol: false },
+      {
+        name: "分割线", type: "line",
+        markLine: {
+          label: { show: false }, symbol: "none",
+          data: [
+            { xAxis: chartdata.date[f1] },
+            { xAxis: chartdata.date[f2] },
+            { xAxis: chartdata.date[f3] },
+            { xAxis: chartdata.date[f4] }
+          ]
+        }
+      }
+    ]
+  };
+  mychart.setOption(option);
+  chartF = mychart;
+  return mychart;
+}
+
+function updatechart(){
+  var dic = {};
+  dic.data1 = readdata("1.000016");
+  dic.data2 = readdata("1.000300");
+  dic.data3 = readdata("1.000905");
+  dic.data4 = readdata("1.000852");
+  var data = chartdata(dic);
+  return makechart(data);
+}
+
+// ===== 启动 & 定时刷新 =====
+chart_s();
+setInterval(function(){
+  if (checkAuditTime("9:20", "11:35") || checkAuditTime("12:55", "15:10")) {
+    chart_s();
+  } else {
+    console.log("闭市");
+  }
+  document.getElementById("updated").textContent = "更新 " + new Date().toLocaleTimeString('zh-CN', { hour12: false });
+}, 20000);
+document.getElementById("updated").textContent = "更新 " + new Date().toLocaleTimeString('zh-CN', { hour12: false });
+</script>
+</body>
+</html>

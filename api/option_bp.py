@@ -381,7 +381,7 @@ def option_exquote_minute(code):
     try:
         if _exq_unavailable():
             return jsonify({"ok": False, "src": "exhq", "data": [], "error": "exhq unavailable"})
-        ttl = int(request.args.get("ttl", "30"))
+        ttl = int(request.args.get("ttl", "10"))
         key = "opt_exq_minute_%s" % code
         cached = _EXQ_CACHE.get(key)
         if cached and (time.time() - cached[1]) < ttl:

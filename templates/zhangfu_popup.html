@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>全市场涨幅分布</title>
+<script src="https://unpkg.com/vue@2.7.16/dist/vue.min.js"></script>
+<script src="https://unpkg.com/echarts@5.5.0/dist/echarts.min.js"></script>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html, body { height:100%; }
+  body { font-family:"Microsoft YaHei",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; background:#fff; color:#303133; overflow:hidden; }
+  #app { position:relative; height:100%; }
+  .tb-hover { position:absolute; top:0; left:0; right:0; height:46px; z-index:5; }
+  .toolbar { position:absolute; top:0; left:0; right:0; z-index:10; display:flex; align-items:center; gap:12px; flex-wrap:wrap; padding:10px 16px; background:transparent; opacity:0; pointer-events:none; transition:opacity .18s ease; }
+  .tb-hover:hover + .toolbar, .toolbar:hover { opacity:1; pointer-events:auto; }
+  .title { font-weight:700; font-size:13px; }
+  .title .sub { font-size:10px; font-weight:400; color:#909399; margin-left:6px; }
+  .sum { display:flex; gap:14px; font-size:10px; }
+  .sum .s b { font-weight:700; font-variant-numeric:tabular-nums; }
+  .up { color:#e74c3c; }
+  .down { color:#27ae60; }
+  .flat { color:#909399; }
+  .updated { margin-left:auto; font-size:10px; color:#909399; }
+  .btn { background:#fff; color:#409eff; border:1px solid #409eff; border-radius:6px; padding:3px 8px; font-size:10px; cursor:pointer; }
+  .btn:hover { background:#ecf5ff; }
+  .btn.active { background:#409eff; color:#fff; }
+  #chart { position:absolute; inset:0; }
+  .chart-err { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; color:#f56c6c; font-size:12px; padding:0 20px; text-align:center; }
+</style>
+</head>
+<body>
+<div id="app">
+  <div class="tb-hover"></div>
+  <div class="toolbar">
+    <span class="title">全市场涨幅分布<span class="sub" v-if="qdate">[# qdate #]</span></span>
+    <div class="sum">
+      <span class="s up">上涨 <b>[# dist.up #]</b></span>
+      <span class="s down">下跌 <b>[# dist.down #]</b></span>
+      <span class="s flat">平盘 <b>[# dist.flat #]</b></span>
+      <span class="s">合计 <b>[# dist.pool #]</b></span>
+    </div>
+    <span class="updated" v-if="updatedAt">更新 [# updatedAt #]</span>
+    <button class="btn" :class="{active:onTop}" @click="toggleTop">[# onTop ? '置顶' : '未置顶' #]</button>
+    <button class="btn" @click="fetchData(true)">刷新</button>
+  </div>
+  <div id="chart"></div>
+  <div class="chart-err" v-if="chartErr">[# chartErr #]</div>
+</div>
+
+<script>
+function reqJSON(url, opts){
+  const p = Object.assign({}, opts||{});
+  return new Promise((resolve, reject) => {
+    fetch(url, p)
+      .then(r => { if(!r.ok) throw new Error('HTTP '+r.status); return r.json(); })
+      .then(resolve)
+      .catch(reject);
+  });
+}
+function sideColor(side){ return side === 'up' ? '#e74c3c' : (side === 'down' ? '#27ae60' : '#909399'); }
+new Vue({
+  el: '#app',
+  delimiters: ['[#', '#]'],
+  data: {
+    dist: { up: 0, down: 0, flat: 0, pool: 0, data: [] },
+    qdate: 0,
+    updatedAt: '',
+    loading: false,
+    chart: null,
+    chartErr: '',
+    onTop: true,
+    timer: null,
+  },
+  created(){
+    this.timer = setInterval(() => this.fetchData(false), 30000);
+    window.addEventListener('resize', this.onResize);
+  },
+  mounted(){
+    this.initChart();
+    this.$nextTick(() => { if(this.chart) this.chart.resize(); this.fetchData(true); });
+  },
+  beforeDestroy(){
+    if(this.timer) clearInterval(this.timer);
+    window.removeEventListener('resize', this.onResize);
+  },
+  methods: {
+    initChart(){
+      if(typeof echarts === 'undefined'){
+        this.chartErr = 'ECharts 资源未加载（CDN 不可达）';
+        return;
+      }
+      this.chart = echarts.init(document.getElementById('chart'));
+    },
+    onResize(){ if(this.chart) this.chart.resize(); },
+    toggleTop(){
+      this.onTop = !this.onTop;
+      if(window.pywebview && window.pywebview.api && window.pywebview.api.set_on_top){
+        window.pywebview.api.set_on_top(this.onTop);
+      } else {
+        this.onTop = true;
+      }
+    },
+    fetchData(force){
+      if(this.loading) return;
+      this.loading = true;
+      const url = '/futures/zhangfu/distribution?ttl=30&_=' + Date.now();
+      reqJSON(url, { cache:'no-store' })
+        .then(resp => {
+          if(!resp.ok) throw new Error(resp.error || 'backend error');
+          const d = resp.data || {};
+          if(d.ok === false && d.error) throw new Error(d.error);
+          if(Array.isArray(d.data)) {
+            this.dist = { up:d.up||0, down:d.down||0, flat:d.flat||0, pool:d.pool||0, data:d.data };
+            this.qdate = d.qdate || 0;
+          }
+          this.updatedAt = new Date().toLocaleTimeString('zh-CN', {hour12:false});
+          this.render();
+        })
+        .catch(err => { this.updatedAt = '加载失败：' + err.message; })
+        .finally(() => { this.loading = false; });
+    },
+    render(){
+      if(!this.chart) return;
+      const list = this.dist.data || [];
+      const cats = list.map(x => x.label);
+      const vals = list.map(x => ({ value: x.count, itemStyle: { color: sideColor(x.side) } }));
+      const maxV = Math.max.apply(null, list.map(x => x.count).concat([1]));
+      const option = {
+        backgroundColor: '#fff',
+        animation: false,
+        grid: { left: '4%', right: '4%', top: '1%', bottom: '10%' },
+        tooltip: {
+          trigger: 'axis',
+          axisPointer: { type: 'shadow' },
+          formatter: function(params){
+            const p = params[0];
+            return p.name + '　' + p.value + ' 家';
+          },
+        },
+        xAxis: {
+          type: 'category',
+          data: cats,
+          axisLabel: { fontSize: 9, color: '#606266', interval: 0, rotate: 38 },
+          axisLine: { lineStyle: { color: '#dcdfe6' } },
+          axisTick: { show: false },
+        },
+        yAxis: {
+          type: 'value',
+          name: '家数',
+          nameTextStyle: { fontSize: 9, color: '#909399' },
+          axisLabel: { fontSize: 9, color: '#909399', formatter: function(v){ return v >= 1000 ? (v/1000)+'k' : v; } },
+          splitLine: { lineStyle: { color: '#f2f3f5' } },
+        },
+        series: [{
+          type: 'bar',
+          data: vals,
+          barWidth: '82%',
+          label: { show: true, position: 'top', fontSize: 8, color: '#909399', formatter: function(p){ return p.value >= 100 ? (p.value/1000).toFixed(1)+'k' : p.value; } },
+          markLine: {
+            symbol: 'none',
+            silent: true,
+            lineStyle: { color: '#f0b90b', type: 'dashed', width: 1 },
+            label: { show: false },
+            data: [{ yAxis: 0 }],
+          },
+        }],
+      };
+      this.chart.setOption(option, true);
+      this.chart.resize();
+    },
+  },
+});
+</script>
+</body>
+</html>

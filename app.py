@@ -10,6 +10,7 @@ from api.market_bp import market_bp
 from api.trade_bp  import trade_bp
 from api.cb_bp     import cb_bp
 from api.option_bp import option_bp
+from api.futures_bp import futures_bp
 
 
 def create_app():
@@ -33,6 +34,7 @@ def create_app():
     app.register_blueprint(trade_bp,  url_prefix="/trade")
     app.register_blueprint(cb_bp,     url_prefix="/cb")
     app.register_blueprint(option_bp, url_prefix="/option")
+    app.register_blueprint(futures_bp, url_prefix="/futures")
 
     # 预热顶层缓存，避免首屏阻塞。
     #  /cb/full：后台线程预热，不阻塞启动；
@@ -91,6 +93,16 @@ def create_app():
                 "GET  /option/full",
                 "GET  /option/full/<code>",
                 "GET  /option/full/stats",
+                "GET  /futures/board",
+                "GET  /futures/snapshot",
+                "GET  /futures/exquote/minute/<code>",
+                "GET  /futures/exquote/quote/<code>",
+                "GET  /futures/exquote/tick/<code>",
+                "GET  /futures/popup",
+                "POST /futures/popup/launch",
+                "GET  /futures/popup/industry",
+                "GET  /futures/popup/overview",
+                "GET  /futures/overview   (市场概况网页版)",
             ],
         })
 
@@ -113,6 +125,11 @@ def create_app():
     def option_board():
         # 期权监控看板：独立前端模板（复用同一 Vue2/Element-UI/ECharts 技术栈）
         return render_template("option.html")
+
+    @app.route("/futures/board")
+    def futures_board():
+        # 股指期货监控看板：独立前端模板（复用同一 Vue2/Element-UI/ECharts 技术栈）
+        return render_template("futures.html")
 
     return app
 

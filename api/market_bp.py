@@ -36,7 +36,7 @@ def kline(code):
 @market_bp.route("/minute/<path:code>")
 def minute(code):
     """当日分时（1 分钟时间分享线）：PyTDX get_minute_time_data。"""
-    ttl = int(request.args.get("ttl", "30"))
+    ttl = int(request.args.get("ttl", "10"))
     data = []
     try:
         data = ak_service.get_minute_time_data_pytdx(code, ttl=ttl)

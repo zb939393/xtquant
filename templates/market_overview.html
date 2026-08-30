@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>A股市场概况</title>
+<script src="https://cdn.jsdelivr.net/npm/vue@2.7.16/dist/vue.min.js"></script>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family:"Microsoft YaHei",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; background:#f5f7fa; color:#303133; }
+  .page { max-width:1200px; margin:0 auto; padding:20px 16px 40px; }
+  .header { display:flex; align-items:center; justify-content:space-between; margin-bottom:16px; flex-wrap:wrap; gap:10px; }
+  .title { font-size:20px; font-weight:700; }
+  .title .sub { font-size:13px; font-weight:400; color:#909399; margin-left:8px; }
+  .head-right { display:flex; align-items:center; gap:12px; }
+  .updated { font-size:13px; color:#909399; }
+  .btn { background:#409eff; color:#fff; border:none; border-radius:6px; padding:6px 14px; font-size:13px; cursor:pointer; }
+  .btn:hover { background:#66b1ff; }
+  .btn:disabled { background:#a0cfff; cursor:not-allowed; }
+  .summary { display:grid; grid-template-columns:repeat(6,minmax(0,1fr)); gap:12px; margin-bottom:18px; }
+  .card { background:#fff; border:1px solid #ebeef5; border-radius:10px; padding:16px 12px; text-align:center; box-shadow:0 1px 3px rgba(0,0,0,.04); }
+  .card .num { font-size:24px; font-weight:700; font-variant-numeric:tabular-nums; line-height:1.15; }
+  .card .label { font-size:13px; color:#909399; margin-top:8px; }
+  .index-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; }
+  .ix { background:#fff; border:1px solid #ebeef5; border-radius:10px; padding:16px 18px; box-shadow:0 1px 3px rgba(0,0,0,.04); }
+  .ix-head { display:flex; align-items:baseline; gap:8px; }
+  .ix-name { font-weight:600; font-size:15px; }
+  .ix-code { font-size:12px; color:#909399; }
+  .ix-price { font-size:24px; font-weight:700; font-variant-numeric:tabular-nums; margin-top:10px; }
+  .ix-pct { font-size:15px; font-weight:600; margin-top:4px; }
+  .ix-body { display:flex; align-items:flex-end; justify-content:space-between; gap:10px; }
+  .ix-main { flex:1; min-width:0; }
+  .ix-spark { flex:1.2; min-width:0; height:40px; display:block; cursor:crosshair; }
+  .spark-tip { position:fixed; z-index:99; background:rgba(255,255,255,.97); border:1px solid #dcdfe6; border-radius:6px; padding:5px 10px; font-size:13px; pointer-events:none; box-shadow:0 2px 8px rgba(0,0,0,.12); min-width:72px; text-align:center; transform:translate(-50%,-108%); }
+  .tip-price { font-weight:700; font-variant-numeric:tabular-nums; }
+  .tip-pct { font-weight:600; margin-top:2px; }
+  .foot { margin-top:18px; font-size:12px; color:#b0b3b8; text-align:center; }
+  .up { color:#e74c3c; }
+  .down { color:#27ae60; }
+  .flat { color:#909399; }
+  .loading { position:fixed; top:0; left:0; right:0; height:3px; z-index:99; overflow:hidden; display:none; }
+  .loading.on { display:block; }
+  .loading::after { content:""; display:block; height:100%; width:40%; background:#409eff; animation:slide 1s linear infinite; }
+  @keyframes slide { 0%{margin-left:-40%;} 100%{margin-left:100%;} }
+  @media (max-width:1000px){ .summary{grid-template-columns:repeat(3,1fr);} .index-grid{grid-template-columns:repeat(2,1fr);} }
+  @media (max-width:640px){ .summary{grid-template-columns:repeat(2,1fr);} .index-grid{grid-template-columns:1fr;} }
+</style>
+</head>
+<body>
+<div class="loading" :class="{on:loading}"></div>
+<div class="page">
+  <div class="header">
+    <div class="title">A股市场概况<span class="sub">中金所 CFFEX · 红涨绿跌</span></div>
+    <div class="head-right">
+      <span class="updated" v-if="updatedAt">更新 [# updatedAt #]</span>
+      <button class="btn" :disabled="launching" @click="launchIndustry">[# launching ? '启动中…' : '行业分布窗口' #]</button>
+      <button class="btn" :disabled="launchingZF" @click="launchZhangfu">[# launchingZF ? '启动中…' : '涨幅分布窗口' #]</button>
+      <button class="btn" :disabled="launchingNews" @click="launchNews">[# launchingNews ? '启动中…' : '新闻窗口' #]</button>
+      <button class="btn" :disabled="launchingAmountFlow" @click="launchAmountFlow">[# launchingAmountFlow ? '启动中…' : '两市成交分析窗口' #]</button>
+      <button class="btn" :disabled="launchingExternal" @click="launchExternal">[# launchingExternal ? '启动中…' : '外围股市窗口' #]</button>
+      <button class="btn" :disabled="launchingCapital" @click="launchCapital">[# launchingCapital ? '启动中…' : '股指资金窗口' #]</button>
+      <button class="btn" :disabled="loading" @click="fetchData(true)">[# loading ? '刷新中…' : '刷  新' #]</button>
+    </div>
+  </div>
+
+  <div class="summary">
+    <div class="card"><div class="num up">[# overview.up #]</div><div class="label">上涨家数</div></div>
+    <div class="card"><div class="num down">[# overview.down #]</div><div class="label">下跌家数</div></div>
+    <div class="card"><div class="num flat">[# overview.flat #]</div><div class="label">平盘家数</div></div>
+    <div class="card"><div class="num" style="color:#e74c3c;">[# overview.limit_up #]</div><div class="label">涨停家数</div></div>
+    <div class="card"><div class="num" style="color:#27ae60;">[# overview.limit_down #]</div><div class="label">跌停家数</div></div>
+    <div class="card"><div class="num" style="color:#303133;font-size:21px;">[# fmtAmount(overview.total_amount) #]</div><div class="label">两市成交额</div></div>
+  </div>
+
+  <div class="index-grid">
+    <div class="ix" v-for="ix in overview.indices" :key="ix.code">
+      <div class="ix-head">
+        <span class="ix-name">[# ix.name #]</span>
+        <span class="ix-code">[# ix.code #]</span>
+      </div>
+      <div class="ix-body">
+        <div class="ix-main">
+          <div class="ix-price" :class="updownCls(ix.pct)">[# fmt2(ix.price) #]</div>
+          <div class="ix-pct" :class="updownCls(ix.pct)">[# fmtPct(ix.pct) #]</div>
+        </div>
+        <svg class="ix-spark" viewBox="0 0 100 26" preserveAspectRatio="none"
+             @mousemove="sparkMove(ix, $event)" @mouseleave="sparkLeave()">
+          <line v-if="hasSpark(ix)" :x1="3" :x2="97" :y1="preCloseY(ix)" :y2="preCloseY(ix)"
+                stroke="#f0b90b" stroke-width="0.9" stroke-dasharray="4 3"/>
+          <polyline :points="sparkPoints(ix)" fill="none" :stroke="sparkStroke(ix)" stroke-width="1.4"/>
+        </svg>
+        <div class="spark-tip" v-if="sparkTip.ix === ix.code" :style="sparkTipStyle">
+          <div class="tip-price" :class="updownCls(sparkTip.pct)">[# fmt2(sparkTip.price) #]</div>
+          <div class="tip-pct" :class="updownCls(sparkTip.pct)">[# fmtPct(sparkTip.pct) #]</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="foot">共 [# overview.pool #] 只 A 股 · 每 30 秒自动刷新 · 涨停/跌停按 ±9.8% 涨幅阈值近似 · 数据来源 PyTDX 行情</div>
+</div>
+
+<script>
+function num(v){ if(v===null||v===undefined||v==='') return NaN; const n=parseFloat(v); return isNaN(n)?NaN:n; }
+function reqJSON(url, opts){
+  const p = Object.assign({}, opts||{});
+  return new Promise((resolve, reject) => {
+    fetch(url, p)
+      .then(r => { if(!r.ok) throw new Error('HTTP '+r.status); return r.json(); })
+      .then(resolve)
+      .catch(reject);
+  });
+}
+new Vue({
+  el: '.page',
+  delimiters: ['[#', '#]'],
+  data: {
+    overview: { indices: [], up:0, down:0, flat:0, limit_up:0, limit_down:0, total_amount:0, pool:0 },
+    updatedAt: '',
+    loading: false,
+    launching: false,
+    launchingZF: false,
+    launchingNews: false,
+    launchingAmountFlow: false,
+    launchingExternal: false,
+    launchingCapital: false,
+    sparkTip: { ix: null, price: 0, pct: 0, left: 0, top: 0 },
+  },
+  created(){
+    this.fetchData(true);
+    this.timer = setInterval(() => this.fetchData(false), 30000);
+  },
+  beforeDestroy(){ if(this.timer) clearInterval(this.timer); },
+  methods: {
+    fetchData(force){
+      if(this.loading) return;
+      this.loading = true;
+      const url = '/futures/popup/overview?ttl=60&_=' + Date.now();
+      reqJSON(url, { cache:'no-store' })
+        .then(resp => {
+          if(!resp.ok) throw new Error(resp.error || 'backend error');
+          if(resp.data && resp.data.ok === false && resp.data.error) throw new Error(resp.data.error);
+          this.overview = resp.data || this.overview;
+          this.updatedAt = new Date().toLocaleTimeString('zh-CN', {hour12:false});
+        })
+        .catch(err => { this.updatedAt = '加载失败：' + err.message; })
+        .finally(() => { this.loading = false; });
+    },
+    fmtAmount(v){ const n=num(v); if(isNaN(n)||n<=0) return '--'; return (n/1e8).toFixed(2)+'亿'; },
+    fmt2(v){ const n=num(v); return isNaN(n) ? '--' : n.toFixed(2); },
+    fmtPct(v){ const n=num(v); return isNaN(n) ? '--' : (n>0?'+':'')+n.toFixed(2)+'%'; },
+    updownCls(v){ const n=num(v); if(isNaN(n)) return 'flat'; return n>0 ? 'up' : (n<0 ? 'down' : 'flat'); },
+    sparkPoints(ix){
+      const arr = (ix.spark && ix.spark.length) ? ix.spark : [];
+      if(!arr.length) return '';
+      const w = 100, h = 26, pad = 3;
+      let min = Math.min.apply(null, arr), max = Math.max.apply(null, arr);
+      if(!isFinite(min) || !isFinite(max)) return '';
+      if(max === min){ max += 1; min -= 1; }
+      return arr.map((p, i) => {
+        const x = arr.length === 1 ? w / 2 : pad + (i / (arr.length - 1)) * (w - pad * 2);
+        const y = h - 2 - ((p - min) / (max - min)) * (h - 4);
+        return x.toFixed(1) + ',' + y.toFixed(1);
+      }).join(' ');
+    },
+    sparkStroke(ix){ const c = this.updownCls(ix.pct); return c==='up' ? '#e74c3c' : (c==='down' ? '#27ae60' : '#909399'); },
+    hasSpark(ix){ return !!(ix.spark && ix.spark.length); },
+    preCloseY(ix){
+      const arr = (ix.spark && ix.spark.length) ? ix.spark : [];
+      if(!arr.length) return 0;
+      const w = 100, h = 26;
+      let min = Math.min.apply(null, arr), max = Math.max.apply(null, arr);
+      if(!isFinite(min) || !isFinite(max)) return 0;
+      if(max === min){ max += 1; min -= 1; }
+      const lc = num(ix.pre_close);
+      if(isNaN(lc) || lc <= 0) return 0;
+      const y = h - 2 - ((lc - min) / (max - min)) * (h - 4);
+      return Math.max(0, Math.min(h, y)).toFixed(1);
+    },
+    sparkMove(ix, e){
+      const arr = (ix.spark && ix.spark.length) ? ix.spark : [];
+      if(!arr.length) return;
+      const rect = e.currentTarget.getBoundingClientRect();
+      const ratio = (e.clientX - rect.left) / (rect.width || 1);
+      const idx = Math.max(0, Math.min(arr.length - 1, Math.round(ratio * (arr.length - 1))));
+      const price = arr[idx];
+      const lc = num(ix.pre_close);
+      const pct = lc ? ((price - lc) / lc * 100) : 0;
+      this.sparkTip = { ix: ix.code, price: price, pct: pct, left: e.clientX, top: e.clientY - 8 };
+    },
+    sparkLeave(){ this.sparkTip.ix = null; },
+    launchIndustry(){
+      if(this.launching) return;
+      this.launching = true;
+      reqJSON('/futures/popup/industry/launch', { method:'POST', cache:'no-store' })
+        .then(resp => {
+          if(!resp.ok) throw new Error(resp.error || '启动失败');
+          this.updatedAt = '行业分布窗口已启动（独立窗口）';
+        })
+        .catch(err => { this.updatedAt = '启动失败：' + err.message; })
+        .finally(() => { this.launching = false; });
+    },
+    launchZhangfu(){
+      if(this.launchingZF) return;
+      this.launchingZF = true;
+      reqJSON('/futures/popup/zhangfu/launch', { method:'POST', cache:'no-store' })
+        .then(resp => {
+          if(!resp.ok) throw new Error(resp.error || '启动失败');
+          this.updatedAt = '涨幅分布窗口已启动（独立窗口）';
+        })
+        .catch(err => { this.updatedAt = '启动失败：' + err.message; })
+        .finally(() => { this.launchingZF = false; });
+    },
+    launchNews(){
+      if(this.launchingNews) return;
+      this.launchingNews = true;
+      reqJSON('/futures/popup/news/launch', { method:'POST', cache:'no-store' })
+        .then(resp => {
+          if(!resp.ok) throw new Error(resp.error || '启动失败');
+          this.updatedAt = '新闻窗口已启动（独立窗口）';
+        })
+        .catch(err => { this.updatedAt = '启动失败：' + err.message; })
+        .finally(() => { this.launchingNews = false; });
+    },
+    launchAmountFlow(){
+      if(this.launchingAmountFlow) return;
+      this.launchingAmountFlow = true;
+      reqJSON('/futures/popup/amountflow/launch', { method:'POST', cache:'no-store' })
+        .then(resp => {
+          if(!resp.ok) throw new Error(resp.error || '启动失败');
+          this.updatedAt = '两市成交分析窗口已启动（独立窗口）';
+        })
+        .catch(err => { this.updatedAt = '启动失败：' + err.message; })
+        .finally(() => { this.launchingAmountFlow = false; });
+    },
+    launchExternal(){
+      if(this.launchingExternal) return;
+      this.launchingExternal = true;
+      reqJSON('/futures/popup/external/launch', { method:'POST', cache:'no-store' })
+        .then(resp => {
+          if(!resp.ok) throw new Error(resp.error || '启动失败');
+          this.updatedAt = '外围股市窗口已启动（独立窗口）';
+        })
+        .catch(err => { this.updatedAt = '启动失败：' + err.message; })
+        .finally(() => { this.launchingExternal = false; });
+    },
+    launchCapital(){
+      if(this.launchingCapital) return;
+      this.launchingCapital = true;
+      reqJSON('/futures/popup/capital/launch', { method:'POST', cache:'no-store' })
+        .then(resp => {
+          if(!resp.ok) throw new Error(resp.error || '启动失败');
+          this.updatedAt = '股指资金窗口已启动（独立窗口）';
+        })
+        .catch(err => { this.updatedAt = '启动失败：' + err.message; })
+        .finally(() => { this.launchingCapital = false; });
+    },
+  },
+  computed: {
+    sparkTipStyle(){ return { left: (this.sparkTip.left || 0) + 'px', top: (this.sparkTip.top || 0) + 'px' }; },
+  },
+});
+</script>
+</body>
+</html>

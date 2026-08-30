@@ -24,6 +24,12 @@ try:
         import pytdx_patches
     except Exception:
         pass
+    # 行情增强补丁（tdx_extra）：把 get_sparkline 等 0x0fd1 扩展接口挂到 TdxHq_API 上。
+    try:
+        import tdx_extra
+        tdx_extra.patch()
+    except Exception:
+        pass
 except Exception as _pytdx_import_e:
     _PYTDX_OK = False
     _pytdx_import_e
@@ -1962,7 +1968,7 @@ def get_kline_pytdx(code, count=120, ttl=120, batch=800, max_bars=5000, period="
     return out
 
 
-def get_minute_time_data_pytdx(code, ttl=30):
+def get_minute_time_data_pytdx(code, ttl=10):
     """PyTDX 当日分时数据（数据源：经 pip 包 pytdx_patches 修复的 api.get_minute_time_data）。
 
     悬浮框与自选股看盘板的分时图共用此接口。pip 补丁内部由 1 分钟 K 线
@@ -2113,6 +2119,899 @@ def get_quote_pytdx(code, ttl=3):
             api = _pytdx_get_api()
     if out:
         _QUOTE_CACHE[key] = (out, time.time())
+    return out
+
+
+_INDUSTRY_CACHE = {}
+
+
+def _pytdx_pick_mac_server():
+    """为 MAC 板块接口选一台行情主站（7709；多数券商 MAC 与行情同端口）。"""
+    ranked = _PYTDX_SERVERS_RANKED
+    if ranked:
+        try:
+            pool = [s[1] for s in ranked[:_PYTDX_TOP_N]]
+            if pool:
+                return _rnd_pool.choice(pool)
+        except Exception:
+            pass
+    return _rnd_pool.choice(_PYTDX_SERVERS)
+
+
+def get_industry_board_list(board_type=0, ttl=30):
+    """行业板块分布数据（tdx_mac 资金流向/板块 MAC 协议）。
+
+    数据源：tdx_mac.TdxMac(host, 7709).get_board_list(board_type, start, page_size)。
+    每个板块返回板块指数价格 price 与昨收 pre_close；涨幅统一按
+    pct = (price - pre_close) / pre_close * 100 计算（不使用接口自带 rise_speed）。
+
+    board_type：0=通达信 56 大行业，1=细分行业（约 110 个）。
+    返回 [{code, name, price, pre_close, pct, symbol_name, symbol_price}]。
+    低频（默认 30s 缓存）刷新，避免频繁打下游行情源。
+    """
+    key = "industry_%s" % board_type
+    cached = _INDUSTRY_CACHE.get(key)
+    if cached and (time.time() - cached[1]) < ttl:
+        return cached[0]
+    out = []
+    if not _PYTDX_OK:
+        return out
+    try:
+        import tdx_mac
+    except Exception:
+        return out
+    host, port = _pytdx_pick_mac_server()
+    m = None
+    try:
+        m = tdx_mac.TdxMac(host, port, timeout=8)
+        m.connect()
+        start = 0
+        total = None
+        for _ in range(20):  # 翻页上限保护（行业板块一页通常即可拉全）
+            try:
+                r = m.get_board_list(board_type=int(board_type), start=start, page_size=150)
+            except Exception:
+                break
+            if not isinstance(r, dict) or r.get("error"):
+                break
+            lst = r.get("list") or []
+            if not lst:
+                break
+            for it in lst:
+                try:
+                    price = float(it.get("price") or 0)
+                    pre_close = float(it.get("pre_close") or 0)
+                    pct = ((price - pre_close) / pre_close * 100) if pre_close else 0.0
+                    out.append({
+                        "code": it.get("code"),
+                        "name": it.get("name"),
+                        "price": price,
+                        "pre_close": pre_close,
+                        "pct": round(pct, 3),
+                        "symbol_name": it.get("symbol_name"),
+                        "symbol_price": float(it.get("symbol_price") or 0),
+                    })
+                except Exception:
+                    continue
+            if total is None:
+                try:
+                    total = int(r.get("total") or 0)
+                except Exception:
+                    total = 0
+            start += len(lst)
+            if total and start >= total:
+                break
+    except Exception as e:
+        print("get_industry_board_list error: %s" % e)
+    finally:
+        if m is not None:
+            try:
+                m.close()
+            except Exception:
+                pass
+    if out:
+        _INDUSTRY_CACHE[key] = (out, time.time())
+    return out
+
+
+_BOARD_STOCKS_CACHE = {}
+
+
+def _board_stocks_quotes_batch(tuples):
+    """批量 get_security_quotes 拉股票实时价（price/last_close），(mkt, code6) -> quote。"""
+    out = {}
+    if not tuples:
+        return out
+    api = _pytdx_get_api()
+    for _round in range(2):
+        if api is None:
+            break
+        try:
+            if not _pytdx_is_alive(api):
+                api = _pytdx_get_api()
+                if api is None:
+                    break
+            BATCH = 80
+            for i in range(0, len(tuples), BATCH):
+                batch = tuples[i:i + BATCH]
+                try:
+                    with _PYTDX_SEM:
+                        resp = api.get_security_quotes([(m, c) for m, c in batch])
+                except Exception:
+                    resp = []
+                if not resp:
+                    continue
+                for r in resp:
+                    try:
+                        m = int(r.get("market") or 0)
+                        c = str(r.get("code") or "").zfill(6)
+                        pr = r.get("price")
+                        out[(m, c)] = {
+                            "price": float(pr if pr is not None else r.get("close") or 0),
+                            "last_close": float(r.get("last_close") or 0),
+                        }
+                    except Exception:
+                        continue
+            break
+        except Exception:
+            try:
+                api.disconnect()
+            except Exception:
+                pass
+            _PYTDX_POOL.api = None
+            api = _pytdx_get_api()
+    return out
+
+
+def get_board_stocks(board_code, ttl=15):
+    """某行业/板块的成分股分布数据（tdx_mac MAC 协议 get_board_members + pytdx 批量报价）。
+
+    成分股经 MAC 协议分页拉取（含名称）；涨幅按 pct=(price-pre_close)/pre_close*100 计算。
+    返回 [{code, name, price, pre_close, pct, market}]，按涨幅降序。
+    低频（默认 15s 缓存）刷新，避免频繁打下游行情源。
+    """
+    key = "board_stocks_%s" % board_code
+    cached = _BOARD_STOCKS_CACHE.get(key)
+    if cached and (time.time() - cached[1]) < ttl:
+        return cached[0]
+    out = []
+    if not _PYTDX_OK:
+        return out
+    members = []
+    try:
+        import tdx_mac
+    except Exception:
+        return out
+    host, port = _pytdx_pick_mac_server()
+    m = None
+    try:
+        m = tdx_mac.TdxMac(host, port, timeout=8)
+        m.connect()
+        start = 0
+        total = None
+        for _ in range(30):
+            try:
+                r = m.get_board_members(str(board_code), start=start, page_size=80)
+            except Exception:
+                break
+            if not isinstance(r, dict) or r.get("error"):
+                break
+            lst = r.get("list") or []
+            if not lst:
+                break
+            members.extend(lst)
+            if total is None:
+                try:
+                    total = int(r.get("total") or 0)
+                except Exception:
+                    total = 0
+            start += len(lst)
+            if total and start >= total:
+                break
+    except Exception as e:
+        print("get_board_stocks members error: %s" % e)
+    finally:
+        if m is not None:
+            try:
+                m.close()
+            except Exception:
+                pass
+    if not members:
+        return out
+    tuples = []
+    for it in members:
+        try:
+            tuples.append((int(it.get("market") or 0), str(it.get("symbol") or "").zfill(6)))
+        except Exception:
+            continue
+    quotes = _board_stocks_quotes_batch(tuples)
+    for it in members:
+        try:
+            sym = str(it.get("symbol") or "").zfill(6)
+            q = quotes.get((int(it.get("market") or 0), sym))
+            if not q:
+                continue
+            price = q["price"]
+            lc = q["last_close"]
+            pct = round((price - lc) / lc * 100, 3) if lc else 0.0
+            out.append({
+                "code": sym,
+                "name": it.get("name") or sym,
+                "price": price,
+                "pre_close": lc,
+                "pct": pct,
+                "market": int(it.get("market") or 0),
+            })
+        except Exception:
+            continue
+    out.sort(key=lambda x: x["pct"], reverse=True)
+    if out:
+        _BOARD_STOCKS_CACHE[key] = (out, time.time())
+    return out
+
+
+_MARKET_OVERVIEW_CACHE = {}
+_MARKET_POOL_CACHE = {}
+_ZHANGFU_CACHE = {}
+_NEWS_CACHE = {}
+_AMOUNTFLOW_CACHE = {}
+
+
+def _is_a_stock(mkt, code):
+    """判断是否为沪深 A 股股票代码（排除指数/基金/债券）。
+    沪：600/601/603/605 主板、688/689 科创板；深：000/001/002/003 主板、300/301 创业板。
+    """
+    c = str(code).zfill(6)
+    if mkt == 1:
+        return c[:3] in ("600", "601", "603", "605") or c[:3] in ("688", "689")
+    return c[:3] in ("000", "001", "002", "003") or c[:3] in ("300", "301")
+
+
+def _get_stock_pool_pytdx(ttl=1800):
+    """沪深两市全部 A 股股票池 [(mkt, code6), ...]（一次性全表拉取，缓存 30 分钟）。"""
+    cached = _MARKET_POOL_CACHE.get("pool")
+    if cached and (time.time() - cached[1]) < ttl:
+        return cached[0]
+    pool = []
+    api = _pytdx_get_api()
+    for _round in range(2):
+        if api is None:
+            break
+        try:
+            if not _pytdx_is_alive(api):
+                api = _pytdx_get_api()
+                if api is None:
+                    break
+            for mkt in (0, 1):
+                total = 0
+                try:
+                    with _PYTDX_SEM:
+                        total = int(api.get_security_count(mkt) or 0)
+                except Exception:
+                    total = 0
+                start = 0
+                while start < total:
+                    try:
+                        with _PYTDX_SEM:
+                            lst = api.get_security_list(mkt, start)
+                    except Exception:
+                        lst = []
+                    if not lst:
+                        break
+                    for it in lst:
+                        try:
+                            code = str(it.get("code") or "").zfill(6)
+                            if _is_a_stock(mkt, code):
+                                pool.append((mkt, code))
+                        except Exception:
+                            continue
+                    start += len(lst)
+            break
+        except Exception:
+            try:
+                api.disconnect()
+            except Exception:
+                pass
+            _PYTDX_POOL.api = None
+            api = _pytdx_get_api()
+    if pool:
+        _MARKET_POOL_CACHE["pool"] = (pool, time.time())
+    return pool
+
+
+def get_market_overview(ttl=60):
+    """A 股市场概况：主要指数涨跌、两市涨跌家数、涨停/跌停家数、两市总成交额。
+
+    指数行情与成交额用 get_security_quotes 直查（上证 000001 金额 + 深证综指 399106 金额≈两市总额）；
+    涨跌家数由全市场 A 股行情（一次性全表拉取，股票池缓存 30 分钟）聚合，默认 60s 缓存。
+    涨停/跌停按 ±9.8% 涨幅阈值近似判断（主板 10%、创业板/科创板 20% 均被该阈值覆盖）。
+    返回 {ok, indices:[{code,name,price,pre_close,pct,amount}], up, down, flat,
+          limit_up, limit_down, total_amount(元), pool}。
+    """
+    key = "market_overview"
+    cached = _MARKET_OVERVIEW_CACHE.get(key)
+    if cached and (time.time() - cached[1]) < ttl:
+        return cached[0]
+    out = {"ok": False, "error": "", "indices": [], "up": 0, "down": 0, "flat": 0,
+           "limit_up": 0, "limit_down": 0, "total_amount": 0.0, "pool": 0}
+    if not _PYTDX_OK:
+        out["error"] = "pytdx unavailable"
+        return out
+    try:
+        # ---- 主要指数 + 两市成交额 ----
+        index_tuples = [
+            (1, "000001", "上证指数"),
+            (0, "399001", "深证成指"),
+            (0, "399006", "创业板指"),
+            (1, "000300", "沪深300"),
+            (1, "000905", "中证500"),
+            (0, "399106", "深证综指"),
+        ]
+        api = _pytdx_get_api()
+        indices = []
+        total_amount = 0.0
+        if api is not None:
+            try:
+                with _PYTDX_SEM:
+                    rows = api.get_security_quotes([(m, c) for m, c, _n in index_tuples])
+            except Exception:
+                rows = []
+            if rows:
+                by_key = {}
+                for r in rows:
+                    try:
+                        by_key[(int(r.get("market")), str(r.get("code")).zfill(6))] = r
+                    except Exception:
+                        pass
+                for mkt, code, name in index_tuples:
+                    r = by_key.get((mkt, code))
+                    if not r:
+                        continue
+                    try:
+                        price = float(r.get("price") or 0)
+                        lc = float(r.get("last_close") or 0)
+                        pct = ((price - lc) / lc * 100) if lc else 0.0
+                        amount = float(r.get("amount") or 0)
+                        idx = {
+                            "code": code, "name": name, "price": price,
+                            "pre_close": lc, "pct": round(pct, 3), "amount": amount,
+                            "spark": [], "spark_base": 0.0,
+                        }
+                        # 小走势图 sparkline（tdx_extra / 0x0fd1）：prices 为 float 绝对价序列
+                        try:
+                            with _PYTDX_SEM:
+                                sp = api.get_sparkline(mkt, code)
+                            if sp and sp.get("prices"):
+                                idx["spark"] = [float(x) for x in sp["prices"]]
+                                idx["spark_base"] = float(sp.get("base_price") or 0)
+                        except Exception:
+                            pass
+                        indices.append(idx)
+                        if code in ("000001", "399106"):
+                            total_amount += amount
+                    except Exception:
+                        continue
+        out["indices"] = indices
+        out["total_amount"] = total_amount
+        # ---- 全市场涨跌家数（优先 akshare 乐咕一次请求；失败回退 pytdx 全市场遍历）----
+        up = down = flat = limit_up = limit_down = 0
+        pool_n = 0
+        try:
+            _adf = ak.stock_market_activity_legu()
+            _need = {"上涨": "up", "下跌": "down", "平盘": "flat",
+                     "涨停": "limit_up", "跌停": "limit_down"}
+            _vals = {}
+            for _it in _adf.itertuples(index=False):
+                _k = str(getattr(_it, "item", "")).strip()
+                if _k in _need:
+                    try:
+                        _vals[_need[_k]] = int(float(getattr(_it, "value", 0)))
+                    except Exception:
+                        pass
+            up = _vals.get("up", 0)
+            down = _vals.get("down", 0)
+            flat = _vals.get("flat", 0)
+            limit_up = _vals.get("limit_up", 0)
+            limit_down = _vals.get("limit_down", 0)
+            pool_n = int(up + down + flat)
+        except Exception:
+            pool = _get_stock_pool_pytdx(ttl=1800)
+            pool_n = len(pool)
+            if pool:
+                codes_full = [(c6 + (".SH" if m == 1 else ".SZ")) for m, c6 in pool]
+                smap, _meta = _cb_fetch_rt_pytdx_quotes(codes_full, max_age=30)
+                for _c6, rec in smap.items():
+                    pct = rec.get("stock_chg_pct")
+                    if pct is None or pct != pct:  # NaN
+                        continue
+                    if pct > 0:
+                        up += 1
+                    elif pct < 0:
+                        down += 1
+                    else:
+                        flat += 1
+                    if pct >= 9.8:
+                        limit_up += 1
+                    elif pct <= -9.8:
+                        limit_down += 1
+                pool_n = up + down + flat
+        out["up"] = up
+        out["down"] = down
+        out["flat"] = flat
+        out["limit_up"] = limit_up
+        out["limit_down"] = limit_down
+        out["pool"] = pool_n
+        out["ok"] = True
+        _MARKET_OVERVIEW_CACHE[key] = (out, time.time())
+    except Exception as e:
+        out["error"] = str(e)
+    return out
+
+
+def _zhangfu_raw_to_out(raw, qdate):
+    """raw: {bucket_int: count} → 归一化输出 {ok, qdate, up, down, flat, pool, data}。"""
+    buckets = []
+    for k in sorted(raw.keys()):
+        cnt = raw[k]
+        if k == 11:
+            label = "≥10%"
+        elif k == -11:
+            label = "≤-10%"
+        else:
+            label = ("+" if k > 0 else "") + str(k) + "%"
+        side = "up" if k > 0 else ("down" if k < 0 else "flat")
+        buckets.append({"pct": k, "label": label, "count": cnt, "side": side})
+    up = sum(v for k, v in raw.items() if k >= 1)
+    down = sum(v for k, v in raw.items() if k <= -1)
+    flat = raw.get(0, 0)
+    return {"ok": True, "error": "", "qdate": qdate, "up": up, "down": down,
+            "flat": flat, "pool": up + down + flat, "data": buckets}
+
+
+def get_zhangfu_distribution_akshare(ttl=600):
+    """备份源：akshare 全市场实时行情（stock_zh_a_spot，新浪源）按涨幅分桶。
+
+    主源（东方财富 push2ex）失败时回退。注：东方财富 push2 接口（stock_zh_a_spot_em
+    所用的 82.push2.eastmoney.com）在本机被重置连接，故用新浪源 stock_zh_a_spot。
+    返回 {ok, qdate, up, down, flat, pool, data, src}。默认 600s 缓存（新浪源较重、~25s）。
+    """
+    key = "zhangfu_distribution_akshare"
+    cached = _ZHANGFU_CACHE.get(key)
+    if cached and (time.time() - cached[1]) < ttl:
+        return cached[0]
+    out = {"ok": False, "error": "", "qdate": 0, "up": 0, "down": 0, "flat": 0,
+           "pool": 0, "data": []}
+    try:
+        import akshare as ak
+        import requests.utils as _ru
+        _orig_gp = _ru.getproxies
+        _ru.getproxies = lambda: {}  # 绕过 Windows 注册表/系统代理（env+WinINET）
+        try:
+            df = ak.stock_zh_a_spot()
+        finally:
+            _ru.getproxies = _orig_gp
+        if df is None or getattr(df, "empty", True):
+            out["error"] = "akshare spot empty"
+            return out
+        col = "涨跌幅" if "涨跌幅" in df.columns else None
+        if col is None:
+            out["error"] = "no 涨跌幅 column: %s" % list(df.columns)
+            return out
+        raw = {}
+        for v in df[col].dropna().tolist():
+            try:
+                p = float(v)
+            except Exception:
+                continue
+            if p >= 10:
+                k = 11
+            elif p <= -10:
+                k = -11
+            else:
+                k = int(p)          # 截断取整：9.6→9，-9.6→-9
+            raw[k] = raw.get(k, 0) + 1
+        out = _zhangfu_raw_to_out(raw, 0)
+        out["src"] = "akshare"
+        _ZHANGFU_CACHE[key] = (out, time.time())
+    except Exception as e:
+        out["error"] = str(e)
+    return out
+
+
+def get_zhangfu_distribution(ttl=30):
+    """全市场涨幅分布（涨跌家数直方图）。
+
+    主源：东方财富 push2ex getTopicZDFenBu（dpt=wz.ztzt，按整 percent 分桶：
+      -11=≤-10% 跌停区，-10..-1=对应跌幅%，0=平盘，1..10=对应涨幅%，11=≥10% 涨停区）。
+    主源失败（异常或 rc≠0）自动回退到 akshare 备份源 get_zhangfu_distribution_akshare。
+    返回 {ok, qdate, up, down, flat, pool, data, src}。默认 30s 缓存。
+    """
+    key = "zhangfu_distribution"
+    cached = _ZHANGFU_CACHE.get(key)
+    if cached and (time.time() - cached[1]) < ttl:
+        return cached[0]
+    out = None
+    try:
+        import time as _t, urllib.parse
+        import requests as _reqs
+        sess = _reqs.Session()
+        sess.trust_env = False  # 禁用系统/HTTPS 代理，避免卡顿
+        sess.headers.update({
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/127 Safari/537.36",
+            "Referer": "https://quote.eastmoney.com/",
+        })
+        TS = str(int(_t.time() * 1000))
+        url = "https://push2ex.eastmoney.com/getTopicZDFenBu?" + urllib.parse.urlencode({
+            "ut": "7eea3edcaed734bea9cbfc24409ed989",
+            "dpt": "wz.ztzt",
+            "_": TS,
+        })
+        r = sess.get(url, timeout=15)
+        j = r.json()
+        if int(j.get("rc", -1)) != 0:
+            out = {"ok": False, "error": "eastmoney rc=%s" % j.get("rc"),
+                   "qdate": 0, "up": 0, "down": 0, "flat": 0, "pool": 0, "data": []}
+        else:
+            d = j.get("data") or {}
+            fenbu = d.get("fenbu") or []
+            raw = {}
+            for item in fenbu:
+                if not isinstance(item, dict) or not item:
+                    continue
+                k = next(iter(item.keys()))
+                try:
+                    raw[int(k)] = int(item[k])
+                except Exception:
+                    pass
+            out = _zhangfu_raw_to_out(raw, int(d.get("qdate") or 0))
+            out["src"] = "eastmoney"
+            _ZHANGFU_CACHE[key] = (out, time.time())
+    except Exception as e:
+        out = {"ok": False, "error": str(e), "qdate": 0, "up": 0, "down": 0,
+               "flat": 0, "pool": 0, "data": []}
+    # 主源失败 → 备份（akshare）
+    if not out or not out.get("ok"):
+        bak = get_zhangfu_distribution_akshare()
+        if bak.get("ok"):
+            out = bak
+    if not out or not out.get("ok"):
+        out = out or {"ok": False, "error": "all sources failed", "qdate": 0,
+                      "up": 0, "down": 0, "flat": 0, "pool": 0, "data": []}
+    return out
+
+
+def _two_market_turnover_text(per_day, labels, milestones, bar_series):
+    """生成两市成交分析文本，对齐 5days-2-b.html 的 #showTxt 格式。
+
+    per_day 按 [今天, 昨天, 前天, 前2天, 前三天] 顺序；milestones 为 1000 亿整数序列；
+    bar_series 每个元素含 data=每个里程碑的"到达用时(分钟)"。
+    输出顺序：先 endtime，再按里程碑从大到小；每个块=今日行 + 4 个历史缩进行。
+    """
+    if not per_day or not milestones:
+        return ""
+
+    def _day_info(pd_, bar_data):
+        """返回 {milestone: (datetime, 到达用时分钟, 当时上证占比%),
+                     'endtime': (datetime, 全天成交亿, 上证占比%)}"""
+        cum = pd_["cum"]
+        hhmm = pd_["hhmm"]
+        cum_sh = pd_["cum_sh"]
+        day = pd_["day"]
+        info = {}
+        for j, m in enumerate(milestones):
+            reached = None
+            for i, v in enumerate(cum):
+                if v >= m:
+                    reached = i
+                    break
+            if reached is None:
+                continue
+            minutes = bar_data[j] if bar_data and j < len(bar_data) else None
+            if minutes is None:
+                continue
+            dt_str = "%s %s" % (day, hhmm[reached])
+            sh_pct = round(cum_sh[reached] / cum[reached] * 100, 2) if cum[reached] else 0.0
+            info[m] = (dt_str, round(minutes, 2), sh_pct)
+        if cum:
+            dt_str = "%s %s" % (day, hhmm[-1])
+            total_b = round(cum[-1], 2)
+            sh_pct = round(cum_sh[-1] / cum[-1] * 100, 2) if cum[-1] else 0.0
+            info["endtime"] = (dt_str, total_b, sh_pct)
+        return info
+
+    infos = []
+    for idx, pd_ in enumerate(per_day):
+        bar_data = bar_series[idx]["data"] if idx < len(bar_series) else []
+        infos.append(_day_info(pd_, bar_data))
+
+    lines = []
+    # endtime 块（今日 + 4 历史，历史按 前三天→昨天 顺序，与参考一致）
+    today = infos[0].get("endtime")
+    if today:
+        lines.append("endtime:")
+        lines.append("%s 成交 %s 亿，上海占 %s%%" % (today[0], today[1], today[2]))
+        for i in range(len(infos) - 1, 0, -1):
+            d = infos[i].get("endtime")
+            if d:
+                lines.append("%s 成交 %s 亿，上海占 %s%%" % (d[0], d[1], d[2]))
+    # 里程碑块，从大到小
+    for m in sorted(milestones, reverse=True):
+        block = infos[0].get(m)
+        if not block:
+            continue
+        lines.append("%d:" % m)
+        lines.append("%s 成交,每千亿用时%s 分钟，上海占 %s%%" % (block[0], block[1], block[2]))
+        for i in range(len(infos) - 1, 0, -1):
+            d = infos[i].get(m)
+            if d:
+                lines.append("%s 成交,每千亿用时 %s 分钟，上海占 %s%%" % (d[0], d[1], d[2]))
+    return "\n".join(lines) + "\n"
+
+
+def _minutes_diff(t1, t2):
+    """两个 "HH:MM" 之间的交易分钟数（与 5days-2-b.html 的 getMinutes 等价）。
+
+    跨午休（t1 在 13:00 前、t2 在 13:00 及之后）时减去 90 分钟，
+    使结果等同于"相邻两时刻之间的实际交易分钟"。
+    """
+    h1, m1 = map(int, t1.split(":"))
+    h2, m2 = map(int, t2.split(":"))
+    diff = (h2 * 60 + m2) - (h1 * 60 + m1)
+    if h1 < 13 and h2 >= 13:
+        diff -= 90
+    return diff
+
+
+def get_two_market_turnover(ttl=120):
+    """两市成交分析（上证综指 000001 + 深证成指 399001 逐分钟成交额）。
+
+    数据源：pytdx_patches 的 TdxHq_API.get_index_bars（category=7 = 1 分钟 K），
+    对指数返回干净的逐分钟成交额 amount(元)。上证指数 market=1 / code='000001'，
+    深证成指 market=0 / code='399001'。
+
+    单次 get_index_bars 最多取 800 根（>=1000 返回 None），故分两批：
+        start=0,   count=800  → 最近 ~3.3 个交易日
+        start=800, count=400  → 更早 ~1.7 个交易日
+    合并后按日期分组，取最近 5 个交易日（今日可为不完整盘中数据）。
+
+    输出与 E:\\vue\\证券分析js\\5days-2-b.html 等价：
+        - bar : 每 1000 亿成交额所需交易分钟（y 轴），各交易日为系列
+        - line: 日内累计成交额（亿）随时间（x=HH:MM）变化，各交易日为系列
+        - text: 摘要（今日总额、上海占比、与昨日对比等）
+    返回 {ok, error, dates, labels, milestones, bar:{series:[{name,data}]},
+          line:{x, series:[{name,data}]}, totals:{日期:{亿,sh_pct}}, text}。
+    """
+    key = "two_market_turnover"
+    cached = _AMOUNTFLOW_CACHE.get(key)
+    if cached and (time.time() - cached[1]) < ttl:
+        return cached[0]
+
+    out = {"ok": False, "error": "", "dates": [], "labels": [],
+           "milestones": [], "bar": {"series": []}, "line": {"x": [], "series": []},
+           "totals": {}, "text": ""}
+    try:
+        if not _PYTDX_OK:
+            out["error"] = "pytdx 未安装"
+            return out
+        # 分两批抓取 上证 + 深证 指数 1 分钟 K
+        sh_bars, sz_bars = [], []
+        for (start, count) in ((0, 800), (800, 400)):
+            for (mkt, code, sink) in ((1, "000001", sh_bars), (0, "399001", sz_bars)):
+                bars = None
+                for _ in range(2):
+                    a = _pytdx_get_api()
+                    if a is None:
+                        break
+                    try:
+                        with _PYTDX_SEM:
+                            bars = a.get_index_bars(7, mkt, code, start, count)
+                        if bars is not None:
+                            sink.extend(bars)
+                            break
+                    except Exception:
+                        try:
+                            a.disconnect()
+                        except Exception:
+                            pass
+                # bars 为 None 时跳过该批次（继续用已取到的数据兜底）
+
+        def _to_map(bars):
+            m = {}
+            for b in bars:
+                try:
+                    dt = b.get("datetime")
+                    if not dt:
+                        y, mo, d, h, mi = (b.get("year"), b.get("month"),
+                                           b.get("day"), b.get("hour"), b.get("minute"))
+                        if None in (y, mo, d, h, mi):
+                            continue
+                        dt = "%04d-%02d-%02d %02d:%02d" % (y, mo, d, h, mi)
+                    amt = b.get("amount") or 0
+                    m[dt] = m.get(dt, 0.0) + float(amt)
+                except Exception:
+                    continue
+            return m
+
+        sh_map = _to_map(sh_bars)
+        sz_map = _to_map(sz_bars)
+        if not sh_map:
+            out["error"] = "未取到上证指数分钟数据"
+            return out
+
+        # 按日期分组（以沪市时间轴为准，合并深市）
+        day_map = {}
+        for dt, sh_amt in sh_map.items():
+            sz_amt = sz_map.get(dt, 0.0)
+            day = dt.split(" ")[0]
+            day_map.setdefault(day, []).append((dt, sh_amt, sz_amt))
+        for day in day_map:
+            day_map[day].sort(key=lambda x: x[0])
+
+        days_pick = sorted(day_map.keys(), reverse=True)[:5]
+        labels = ["今天", "昨天", "前天", "前2天", "前三天"][:len(days_pick)]
+
+        per_day = []
+        max_milestone = 0
+        for day in days_pick:
+            rows = day_map[day]
+            cum = 0.0
+            cum_sh = 0.0
+            cum_list, hhmm, cum_sh_list = [], [], []
+            for (dt, sh, sz) in rows:
+                c = (sh + sz) / 1e8
+                cum += c
+                cum_sh += sh / 1e8
+                cum_list.append(round(cum, 2))
+                cum_sh_list.append(round(cum_sh, 2))
+                hhmm.append(dt.split(" ")[1])
+            total = round(cum, 1)
+            sh_pct = round(cum_sh / cum * 100, 1) if cum > 0 else 0.0
+            max_milestone = max(max_milestone, int(total))
+            per_day.append({"day": day, "cum": cum_list, "hhmm": hhmm,
+                            "cum_sh": cum_sh_list, "total": total, "sh_pct": sh_pct})
+            out["totals"][day] = {"亿": total, "sh_pct": sh_pct}
+
+        milestones = list(range(1000, int(max_milestone) + 1, 1000))
+        line_x = per_day[0]["hhmm"] if per_day else []
+
+        bar_series, line_series = [], []
+        for idx, pd_ in enumerate(per_day):
+            cum = pd_["cum"]
+            hhmm = pd_["hhmm"]
+            bdata = []
+            # 每个里程碑的"到达时刻"；首个里程碑的基准锚点为 09:30（开盘）
+            prev_time = "09:30"
+            for m in milestones:
+                reached_idx = None
+                for i, v in enumerate(cum):
+                    if v >= m:
+                        reached_idx = i
+                        break
+                if reached_idx is None:
+                    bdata.append(None)
+                    continue
+                cur_time = hhmm[reached_idx]
+                bdata.append(_minutes_diff(prev_time, cur_time))
+                prev_time = cur_time
+            bar_series.append({"name": labels[idx], "data": bdata})
+            line_series.append({"name": labels[idx], "data": cum})
+
+        out = {
+            "ok": True, "error": "",
+            "dates": [pd_["day"] for pd_ in per_day],
+            "labels": labels,
+            "milestones": milestones,
+            "bar": {"series": bar_series},
+            "line": {"x": line_x, "series": line_series},
+            "totals": out["totals"],
+            "text": _two_market_turnover_text(per_day, labels, milestones, bar_series),
+        }
+        _AMOUNTFLOW_CACHE[key] = (out, time.time())
+    except Exception as e:
+        out["error"] = str(e)
+    return out
+
+
+def get_news_fast(ttl=20, page_size=20, sort_end=""):
+    """东方财富 7×24 快讯（实时滚动新闻）。
+
+    接口：np-weblist.eastmoney.com/comm/web/getFastNewsList（biz=web_724，
+    fastColumn=102，沪深/宏观综合快讯）。不带 callback 时返回 raw JSON：
+      data.fastNewsList[] = {code, title, summary, showTime, realSort, titleColor,
+                            stockList:[{code,name}], image, share, pinglun_Num}
+    列表按时间倒序（最新在前），code 唯一；sort_end 作为分页游标（传上一次
+    返回的最小 realSort，拉取比它更新的条目）。返回 {ok, error, data:[{...}],
+    sortEnd, total, req_time}。默认 20s 缓存（避免轮询过频）。
+    """
+    key = "news_fast"
+    cached = _NEWS_CACHE.get(key)
+    if cached and (time.time() - cached[1]) < ttl:
+        return cached[0]
+    out = {"ok": False, "error": "", "data": [], "sortEnd": "", "total": 0,
+           "req_time": int(time.time() * 1000)}
+    try:
+        import time as _t, urllib.parse, ast as _ast
+        import requests as _reqs
+        import requests.utils as _ru
+        _orig_gp = _ru.getproxies
+        _ru.getproxies = lambda: {}  # 绕过 Windows 注册表/系统代理
+        try:
+            sess = _reqs.Session()
+            sess.trust_env = False
+            sess.headers.update({
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/127 Safari/537.36",
+                "Referer": "https://finance.eastmoney.com/",
+            })
+            TS = str(int(_t.time() * 1000))
+            params = {
+                "client": "web",
+                "biz": "web_724",
+                "fastColumn": "102",
+                "sortEnd": sort_end or "",
+                "pageSize": str(page_size),
+                "req_trace": "TS",
+                "_": TS,
+            }
+            url = "https://np-weblist.eastmoney.com/comm/web/getFastNewsList?" + urllib.parse.urlencode(params)
+            r = sess.get(url, timeout=15)
+            j = r.json()
+        finally:
+            _ru.getproxies = _orig_gp
+        code = int(j.get("code", -1))
+        if code not in (0, 1):
+            out["error"] = "eastmoney news code=%s msg=%s" % (j.get("code"), j.get("message"))
+            return out
+        d = j.get("data") or {}
+        lst = d.get("fastNewsList") or []
+        items = []
+        for it in lst:
+            if not isinstance(it, dict) or not it:
+                continue
+            raw_stocks = it.get("stockList") or []
+            if isinstance(raw_stocks, str):
+                try:
+                    parsed = _ast.literal_eval(raw_stocks)
+                    raw_stocks = list(parsed) if isinstance(parsed, (list, tuple)) else []
+                except Exception:
+                    raw_stocks = []
+            stock_codes = []
+            for s in raw_stocks:
+                if isinstance(s, str):
+                    c = s.split(".")[-1] if "." in s else s
+                    if c:
+                        stock_codes.append(c)
+                elif isinstance(s, dict) and s.get("name"):
+                    stock_codes.append(s.get("name"))
+            items.append({
+                "code": it.get("code") or "",
+                "title": it.get("title") or "",
+                "summary": it.get("summary") or "",
+                "showTime": it.get("showTime") or "",
+                "realSort": it.get("realSort") or 0,
+                "titleColor": it.get("titleColor") or "",
+                "stockList": stock_codes,
+                "image": it.get("image") or "",
+                "share": it.get("share") or 0,
+                "pinglun_Num": it.get("pinglun_Num") or 0,
+            })
+        # 计算下一页游标（取列表最小 realSort，用于增量拉取）
+        nxt = ""
+        if items:
+            try:
+                nxt = str(min(int(i["realSort"]) for i in items if i["realSort"]))
+            except Exception:
+                nxt = ""
+        out = {
+            "ok": True,
+            "error": "",
+            "data": items,
+            "sortEnd": nxt,
+            "total": int(d.get("total") or 0),
+            "req_time": int(_t.time() * 1000),
+        }
+        _NEWS_CACHE[key] = (out, time.time())
+    except Exception as e:
+        out["error"] = str(e)
     return out
 
 
