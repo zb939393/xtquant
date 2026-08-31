@@ -171,7 +171,10 @@ def futures_popup_launch():
         log_path = os.path.join(Config.LOG_DIR, "popup_launcher.log")
         with open(log_path, "a", encoding="utf-8") as f:
             subprocess.Popen(
-                [sys.executable, script, url],
+                [sys.executable, script, url,
+                 "--title", "期指综合看盘 · 独立窗口",
+                 "--width", "1240", "--height", "700",
+                 "--min-width", "900", "--min-height", "400"],
                 creationflags=flags,
                 stdout=f,
                 stderr=f,
@@ -221,7 +224,7 @@ def futures_news_popup_launch():
             subprocess.Popen(
                 [sys.executable, script, url,
                  "--title", "7×24 快讯 · 独立窗口",
-                 "--width", "460", "--height", "720",
+                 "--width", "410", "--height", "380",
                  "--min-width", "50", "--min-height", "50"],
                 creationflags=flags,
                 stdout=f,
@@ -311,8 +314,8 @@ def futures_capital_popup_launch():
         with open(log_path, "a", encoding="utf-8") as f:
             subprocess.Popen(
                 [sys.executable, script, url,
-                 "--title", "股指",
-                 "--width", "1280", "--height", "800",
+                 "--title", "股指资金 · 独立窗口",
+                 "--width", "320", "--height", "400",
                  "--min-width", "50", "--min-height", "50"],
                 creationflags=flags,
                 stdout=f,
@@ -542,7 +545,7 @@ def futures_zhangfu_popup_launch():
             subprocess.Popen(
             [sys.executable, script, url,
              "--title", "全市场涨幅分布 · 独立窗口",
-             "--width", "720", "--height", "460",
+             "--width", "320", "--height", "180",
              "--min-width", "50", "--min-height", "50"],
             creationflags=flags,
             stdout=f,
@@ -591,7 +594,7 @@ def futures_amountflow_popup_launch():
             subprocess.Popen(
                 [sys.executable, script, url,
                  "--title", "两市成交分析 · 独立窗口",
-                 "--width", "760", "--height", "720",
+                 "--width", "320", "--height", "500",
                  "--min-width", "50", "--min-height", "50"],
                 creationflags=flags,
                 stdout=f,
@@ -656,8 +659,8 @@ def futures_external_popup_launch():
         with open(log_path, "a", encoding="utf-8") as f:
             subprocess.Popen(
                 [sys.executable, script, url,
-                 "--title", "外围",
-                 "--width", "1280", "--height", "800",
+                 "--title", "外围股市 · 独立窗口",
+                 "--width", "400", "--height", "600",
                  "--min-width", "50", "--min-height", "50"],
                 creationflags=flags,
                 stdout=f,

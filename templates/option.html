@@ -198,6 +198,7 @@
       <span class="board-toolbar-right">
         <el-switch v-model="showBands" size="mini" active-text="±σ通道" style="margin-right:12px;"></el-switch>
         <el-button size="mini" icon="el-icon-refresh" :loading="loadingBoard" @click="reload">刷新行情</el-button>
+        <el-button size="mini" icon="el-icon-full-screen" type="success" :loading="launchingPopup" @click="launchPopup">🖥 独立弹窗</el-button>
         <span class="muted">共 [# boardRows.length #] 个自选<span v-if="boardExpiredCount">（[# boardExpiredCount #] 个已到期/无行情）</span> · 实时刷新：[# refreshInterval/1000 #] 秒</span>
       </span>
     </div>
@@ -768,6 +769,7 @@ new Vue({
     return {
       loading: false,
       loadingBoard: false,
+      launchingPopup: false,
       firstLoaded: false,
       statusMsg: '',
       rows: [],
@@ -1225,6 +1227,23 @@ new Vue({
         document.title = '📈 自选股看盘';
         if (!this.allRows || !this.allRows.length) this.fetchBoardData(false);
       }
+    },
+    launchPopup() {
+      this.launchingPopup = true;
+      fetch('/option/popup/launch', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({})
+      })
+        .then(r => r.json())
+        .then(resp => {
+          if (!resp.ok) throw new Error(resp.error || '启动失败');
+          this.$message.success('已打开期权自选股看盘独立窗口');
+        })
+        .catch(err => {
+          this.$message.error('独立弹窗启动失败：' + err.message);
+        })
+        .finally(() => { this.launchingPopup = false; });
     },
   },
   mounted() {

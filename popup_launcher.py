@@ -111,8 +111,8 @@ def main():
     parser.add_argument("--title", default="期指综合看盘 · 独立窗口")
     parser.add_argument("--width", type=int, default=1560)
     parser.add_argument("--height", type=int, default=1020)
-    parser.add_argument("--min-width", type=int, default=1024)
-    parser.add_argument("--min-height", type=int, default=720)
+    parser.add_argument("--min-width", type=int, default=200)
+    parser.add_argument("--min-height", type=int, default=200)
     args = parser.parse_args()
 
     try:
