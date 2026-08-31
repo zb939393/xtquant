@@ -2894,7 +2894,7 @@ def get_two_market_turnover(ttl=120):
                 bdata.append(_minutes_diff(prev_time, cur_time))
                 prev_time = cur_time
             bar_series.append({"name": labels[idx], "data": bdata})
-            line_series.append({"name": labels[idx], "data": cum})
+            line_series.append({"name": labels[idx], "x": hhmm, "data": cum})
 
         out = {
             "ok": True, "error": "",

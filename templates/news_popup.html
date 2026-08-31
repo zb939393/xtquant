@@ -13,35 +13,39 @@
   .tb-hover { position:absolute; top:0; left:0; right:0; height:46px; z-index:5; }
   .toolbar { position:absolute; top:0; left:0; right:0; z-index:10; display:flex; align-items:center; gap:10px; flex-wrap:wrap; padding:8px 14px; background:rgba(255,255,255,.92); backdrop-filter:blur(6px); opacity:0; pointer-events:none; transition:opacity .18s ease; border-bottom:1px solid #eceef1; }
   .tb-hover:hover + .toolbar, .toolbar:hover { opacity:1; pointer-events:auto; }
-  .title { font-weight:700; font-size:14px; letter-spacing:.5px; }
-  .title .sub { font-size:10px; font-weight:400; color:#909399; margin-left:6px; }
-  .updated { margin-left:auto; font-size:10px; color:#909399; font-variant-numeric:tabular-nums; }
-  .btn { background:#fff; color:#3a7afe; border:1px solid #3a7afe; border-radius:6px; padding:3px 9px; font-size:11px; cursor:pointer; transition:.15s; }
+  .title { font-weight:700; font-size:calc(14px * var(--zoom, 1)); letter-spacing:.5px; }
+  .title .sub { font-size:calc(10px * var(--zoom, 1)); font-weight:400; color:#909399; margin-left:6px; }
+  .updated { margin-left:auto; font-size:calc(10px * var(--zoom, 1)); color:#909399; font-variant-numeric:tabular-nums; }
+  .btn { background:#fff; color:#3a7afe; border:1px solid #3a7afe; border-radius:6px; padding:3px 9px; font-size:calc(11px * var(--zoom, 1)); cursor:pointer; transition:.15s; }
   .btn:hover { background:#ecf2ff; }
   .btn.active { background:#3a7afe; color:#fff; }
   .btn.warn { color:#e0740c; border-color:#e0740c; }
   .btn.warn:hover { background:#fdf2e3; }
-  .list { position:absolute; top:46px; left:0; right:0; bottom:0; overflow-y:auto; padding:10px 12px 14px; }
+  .zoom-group { display:flex; align-items:center; gap:6px; }
+  .zoom-group label { font-size:11px; color:#909399; }
+  .zoom-slider { width:80px; }
+  .zoom-val { font-size:11px; color:#606266; min-width:34px; text-align:right; }
+  .list { position:absolute; top:46px; left:0; right:0; bottom:0; overflow-y:auto; padding:calc(10px * var(--zoom, 1)) calc(12px * var(--zoom, 1)) calc(14px * var(--zoom, 1)); }
   .list::-webkit-scrollbar { width:6px; }
   .list::-webkit-scrollbar-thumb { background:#d7dae0; border-radius:3px; }
-  .empty { height:100%; display:flex; align-items:center; justify-content:center; color:#b0b3b8; font-size:12px; }
-  .item { position:relative; background:#fff; border-radius:10px; padding:11px 14px 11px 16px; margin-bottom:9px; box-shadow:0 1px 3px rgba(20,30,50,.06); border-left:3px solid #d7dae0; transition:.15s; }
+  .empty { height:100%; display:flex; align-items:center; justify-content:center; color:#b0b3b8; font-size:calc(12px * var(--zoom, 1)); }
+  .item { position:relative; background:#fff; border-radius:10px; padding:calc(11px * var(--zoom, 1)) calc(14px * var(--zoom, 1)) calc(11px * var(--zoom, 1)) calc(16px * var(--zoom, 1)); margin-bottom:calc(9px * var(--zoom, 1)); box-shadow:0 1px 3px rgba(20,30,50,.06); border-left:3px solid #d7dae0; transition:.15s; }
   .item.new { animation:flash 1.4s ease; }
   .item:hover { box-shadow:0 3px 10px rgba(20,30,50,.1); }
   @keyframes flash { 0% { background:#fff7e6; } 100% { background:#fff; } }
   .i-top { display:flex; align-items:center; gap:8px; }
-  .i-time { font-size:11px; color:#9aa0a6; font-variant-numeric:tabular-nums; font-weight:600; }
-  .i-date { font-size:10px; color:#c0c4cc; }
-  .i-badge { font-size:9px; padding:1px 6px; border-radius:4px; background:#fde8e8; color:#e0533d; font-weight:700; }
-  .i-summary { margin-top:5px; font-size:13px; line-height:1.65; color:#1f2329; white-space:pre-wrap; word-break:break-word; }
-  .i-tags { display:flex; flex-wrap:wrap; gap:5px; margin-top:7px; }
-  .i-tag { font-size:10px; padding:1px 7px; border-radius:10px; background:#eef3ff; color:#3a7afe; }
-  .i-actions { display:flex; align-items:center; gap:12px; margin-top:8px; }
-  .speak { display:inline-flex; align-items:center; gap:4px; font-size:11px; color:#3a7afe; cursor:pointer; user-select:none; }
+  .i-time { font-size:calc(11px * var(--zoom, 1)); color:#9aa0a6; font-variant-numeric:tabular-nums; font-weight:600; }
+  .i-date { font-size:calc(10px * var(--zoom, 1)); color:#c0c4cc; }
+  .i-badge { font-size:calc(9px * var(--zoom, 1)); padding:1px 6px; border-radius:4px; background:#fde8e8; color:#e0533d; font-weight:700; }
+  .i-summary { margin-top:calc(5px * var(--zoom, 1)); font-size:calc(13px * var(--zoom, 1)); line-height:1.65; color:#1f2329; white-space:pre-wrap; word-break:break-word; }
+  .i-tags { display:flex; flex-wrap:wrap; gap:5px; margin-top:calc(7px * var(--zoom, 1)); }
+  .i-tag { font-size:calc(10px * var(--zoom, 1)); padding:1px 7px; border-radius:10px; background:#eef3ff; color:#3a7afe; }
+  .i-actions { display:flex; align-items:center; gap:12px; margin-top:calc(8px * var(--zoom, 1)); }
+  .speak { display:inline-flex; align-items:center; gap:4px; font-size:calc(11px * var(--zoom, 1)); color:#3a7afe; cursor:pointer; user-select:none; }
   .speak:hover { text-decoration:underline; }
-  .more { font-size:11px; color:#9aa0a6; text-decoration:none; }
+  .more { font-size:calc(11px * var(--zoom, 1)); color:#9aa0a6; text-decoration:none; }
   .more:hover { color:#3a7afe; }
-  .err { position:absolute; left:0; right:0; bottom:0; padding:6px 12px; font-size:10px; color:#e0533d; background:rgba(255,255,255,.92); text-align:center; }
+  .err { position:absolute; left:0; right:0; bottom:0; padding:6px 12px; font-size:calc(10px * var(--zoom, 1)); color:#e0533d; background:rgba(255,255,255,.92); text-align:center; }
 </style>
 </head>
 <body>
@@ -50,6 +54,11 @@
   <div class="toolbar">
     <span class="title">7×24 快讯<span class="sub" v-if="total">共 [# total #] 条</span></span>
     <span class="updated" v-if="updatedAt">更新 [# updatedAt #]</span>
+    <div class="zoom-group">
+      <label>大小</label>
+      <input type="range" class="zoom-slider" min="50" max="150" step="1" v-model.number="zoom" @input="onZoomChange">
+      <span class="zoom-val">[# zoom #]%</span>
+    </div>
     <button class="btn" :class="{active:onTop}" @click="toggleTop">[# onTop ? '已置顶' : '置顶' #]</button>
     <button class="btn" :class="{active:autoSpeak}" @click="toggleSpeak">[# autoSpeak ? '自动播报·开' : '自动播报·关' #]</button>
     <button class="btn warn" @click="stopSpeak">停止</button>
@@ -104,12 +113,14 @@ new Vue({
     errMsg: '',
     onTop: true,
     autoSpeak: true,
+    zoom: (function(){ try{ var v = parseInt(localStorage.getItem('zoom_news') || '100', 10); return (isFinite(v) && v >= 50 && v <= 150) ? v : 100; }catch(e){ return 100; } })(),
     seenCodes: {},
     speakQueue: [],
     speaking: false,
     timer: null,
   },
   created(){
+    document.documentElement.style.setProperty('--zoom', this.zoom / 100);
     this.timer = setInterval(() => this.fetchData(false), 60000);
     window.addEventListener('resize', this.onResize);
   },
@@ -123,6 +134,10 @@ new Vue({
   },
   methods: {
     onResize(){},
+    onZoomChange(){
+      try{ localStorage.setItem('zoom_news', this.zoom); }catch(e){}
+      document.documentElement.style.setProperty('--zoom', this.zoom / 100);
+    },
     toggleTop(){
       this.onTop = !this.onTop;
       if(window.pywebview && window.pywebview.api && window.pywebview.api.set_on_top){

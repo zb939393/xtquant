@@ -14,18 +14,22 @@
   .tb-hover { position:absolute; top:0; left:0; right:0; height:46px; z-index:5; }
   .toolbar { position:absolute; top:0; left:0; right:0; z-index:10; display:flex; align-items:center; gap:12px; flex-wrap:wrap; padding:10px 16px; background:rgba(255,255,255,.92); opacity:0; pointer-events:none; transition:opacity .18s ease; border-bottom:1px solid #f2f3f5; }
   .tb-hover:hover + .toolbar, .toolbar:hover { opacity:1; pointer-events:auto; }
-  .title { font-weight:700; font-size:13px; }
-  .title .sub { font-size:10px; font-weight:400; color:#909399; margin-left:6px; }
-  .updated { margin-left:auto; font-size:10px; color:#909399; }
-  .btn { background:#fff; color:#409eff; border:1px solid #409eff; border-radius:6px; padding:3px 8px; font-size:10px; cursor:pointer; }
+  .title { font-weight:700; font-size:var(--sz-title, 15px); }
+  .title .sub { font-size:var(--sz-sub, 12px); font-weight:400; color:#909399; margin-left:6px; }
+  .updated { margin-left:auto; font-size:var(--sz-updated, 12px); color:#909399; }
+  .btn { background:#fff; color:#409eff; border:1px solid #409eff; border-radius:6px; padding:3px 8px; font-size:var(--sz-btn, 12px); cursor:pointer; }
   .btn:hover { background:#ecf5ff; }
   .btn.active { background:#409eff; color:#fff; }
+  .zoom-group { display:flex; align-items:center; gap:6px; }
+  .zoom-group label { font-size:12px; color:#909399; }
+  .zoom-slider { width:80px; }
+  .zoom-val { font-size:12px; color:#606266; min-width:34px; text-align:right; }
   .content { position:absolute; inset:0; display:flex; flex-direction:column; padding:48px 8px 6px; overflow-y:auto; }
-  .summary { flex:0 0 auto; margin-top:6px; padding:6px 10px 2px; border-top:1px solid #f2f3f5; font-size:11px; line-height:1.6; color:#606266; white-space:pre-wrap; word-break:break-all; font-family:"Consolas","Microsoft YaHei",monospace; }
+  .summary { flex:0 0 auto; margin-top:6px; padding:6px 10px 2px; border-top:1px solid #f2f3f5; font-size:var(--sz-summary, 9px); line-height:1.6; color:#606266; white-space:pre-wrap; word-break:break-all; font-family:"Consolas","Microsoft YaHei",monospace; }
   .chart-wrap { position:relative; width:100%; }
-  .chart-label { position:absolute; top:2px; left:12px; z-index:2; font-size:10px; color:#909399; pointer-events:none; }
+  .chart-label { position:absolute; top:2px; left:12px; z-index:2; font-size:7px; color:#909399; pointer-events:none; }
   #chartBar, #chartLine { width:100%; }
-  .chart-err { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; color:#f56c6c; font-size:12px; padding:0 20px; text-align:center; }
+  .chart-err { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; color:#f56c6c; font-size:8px; padding:0 20px; text-align:center; }
 </style>
 </head>
 <body>
@@ -34,6 +38,11 @@
   <div class="toolbar">
     <span class="title">两市成交分析<span class="sub">上证综指 + 深证成指 · 逐分钟成交额</span></span>
     <span class="updated" v-if="updatedAt">更新 [# updatedAt #]</span>
+    <div class="zoom-group">
+      <label>大小</label>
+      <input type="range" class="zoom-slider" min="50" max="150" step="1" v-model.number="zoom" @input="onZoomChange">
+      <span class="zoom-val">[# zoom #]%</span>
+    </div>
     <button class="btn" :class="{active:onTop}" @click="toggleTop">[# onTop ? '置顶' : '未置顶' #]</button>
     <button class="btn" @click="fetchData(true)">刷新</button>
   </div>
@@ -75,6 +84,7 @@ new Vue({
     lineChart: null,
     chartErr: '',
     onTop: true,
+    zoom: (function(){ try{ var v = parseInt(localStorage.getItem('zoom_amountflow') || '100', 10); return (isFinite(v) && v >= 50 && v <= 150) ? v : 100; }catch(e){ return 100; } })(),
     timer: null,
   },
   computed: {
@@ -84,6 +94,7 @@ new Vue({
     },
   },
   created(){
+    document.documentElement.style.setProperty('--sz-summary', (9 * this.zoom / 100) + 'px');
     this.timer = setInterval(() => this.fetchData(false), 60000);
     window.addEventListener('resize', this.onResize);
   },
@@ -105,17 +116,25 @@ new Vue({
       this.lineChart = echarts.init(document.getElementById('chartLine'));
     },
     resizeCharts(){
+      const z = this.zoom / 100;
       [['chartBar', this.barChart], ['chartLine', this.lineChart]].forEach(([id, chart]) => {
         const el = document.getElementById(id);
         if(!el) return;
         const w = el.clientWidth || (el.parentNode ? el.parentNode.clientWidth : 0);
         if(!w) return;
-        el.style.height = Math.round(w * 0.6) + 'px';
+        el.style.height = Math.round(w * 0.6 * z) + 'px';
         if(chart) chart.resize();
       });
     },
     onResize(){
       this.resizeCharts();
+    },
+    onZoomChange(){
+      const z = this.zoom / 100;
+      try{ localStorage.setItem('zoom_amountflow', this.zoom); }catch(e){}
+      document.documentElement.style.setProperty('--sz-summary', (9 * z) + 'px');
+      this.resizeCharts();
+      this.render();
     },
     toggleTop(){
       this.onTop = !this.onTop;
@@ -149,6 +168,8 @@ new Vue({
       this.renderLine(d);
     },
     renderBar(d){
+      const z = this.zoom / 100;
+      const f = v => Math.max(1, Math.round(v * z));
       const milestones = d.milestones || [];
       const cats = milestones.map(m => String(m)); // 对齐参考：里程碑为纯数字（亿）
       const byName = {};
@@ -159,8 +180,8 @@ new Vue({
         name: name,
         type: 'bar',
         data: byName[name] != null ? byName[name] : [],
-        barMaxWidth: 16,
-        label: { show: true, position: 'top', fontSize: 9, color: '#909399',
+        barMaxWidth: f(11),
+        label: { show: true, position: 'top', fontSize: f(8), color: '#909399',
                  formatter: function(p){ return p.value == null ? '' : p.value; } },
         emphasis: { focus: 'series' },
         itemStyle: { color: DAY_COLOR[name] },
@@ -169,8 +190,8 @@ new Vue({
         backgroundColor: '#fff',
         animation: false,
         grid: { left: '9%', right: '4%', top: '16%', bottom: '12%' },
-        legend: { show: true, top: 2, left: 'center', itemWidth: 10, itemHeight: 10,
-                  textStyle: { fontSize: 9, color: '#606266' },
+        legend: { show: true, top: 2, left: 'center', itemWidth: f(7), itemHeight: f(7),
+                  textStyle: { fontSize: f(8), color: '#606266' },
                   data: ['今天', '昨天', '前天', '前2天', '前三天'] },
         tooltip: {
           trigger: 'axis',
@@ -187,15 +208,15 @@ new Vue({
           type: 'category',
           data: cats,
           boundaryGap: false, // 对齐参考
-          axisLabel: { fontSize: 9, color: '#606266', hideOverlap: true },
+          axisLabel: { fontSize: f(8), color: '#606266', hideOverlap: true },
           axisLine: { lineStyle: { color: '#dcdfe6' } },
           axisTick: { show: false },
         },
         yAxis: {
           type: 'value',
           name: '分钟',
-          nameTextStyle: { fontSize: 9, color: '#909399' },
-          axisLabel: { fontSize: 9, color: '#909399' },
+          nameTextStyle: { fontSize: f(8), color: '#909399' },
+          axisLabel: { fontSize: f(8), color: '#909399' },
           splitLine: { lineStyle: { color: '#f2f3f5' } },
         },
         series: series,
@@ -203,21 +224,49 @@ new Vue({
       this.barChart.setOption(option, true);
       this.barChart.resize();
     },
+    buildTradingAxis(){
+      // 标准交易时间轴：上午 09:30-11:30，下午 13:01-15:00（共 241 分钟）
+      const pad = n => (n < 10 ? '0' : '') + n;
+      const times = [];
+      for(let h = 9; h <= 11; h++){
+        const mStart = (h === 9) ? 30 : 0;
+        const mEnd = (h === 11) ? 30 : 59;
+        for(let m = mStart; m <= mEnd; m++) times.push(pad(h) + ':' + pad(m));
+      }
+      for(let h = 13; h <= 15; h++){
+        const mStart = (h === 13) ? 1 : 0;
+        const mEnd = (h === 15) ? 0 : 59;
+        for(let m = mStart; m <= mEnd; m++) times.push(pad(h) + ':' + pad(m));
+      }
+      return times;
+    },
     renderLine(d){
-      const x = d.line && d.line.x || [];
+      const z = this.zoom / 100;
+      const f = v => Math.max(1, Math.round(v * z));
+      // 标准交易时间轴：上午 09:30-11:30，下午 13:01-15:00
+      const std = this.buildTradingAxis();
       const byName = {};
-      (d.line && d.line.series || []).forEach(s => { byName[s.name] = s.data; });
+      (d.line && d.line.series || []).forEach(s => { byName[s.name] = s; });
       // 对齐参考线图系列顺序：新 -> 旧（今天 … 前三天）
       const order = ['今天', '昨天', '前天', '前2天', '前三天'];
       const series = order.map(name => {
+        const raw = (byName[name] && byName[name].data) || [];
+        const sX = (byName[name] && byName[name].x) || [];
+        // 用该系列自己的时间轴建索引，再对齐到标准交易时间轴
+        const idxMap = {};
+        sX.forEach((t, i) => { idxMap[t] = i; });
+        const data = std.map(t => {
+          const j = idxMap[t];
+          return (j != null && raw[j] != null) ? raw[j] : null;
+        });
         const s = {
           name: name,
           type: 'line',
-          data: byName[name] != null ? byName[name] : [],
+          data: data,
           showSymbol: false,
           smooth: false,
           emphasis: { focus: 'series' },
-          lineStyle: { width: 1.6, color: DAY_COLOR[name] },
+          lineStyle: { width: Math.max(0.5, +(1.1 * z).toFixed(2)), color: DAY_COLOR[name] },
           itemStyle: { color: DAY_COLOR[name] },
         };
         if (name === '今天') s.areaStyle = { opacity: 0.3 }; // 对齐参考：今日区域填充
@@ -227,8 +276,8 @@ new Vue({
         backgroundColor: '#fff',
         animation: false,
         grid: { left: '9%', right: '4%', top: '14%', bottom: '12%' },
-        legend: { show: true, top: 2, left: 'center', itemWidth: 12, itemHeight: 8,
-                  textStyle: { fontSize: 10, color: '#606266' } },
+        legend: { show: true, top: 2, left: 'center', itemWidth: f(8), itemHeight: f(5),
+                  textStyle: { fontSize: f(9), color: '#606266' } },
         tooltip: {
           trigger: 'axis',
           axisPointer: { type: 'shadow' }, // 对齐参考
@@ -242,17 +291,28 @@ new Vue({
         },
         xAxis: {
           type: 'category',
-          data: x,
+          data: std,
           boundaryGap: false, // 对齐参考
-          axisLabel: { fontSize: 9, color: '#606266', hideOverlap: true },
+          axisLabel: {
+            fontSize: f(8), color: '#606266',
+            interval: 0,
+            hideOverlap: false,
+            formatter: function(v){
+              // 只显示交易时段关键刻度：上午 09:30-11:30，下午 13:30-15:00
+              // 13:01 与 11:30 相邻重叠，故隐藏，只保留 11:30
+              var keys = ['09:30','10:00','10:30','11:00','11:30',
+                          '13:30','14:00','14:30','15:00'];
+              return keys.indexOf(v) >= 0 ? v : '';
+            },
+          },
           axisLine: { lineStyle: { color: '#dcdfe6' } },
           axisTick: { show: false },
         },
         yAxis: {
           type: 'value',
           name: '亿元',
-          nameTextStyle: { fontSize: 9, color: '#909399' },
-          axisLabel: { fontSize: 9, color: '#909399', formatter: function(v){ return v >= 10000 ? (v/10000).toFixed(1) + '万' : v; } },
+          nameTextStyle: { fontSize: f(8), color: '#909399' },
+          axisLabel: { fontSize: f(8), color: '#909399', formatter: function(v){ return v >= 10000 ? (v/10000).toFixed(1) + '万' : v; } },
           splitLine: { lineStyle: { color: '#f2f3f5' } },
         },
         series: series,

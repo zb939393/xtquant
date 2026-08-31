@@ -157,11 +157,29 @@ new Vue({
       let min = Math.min.apply(null, arr), max = Math.max.apply(null, arr);
       if(!isFinite(min) || !isFinite(max)) return '';
       if(max === min){ max += 1; min -= 1; }
+      // 全交易段：横轴固定代表完整交易日 9:30-11:30、13:00-15:00（240 交易分钟），
+      // 已过去的部分只占左侧 progress 比例，右侧为未交易时段留白
+      const prog = this.tradingProgress();
+      const span = Math.max(prog, arr.length > 1 ? 1 / (arr.length - 1) : 0.02);
+      const usable = (w - pad * 2) * span;
       return arr.map((p, i) => {
-        const x = arr.length === 1 ? w / 2 : pad + (i / (arr.length - 1)) * (w - pad * 2);
+        const x = arr.length === 1 ? pad + usable * 0.5
+                                   : pad + (i / (arr.length - 1)) * usable;
         const y = h - 2 - ((p - min) / (max - min)) * (h - 4);
         return x.toFixed(1) + ',' + y.toFixed(1);
       }).join(' ');
+    },
+    tradingProgress(){
+      // 当前时间在完整交易时段（240 交易分钟）中的进度，返回 0-1
+      const d = new Date();
+      const t = d.getHours() * 60 + d.getMinutes();
+      let elapsed = 0;
+      if(t <= 570) elapsed = 0;               // 9:30 开盘前
+      else if(t <= 690) elapsed = t - 570;    // 上午 9:30-11:30
+      else if(t <= 780) elapsed = 120;        // 午休 11:30-13:00（上午已满）
+      else if(t <= 900) elapsed = 120 + (t - 780); // 下午 13:00-15:00
+      else elapsed = 240;                     // 15:00 收盘后
+      return Math.max(0, Math.min(1, elapsed / 240));
     },
     sparkStroke(ix){ const c = this.updownCls(ix.pct); return c==='up' ? '#e74c3c' : (c==='down' ? '#27ae60' : '#909399'); },
     hasSpark(ix){ return !!(ix.spark && ix.spark.length); },

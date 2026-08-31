@@ -6,6 +6,7 @@
 （4 个分时 + 12 个 K线行情）；也可传 url 加载行业分布等其它页面。
 依赖 pywebview，Windows 后端为 WebView2(EdgeChromium)。
 """
+import os
 import sys
 
 
@@ -56,6 +57,52 @@ class Api:
             print("set_on_top error: %s" % e)
             return False
 
+    def resize(self, width, height):
+        """按内容自适应调整窗口客户区尺寸（Win32 SetWindowPos，线程安全）。
+
+        js_api 在线程中调用，不能直接操作 WinForms 控件；通过 Win32 API
+        计算标题栏/边框差值后调整窗口矩形，使客户区恰好等于 width×height。
+        """
+        if not self._hwnd:
+            print("resize: 窗口句柄未就绪")
+            return False
+        try:
+            import ctypes
+            from ctypes import wintypes
+            hwnd = self._hwnd.ToInt64() if hasattr(self._hwnd, 'ToInt64') else int(self._hwnd)
+
+            class RECT(ctypes.Structure):
+                _fields_ = [("left", ctypes.c_long), ("top", ctypes.c_long),
+                            ("right", ctypes.c_long), ("bottom", ctypes.c_long)]
+
+            user32 = ctypes.windll.user32
+            user32.GetWindowRect.argtypes = [wintypes.HWND, ctypes.POINTER(RECT)]
+            user32.GetClientRect.argtypes = [wintypes.HWND, ctypes.POINTER(RECT)]
+            user32.SetWindowPos.argtypes = [
+                wintypes.HWND, wintypes.HWND,
+                ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int,
+                ctypes.c_uint,
+            ]
+
+            wr = RECT()
+            cr = RECT()
+            user32.GetWindowRect(wintypes.HWND(hwnd), ctypes.byref(wr))
+            user32.GetClientRect(wintypes.HWND(hwnd), ctypes.byref(cr))
+            # 客户区 -> 窗口矩形（含标题栏/边框）的差值
+            dx = (wr.right - wr.left) - (cr.right - cr.left)
+            dy = (wr.bottom - wr.top) - (cr.bottom - cr.top)
+
+            SWP_NOMOVE = 0x0002
+            SWP_NOZORDER = 0x0004
+            ok = user32.SetWindowPos(
+                wintypes.HWND(hwnd), 0,
+                0, 0, int(width) + dx, int(height) + dy, SWP_NOMOVE | SWP_NOZORDER,
+            )
+            return bool(ok)
+        except Exception as e:
+            print("resize error: %s" % e)
+            return False
+
 
 def main():
     import argparse
@@ -99,7 +146,14 @@ def main():
             print("bind window handle error: %s" % e)
 
     window.events.loaded += on_loaded
-    webview.start(debug=False)
+    # private_mode=False + 固定 storage_path：所有独立弹窗共享同一 WebView2 用户
+    # 数据目录，localStorage 可跨窗口/跨进程持久化（否则默认 private_mode=True
+    # 每次启动用临时目录，关闭重开后缩放等设置会丢失）。
+    webview.start(
+        debug=False,
+        private_mode=False,
+        storage_path=os.path.join(os.path.expanduser("~"), ".xtquant", "webview_data"),
+    )
     return 0
 
 

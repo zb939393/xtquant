@@ -14,17 +14,21 @@
   .tb-hover { position:absolute; top:0; left:0; right:0; height:46px; z-index:5; }
   .toolbar { position:absolute; top:0; left:0; right:0; z-index:10; display:flex; align-items:center; gap:12px; flex-wrap:wrap; padding:10px 16px; background:transparent; opacity:0; pointer-events:none; transition:opacity .18s ease; }
   .tb-hover:hover + .toolbar, .toolbar:hover { opacity:1; pointer-events:auto; }
-  .title { font-weight:700; font-size:13px; }
-  .title .sub { font-size:10px; font-weight:400; color:#909399; margin-left:6px; }
-  .sum { display:flex; gap:14px; font-size:10px; }
+  .title { font-weight:700; font-size:calc(13px * var(--zoom, 1)); }
+  .title .sub { font-size:calc(10px * var(--zoom, 1)); font-weight:400; color:#909399; margin-left:6px; }
+  .sum { display:flex; gap:14px; font-size:calc(10px * var(--zoom, 1)); }
   .sum .s b { font-weight:700; font-variant-numeric:tabular-nums; }
   .up { color:#e74c3c; }
   .down { color:#27ae60; }
   .flat { color:#909399; }
-  .updated { margin-left:auto; font-size:10px; color:#909399; }
-  .btn { background:#fff; color:#409eff; border:1px solid #409eff; border-radius:6px; padding:3px 8px; font-size:10px; cursor:pointer; }
+  .updated { margin-left:auto; font-size:calc(10px * var(--zoom, 1)); color:#909399; }
+  .btn { background:#fff; color:#409eff; border:1px solid #409eff; border-radius:6px; padding:3px 8px; font-size:calc(10px * var(--zoom, 1)); cursor:pointer; }
   .btn:hover { background:#ecf5ff; }
   .btn.active { background:#409eff; color:#fff; }
+  .zoom-group { display:flex; align-items:center; gap:6px; }
+  .zoom-group label { font-size:10px; color:#909399; }
+  .zoom-slider { width:80px; }
+  .zoom-val { font-size:10px; color:#606266; min-width:34px; text-align:right; }
   #chart { position:absolute; inset:0; }
   .chart-err { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; color:#f56c6c; font-size:12px; padding:0 20px; text-align:center; }
 </style>
@@ -41,6 +45,11 @@
       <span class="s">合计 <b>[# dist.pool #]</b></span>
     </div>
     <span class="updated" v-if="updatedAt">更新 [# updatedAt #]</span>
+    <div class="zoom-group">
+      <label>大小</label>
+      <input type="range" class="zoom-slider" min="50" max="150" step="1" v-model.number="zoom" @input="onZoomChange">
+      <span class="zoom-val">[# zoom #]%</span>
+    </div>
     <button class="btn" :class="{active:onTop}" @click="toggleTop">[# onTop ? '置顶' : '未置顶' #]</button>
     <button class="btn" @click="fetchData(true)">刷新</button>
   </div>
@@ -70,9 +79,11 @@ new Vue({
     chart: null,
     chartErr: '',
     onTop: true,
+    zoom: (function(){ try{ var v = parseInt(localStorage.getItem('zoom_zhangfu') || '100', 10); return (isFinite(v) && v >= 50 && v <= 150) ? v : 100; }catch(e){ return 100; } })(),
     timer: null,
   },
   created(){
+    document.documentElement.style.setProperty('--zoom', this.zoom / 100);
     this.timer = setInterval(() => this.fetchData(false), 30000);
     window.addEventListener('resize', this.onResize);
   },
@@ -93,6 +104,12 @@ new Vue({
       this.chart = echarts.init(document.getElementById('chart'));
     },
     onResize(){ if(this.chart) this.chart.resize(); },
+    fz(v){ return Math.max(1, Math.round(v * this.zoom / 100)); },
+    onZoomChange(){
+      try{ localStorage.setItem('zoom_zhangfu', this.zoom); }catch(e){}
+      document.documentElement.style.setProperty('--zoom', this.zoom / 100);
+      this.render();
+    },
     toggleTop(){
       this.onTop = !this.onTop;
       if(window.pywebview && window.pywebview.api && window.pywebview.api.set_on_top){
@@ -141,22 +158,22 @@ new Vue({
         xAxis: {
           type: 'category',
           data: cats,
-          axisLabel: { fontSize: 9, color: '#606266', interval: 0, rotate: 38 },
+          axisLabel: { fontSize: this.fz(9), color: '#606266', interval: 0, rotate: 38 },
           axisLine: { lineStyle: { color: '#dcdfe6' } },
           axisTick: { show: false },
         },
         yAxis: {
           type: 'value',
           name: '家数',
-          nameTextStyle: { fontSize: 9, color: '#909399' },
-          axisLabel: { fontSize: 9, color: '#909399', formatter: function(v){ return v >= 1000 ? (v/1000)+'k' : v; } },
+          nameTextStyle: { fontSize: this.fz(9), color: '#909399' },
+          axisLabel: { fontSize: this.fz(9), color: '#909399', formatter: function(v){ return v >= 1000 ? (v/1000)+'k' : v; } },
           splitLine: { lineStyle: { color: '#f2f3f5' } },
         },
         series: [{
           type: 'bar',
           data: vals,
           barWidth: '82%',
-          label: { show: true, position: 'top', fontSize: 8, color: '#909399', formatter: function(p){ return p.value >= 100 ? (p.value/1000).toFixed(1)+'k' : p.value; } },
+          label: { show: true, position: 'top', fontSize: this.fz(8), color: '#909399', formatter: function(p){ return p.value >= 100 ? (p.value/1000).toFixed(1)+'k' : p.value; } },
           markLine: {
             symbol: 'none',
             silent: true,

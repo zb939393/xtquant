@@ -14,14 +14,18 @@
   .tb-hover { position:absolute; top:0; left:0; right:0; height:46px; z-index:5; }
   .toolbar { position:absolute; top:0; left:0; right:0; z-index:10; display:flex; align-items:center; gap:12px; flex-wrap:wrap; padding:10px 16px; background:transparent; opacity:0; pointer-events:none; transition:opacity .18s ease; }
   .tb-hover:hover + .toolbar, .toolbar:hover { opacity:1; pointer-events:auto; }
-  .toolbar .t { font-weight:600; font-size:9px; }
-  .toolbar .muted { font-size:9px; color:#909399; }
-  .type-select { padding:2px 4px; border:1px solid #dcdfe6; border-radius:6px; font-size:9px; color:#303133; background:#fff; cursor:pointer; }
+  .toolbar .t { font-weight:600; font-size:calc(9px * var(--zoom, 1)); }
+  .toolbar .muted { font-size:calc(9px * var(--zoom, 1)); color:#909399; }
+  .type-select { padding:2px 4px; border:1px solid #dcdfe6; border-radius:6px; font-size:calc(9px * var(--zoom, 1)); color:#303133; background:#fff; cursor:pointer; }
   .toolbar-right { margin-left:auto; display:flex; align-items:center; gap:10px; }
-  .btn { background:#409eff; color:#fff; border:none; border-radius:6px; padding:3px 8px; font-size:9px; cursor:pointer; }
+  .btn { background:#409eff; color:#fff; border:none; border-radius:6px; padding:3px 8px; font-size:calc(9px * var(--zoom, 1)); cursor:pointer; }
   .btn:hover { background:#66b1ff; }
   .btn.active { background:#f56c6c; }
   .btn.active:hover { background:#f78989; }
+  .zoom-group { display:flex; align-items:center; gap:6px; }
+  .zoom-group label { font-size:9px; color:#909399; }
+  .zoom-slider { width:80px; }
+  .zoom-val { font-size:9px; color:#606266; min-width:34px; text-align:right; }
   .chart-wrap { position:absolute; top:0; left:0; right:0; bottom:0; }
   #chart { position:absolute; top:0; left:0; right:0; bottom:0; }
 </style>
@@ -36,6 +40,11 @@
       <option :value="1">细分行业</option>
     </select>
     <span class="muted" v-if="updatedAt">共 [# list.length #] 个板块 · 更新 [# updatedAt #]</span>
+    <div class="zoom-group">
+      <label>大小</label>
+      <input type="range" class="zoom-slider" min="50" max="150" step="1" v-model.number="zoom" @input="onZoomChange">
+      <span class="zoom-val">[# zoom #]%</span>
+    </div>
     <span class="toolbar-right">
       <button class="btn" :class="{active:onTop}" @click="toggleTop">[# onTop ? '置顶' : '未置顶' #]</button>
       <button class="btn" @click="closeWin">关闭</button>
@@ -66,8 +75,10 @@ new Vue({
     loading: false,
     chart: null,
     onTop: true,
+    zoom: (function(){ try{ var v = parseInt(localStorage.getItem('zoom_industry') || '100', 10); return (isFinite(v) && v >= 50 && v <= 150) ? v : 100; }catch(e){ return 100; } })(),
   },
   created(){
+    document.documentElement.style.setProperty('--zoom', this.zoom / 100);
     this.fetchData(true);
     this.timer = setInterval(() => this.fetchData(false), 30000);
     window.addEventListener('resize', this.onWinResize);
@@ -79,6 +90,12 @@ new Vue({
   },
   methods: {
     fmt2(v){ const n=num(v); return isNaN(n) ? '--' : n.toFixed(2); },
+    fz(v){ return Math.max(1, Math.round(v * this.zoom / 100)); },
+    onZoomChange(){
+      try{ localStorage.setItem('zoom_industry', this.zoom); }catch(e){}
+      document.documentElement.style.setProperty('--zoom', this.zoom / 100);
+      this.render();
+    },
     toggleTop(){
       this.onTop = !this.onTop;
       if(window.pywebview && window.pywebview.api && window.pywebview.api.set_on_top){
@@ -139,12 +156,12 @@ new Vue({
       const colorOf = pct => pct > 0 ? '#e74c3c' : (pct < 0 ? '#27ae60' : '#909399');
       const option = {
         backgroundColor: '#fff',
-        title: { text: '行业板块分布', left: 6, top: 2, textStyle: { fontSize: 9, fontWeight: 600, color: '#303133' } },
+        title: { text: '行业板块分布', left: 6, top: 2, textStyle: { fontSize: this.fz(9), fontWeight: 600, color: '#303133' } },
         tooltip: {
           trigger: 'item',
           backgroundColor: 'rgba(255,255,255,.97)',
           borderColor: '#dcdfe6',
-          textStyle: { color: '#303133', fontSize: 12 },
+          textStyle: { color: '#303133', fontSize: this.fz(12) },
           formatter: function(p) {
             const d = p.data;
             const c = colorOf(d.value[1]);
@@ -159,23 +176,23 @@ new Vue({
         },
         grid: { left: '1%', right: '1%', top: '15%', bottom: '1%', containLabel: true },
         xAxis: {
-          type: 'value', name: '价格(元)', nameGap: 4, nameTextStyle: { color: '#909399', fontSize: 9 },
-          axisLabel: { color: '#606266', fontSize: 9, formatter: v => _fmt2(v) },
+          type: 'value', name: '价格(元)', nameGap: 4, nameTextStyle: { color: '#909399', fontSize: this.fz(9) },
+          axisLabel: { color: '#606266', fontSize: this.fz(9), formatter: v => _fmt2(v) },
           splitLine: { lineStyle: { color: '#f0f2f5' } },
         },
         yAxis: {
-          type: 'value', name: '涨幅(%)', nameGap: 4, nameTextStyle: { color: '#909399', fontSize: 9 },
-          axisLabel: { color: '#606266', fontSize: 9, formatter: v => v + '%' },
+          type: 'value', name: '涨幅(%)', nameGap: 4, nameTextStyle: { color: '#909399', fontSize: this.fz(9) },
+          axisLabel: { color: '#606266', fontSize: this.fz(9), formatter: v => v + '%' },
           splitLine: { lineStyle: { color: '#eef1f5' } },
         },
         series: [{
           type: 'scatter',
           data: points,
-          symbolSize: d => 7 + Math.min(17, Math.abs(d[1]) * 3.2),
+          symbolSize: d => this.fz(7 + Math.min(17, Math.abs(d[1]) * 3.2)),
           itemStyle: { color: p => colorOf(p.data.value[1]) },
-          label: { show: true, position: 'bottom', fontSize: 9, color: '#606266', formatter: p => p.data.name || '' },
+          label: { show: true, position: 'bottom', fontSize: this.fz(9), color: '#606266', formatter: p => p.data.name || '' },
           labelLayout: { hideOverlap: true },
-          emphasis: { label: { show: true, position: 'bottom', fontSize: 11, color: '#303133', formatter: p => p.data.name || '' } },
+          emphasis: { label: { show: true, position: 'bottom', fontSize: this.fz(11), color: '#303133', formatter: p => p.data.name || '' } },
           markLine: {
             symbol: 'none',
             label: { show: false },

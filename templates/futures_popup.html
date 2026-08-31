@@ -13,15 +13,19 @@
   .popup-hover{position:absolute;top:0;left:0;right:0;height:40px;z-index:5;}
   .popup-toolbar{position:absolute;top:0;left:0;right:0;z-index:10;display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:6px 12px;background:#fff;border:1px solid #ebeef5;border-radius:0 0 8px 8px;box-shadow:0 2px 8px rgba(0,0,0,.1);opacity:0;pointer-events:none;transition:opacity .18s ease;}
   .popup-hover:hover + .popup-toolbar, .popup-toolbar:hover{opacity:1;pointer-events:auto;}
-  .popup-title{font-size:16px;font-weight:700;color:#303133;}
-  .popup-toolbar .muted{font-size:12px;color:#909399;}
+  .popup-title{font-size:calc(16px * var(--zoom, 1));font-weight:700;color:#303133;}
+  .popup-toolbar .muted{font-size:calc(12px * var(--zoom, 1));color:#909399;}
   .popup-toolbar-right{margin-left:auto;display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
+  .zoom-group{display:flex;align-items:center;gap:6px;}
+  .zoom-group label{font-size:12px;color:#909399;white-space:nowrap;}
+  .zoom-slider{width:80px;}
+  .zoom-val{font-size:12px;color:#606266;min-width:34px;text-align:right;}
   .up{color:#e74c3c !important;font-weight:600;}
   .down{color:#27ae60 !important;font-weight:600;}
   .flat{color:#95a5a6 !important;}
-  .board-badge{font-weight:700;font-size:9px;padding:0 6px;border-radius:8px;background:#f0f2f5;color:#606266;line-height:16px;}
-  .board-name{font-weight:700;font-size:9px;color:#303133;}
-  .cell-ind{display:inline-flex;flex-wrap:wrap;align-items:baseline;gap:3px 6px;font-size:9px;font-variant-numeric:tabular-nums;line-height:1.2;}
+  .board-badge{font-weight:700;font-size:calc(9px * var(--zoom, 1));padding:0 6px;border-radius:8px;background:#f0f2f5;color:#606266;line-height:16px;}
+  .board-name{font-weight:700;font-size:calc(9px * var(--zoom, 1));color:#303133;}
+  .cell-ind{display:inline-flex;flex-wrap:wrap;align-items:baseline;gap:3px 6px;font-size:calc(9px * var(--zoom, 1));font-variant-numeric:tabular-nums;line-height:1.2;}
   .cell-ind .ci{display:inline-flex;align-items:baseline;gap:2px;white-space:nowrap;}
   .cell-ind .ci b{font-weight:600;color:#aeb4bf;}
   .cell-ind .ci.atr{color:#16a085;}
@@ -33,11 +37,11 @@
   .popup-board{position:absolute;top:0;left:0;right:0;bottom:0;display:flex;flex-direction:column;gap:8px;padding:8px;}
   .board-row{flex:1 1 0;min-height:0;display:grid;grid-template-columns:repeat(4, minmax(0, 1fr));gap:8px;}
   .cell{min-width:0;min-height:0;background:#fff;border:1px solid #ebeef5;border-radius:10px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,.03);display:flex;flex-direction:column;}
-  .cell-head{display:flex;align-items:center;flex-wrap:wrap;gap:3px 6px;padding:1px 8px;min-height:18px;background:#fafbfc;border-bottom:1px solid #f0f2f5;}
+  .cell-head{display:flex;align-items:center;flex-wrap:wrap;gap:3px 6px;padding:calc(1px * var(--zoom, 1)) calc(8px * var(--zoom, 1));min-height:calc(18px * var(--zoom, 1));background:#fafbfc;border-bottom:1px solid #f0f2f5;}
   .cell-chart{flex:1 1 auto;min-height:0;position:relative;}
   .comp-rt,.comp-kline{width:100%;height:100%;cursor:pointer;}
   .comp-kline-wrap{position:relative;width:100%;height:100%;}
-  .board-chg,.board-chg-pct{font-weight:700;font-variant-numeric:tabular-nums;font-size:12px;}
+  .board-chg,.board-chg-pct{font-weight:700;font-variant-numeric:tabular-nums;font-size:calc(12px * var(--zoom, 1));}
   .board-chg-pct{margin-left:1px;}
   .board-chart-spacer{flex:1 1 auto;}
   @media (max-width: 1100px){ .board-row{grid-template-columns:repeat(2, minmax(0, 1fr));} .popup-board{overflow:auto;} }
@@ -52,6 +56,11 @@
     <span class="popup-toolbar-right">
       <span class="muted" v-if="statusMsg">[# statusMsg #]</span>
       <span class="muted">快照 [# updatedAt #]</span>
+      <span class="zoom-group">
+        <label>大小</label>
+        <input type="range" class="zoom-slider" min="50" max="150" step="1" v-model.number="zoom" @input="onZoomChange">
+        <span class="zoom-val">[# zoom #]%</span>
+      </span>
       <el-switch v-model="showBands" size="mini" active-text="±σ通道"></el-switch>
       <el-switch v-model="onTop" size="mini" active-text="置顶" @change="onTopChange"></el-switch>
       <el-select v-model="klineCount" size="mini" style="width:96px;" placeholder="天数">
@@ -179,6 +188,9 @@ function fmtTip(v){
 function fmtPct(v,d=2,signed=false){ const n=num(v); if(isNaN(n)) return '--'; const s=n.toFixed(d)+'%'; return signed&&n>0?('+'+s):s; }
 function fmtWan(v,d=0){ const n=num(v); if(isNaN(n)) return '--'; if(Math.abs(n)>=1e8) return (n/1e8).toFixed(2)+'亿'; if(Math.abs(n)>=1e4) return (n/1e4).toFixed(d)+'万'; return n.toFixed(d); }
 function fmtAvgVol(v){ const n=num(v); if(isNaN(n)) return '--'; if(Math.abs(n)>=1e4) return fmtWan(n); if(n>=10) return Math.round(n).toString(); return n.toFixed(1); }
+// ===== 内容大小缩放 =====
+var zoom = 100;
+function fz(v){ return Math.max(1, Math.round(v * zoom / 100)); }
 function rtOpenMinutes(t){ if(!t || typeof t !== 'string') return 0; const p = t.split(':'); if(p.length < 2) return 0; const h = parseInt(p[0], 10), m = parseInt(p[1], 10); if(isNaN(h) || isNaN(m)) return 0; if(h < 9 || (h === 9 && m < 30)) return 1; if(h < 11 || (h === 11 && m <= 30)) return Math.max(1, (h - 9) * 60 + (m - 30)); if(h < 13) return 120; return Math.max(1, 120 + (h - 13) * 60 + m); }
 
 function rtSessionAxis(){
@@ -276,10 +288,10 @@ function buildRtOption(data, prevClose, kind, avgVolPerMin, delta, showBands){
   return {
     backgroundColor: '#fff',
     animation: false,
-    title: { show: avgVolPerMin > 0 || (lastDev != null && isFinite(lastDev)) || (isFinite(num(delta)) && num(delta) !== 0), text: '均量/分 ' + fmtAvgVol(num(avgVolPerMin)) + (isFinite(num(delta)) && num(delta) !== 0 ? '　Δ ' + fmtNum(num(delta), 2) : '') + (lastDev != null && isFinite(lastDev) ? '　VWAP偏离 ' + fmtPct(num(lastDev), 2, true) : ''), left: 4, top: 3, textStyle: { fontSize: 11, color: '#909399', fontWeight: 'normal' } },
+    title: { show: avgVolPerMin > 0 || (lastDev != null && isFinite(lastDev)) || (isFinite(num(delta)) && num(delta) !== 0), text: '均量/分 ' + fmtAvgVol(num(avgVolPerMin)) + (isFinite(num(delta)) && num(delta) !== 0 ? '　Δ ' + fmtNum(num(delta), 2) : '') + (lastDev != null && isFinite(lastDev) ? '　VWAP偏离 ' + fmtPct(num(lastDev), 2, true) : ''), left: 4, top: 3, textStyle: { fontSize: fz(11), color: '#909399', fontWeight: 'normal' } },
     grid: [
-      { left: 46, right: 46, top: '7%', height: '66%' },
-      { left: 46, right: 46, top: '73%', height: '26%' }
+      { left: fz(46), right: fz(46), top: '7%', height: '66%' },
+      { left: fz(46), right: fz(46), top: '73%', height: '26%' }
     ],
     tooltip: { trigger: 'axis', axisPointer: { type: 'line' }, formatter: function(params){
         if(!params || !params.length) return '';
@@ -288,7 +300,7 @@ function buildRtOption(data, prevClose, kind, avgVolPerMin, delta, showBands){
         const p = prices[idx], a = avgs[idx], v = vols[idx];
         let cum = 0; for(let k = 0; k <= idx; k++){ if(vols[k] != null) cum += vols[k]; }
         const avg = rtOpenMinutes(t) > 0 ? (cum / rtOpenMinutes(t)) : null;
-        let s = '<div style="font-size:11px;margin-bottom:2px;">' + (t || '') + '</div>';
+        let s = '<div style="font-size:' + fz(11) + 'px;margin-bottom:2px;">' + (t || '') + '</div>';
         s += '价 ' + (p != null ? fmtNum(p, 2) : '--') + '　均 ' + (a != null ? fmtNum(a, 2) : '--') + '<br/>';
         s += 'VWAP偏离 ' + (vwapDev[idx] != null ? fmtPct(vwapDev[idx], 2, true) : '--') + '<br/>';
         s += '量(累计) ' + (v != null ? fmtWan(v) : '--') + '　均量/分 ' + (avg != null ? fmtAvgVol(avg) : '--');
@@ -299,10 +311,10 @@ function buildRtOption(data, prevClose, kind, avgVolPerMin, delta, showBands){
       { type: 'category', gridIndex: 1, data: session, boundaryGap: false, axisLabel: { show: false } }
     ],
     yAxis: [
-      { type: 'value', min: leftMin, max: leftMax, scale: true, splitLine: { lineStyle: { color: '#f2f2f2' } }, axisLabel: { color: '#909399', fontSize: 9 } },
+      { type: 'value', min: leftMin, max: leftMax, scale: true, splitLine: { lineStyle: { color: '#f2f2f2' } }, axisLabel: { color: '#909399', fontSize: fz(9) } },
       { gridIndex: 1, type: 'value', scale: true, splitLine: { show: false }, axisLabel: { show: false } },
-      { gridIndex: 0, position: 'right', type: 'value', min: ampMin, max: ampMax, scale: true, splitLine: { show: false }, name: '幅度%', nameLocation: 'end', nameGap: 2, nameTextStyle: { fontSize: 9, color: '#909399' },
-        axisLabel: { color: function(v){ return v > 0 ? '#e74c3c' : (v < 0 ? '#27ae60' : '#909399'); }, fontSize: 9, formatter: function(v){ return fmtPct(v, 2, true); } } },
+      { gridIndex: 0, position: 'right', type: 'value', min: ampMin, max: ampMax, scale: true, splitLine: { show: false }, name: '幅度%', nameLocation: 'end', nameGap: 2, nameTextStyle: { fontSize: fz(9), color: '#909399' },
+        axisLabel: { color: function(v){ return v > 0 ? '#e74c3c' : (v < 0 ? '#27ae60' : '#909399'); }, fontSize: fz(9), formatter: function(v){ return fmtPct(v, 2, true); } } },
       { gridIndex: 0, type: 'value', min: vwapMin, max: vwapMax, scale: true, show: false, axisLabel: { show: false }, splitLine: { show: false }, axisPointer: { show: false } }
     ],
     series: [
@@ -312,19 +324,19 @@ function buildRtOption(data, prevClose, kind, avgVolPerMin, delta, showBands){
       { name: 'σ带2', type: 'line', xAxisIndex: 0, yAxisIndex: 0, data: band2, showSymbol: false, smooth: false, connectNulls: true, stack: 'b2', lineStyle: { opacity: 0 }, areaStyle: { color: 'rgba(230,162,60,0.07)' }, silent: true, z: 1 },
       { name: 'σ带1下', type: 'line', xAxisIndex: 0, yAxisIndex: 0, data: dn1, showSymbol: false, smooth: false, connectNulls: true, stack: 'b1', lineStyle: { opacity: 0 }, areaStyle: { opacity: 0 }, silent: true, z: 1 },
       { name: 'σ带1', type: 'line', xAxisIndex: 0, yAxisIndex: 0, data: band1, showSymbol: false, smooth: false, connectNulls: true, stack: 'b1', lineStyle: { opacity: 0 }, areaStyle: { color: 'rgba(64,158,255,0.10)' }, silent: true, z: 1 },
-      { name: '±2σ', type: 'line', xAxisIndex: 0, yAxisIndex: 0, data: up2, showSymbol: false, smooth: false, connectNulls: true, lineStyle: { color: 'rgba(230,162,60,0.6)', width: 1, type: 'dashed' }, silent: true, z: 2 },
-      { name: '∓2σ', type: 'line', xAxisIndex: 0, yAxisIndex: 0, data: dn2, showSymbol: false, smooth: false, connectNulls: true, lineStyle: { color: 'rgba(230,162,60,0.6)', width: 1, type: 'dashed' }, silent: true, z: 2 },
-      { name: '±1σ', type: 'line', xAxisIndex: 0, yAxisIndex: 0, data: up1, showSymbol: false, smooth: false, connectNulls: true, lineStyle: { color: 'rgba(64,158,255,0.5)', width: 1 }, silent: true, z: 2 },
-      { name: '∓1σ', type: 'line', xAxisIndex: 0, yAxisIndex: 0, data: dn1, showSymbol: false, smooth: false, connectNulls: true, lineStyle: { color: 'rgba(64,158,255,0.5)', width: 1 }, silent: true, z: 2 }
+      { name: '±2σ', type: 'line', xAxisIndex: 0, yAxisIndex: 0, data: up2, showSymbol: false, smooth: false, connectNulls: true, lineStyle: { color: 'rgba(230,162,60,0.6)', width: fz(1), type: 'dashed' }, silent: true, z: 2 },
+      { name: '∓2σ', type: 'line', xAxisIndex: 0, yAxisIndex: 0, data: dn2, showSymbol: false, smooth: false, connectNulls: true, lineStyle: { color: 'rgba(230,162,60,0.6)', width: fz(1), type: 'dashed' }, silent: true, z: 2 },
+      { name: '±1σ', type: 'line', xAxisIndex: 0, yAxisIndex: 0, data: up1, showSymbol: false, smooth: false, connectNulls: true, lineStyle: { color: 'rgba(64,158,255,0.5)', width: fz(1) }, silent: true, z: 2 },
+      { name: '∓1σ', type: 'line', xAxisIndex: 0, yAxisIndex: 0, data: dn1, showSymbol: false, smooth: false, connectNulls: true, lineStyle: { color: 'rgba(64,158,255,0.5)', width: fz(1) }, silent: true, z: 2 }
       ] : []),
       { name: '价', type: 'line', data: prices, showSymbol: false, smooth: false, connectNulls: true, z: 5,
-        lineStyle: { width: 1.2, color: color },
+        lineStyle: { width: fz(1.2), color: color },
         areaStyle: { color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
           { offset: 0, color: up ? 'rgba(231,76,60,0.25)' : 'rgba(39,174,96,0.25)' },
           { offset: 1, color: 'rgba(255,255,255,0)' } ]) },
-        markLine: { silent: true, symbol: 'none', lineStyle: { color: '#c0c4cc', type: 'dashed', width: 1 },
-          data: [{ yAxis: prevClose }], label: { formatter: hasPrev ? ('昨收 ' + fmtNum(prevClose, 2)) : '', fontSize: 9, color: '#909399' } } },
-      { name: '均', type: 'line', data: avgs, showSymbol: false, smooth: false, connectNulls: true, z: 4, lineStyle: { width: 1, color: '#f5a623' } },
+        markLine: { silent: true, symbol: 'none', lineStyle: { color: '#c0c4cc', type: 'dashed', width: fz(1) },
+          data: [{ yAxis: prevClose }], label: { formatter: hasPrev ? ('昨收 ' + fmtNum(prevClose, 2)) : '', fontSize: fz(9), color: '#909399' } } },
+      { name: '均', type: 'line', data: avgs, showSymbol: false, smooth: false, connectNulls: true, z: 4, lineStyle: { width: fz(1), color: '#f5a623' } },
       { name: 'VWAP偏离', type: 'bar', xAxisIndex: 0, yAxisIndex: 3, data: vwapDev, connectNulls: true, barWidth: '50%', z: 3,
         itemStyle: { color: function(p){ const v = p.data; return (v > 0) ? 'rgba(231,76,60,0.35)' : (v < 0 ? 'rgba(39,174,96,0.35)' : 'rgba(192,196,204,0.3)'); } } },
       { name: '量', type: 'bar', xAxisIndex: 1, yAxisIndex: 1, data: vols,
@@ -353,10 +365,10 @@ function buildMiniKlineOption(data, full, indicator){
     const ad = _calcADX(fullData, 14);
     indLegend = ['ADX', '+DI', '-DI'];
     indAxisConf = { scale: true };
-    indMarkLine = { silent: true, symbol: 'none', lineStyle: { color: '#c0c4cc', type: 'dashed', width: 1 }, label: { show: true, position: 'insideEndTop', formatter: '25 趋势阈值', color: '#909399', fontSize: 9 }, data: [{ yAxis: 25 }] };
+    indMarkLine = { silent: true, symbol: 'none', lineStyle: { color: '#c0c4cc', type: 'dashed', width: fz(1) }, label: { show: true, position: 'insideEndTop', formatter: '25 趋势阈值', color: '#909399', fontSize: fz(9) }, data: [{ yAxis: 25 }] };
     indSeries = [
-      { name: 'ADX', type: 'line', xAxisIndex: 2, yAxisIndex: 2, data: ad.adx.slice(-data.length), showSymbol: false, lineStyle: { width: 1, color: '#000000' } },
-      { name: '+DI', type: 'line', xAxisIndex: 2, yAxisIndex: 2, data: ad.pdi.slice(-data.length), showSymbol: false, lineStyle: { width: 1, color: '#e74c3c' } },
+      { name: 'ADX', type: 'line', xAxisIndex: 2, yAxisIndex: 2, data: ad.adx.slice(-data.length), showSymbol: false, lineStyle: { width: fz(1), color: '#000000' } },
+      { name: '+DI', type: 'line', xAxisIndex: 2, yAxisIndex: 2, data: ad.pdi.slice(-data.length), showSymbol: false, lineStyle: { width: fz(1), color: '#e74c3c' } },
       { name: '-DI', type: 'line', xAxisIndex: 2, yAxisIndex: 2, data: ad.mdi.slice(-data.length), showSymbol: false, lineStyle: { width: 1, color: '#27ae60' } }
     ];
     indSeries[0].markLine = indMarkLine;
@@ -365,41 +377,41 @@ function buildMiniKlineOption(data, full, indicator){
     indAxisConf = { scale: true };
     indMarkLine = null;
     indSeries = [
-      { name: 'ATR', type: 'line', xAxisIndex: 2, yAxisIndex: 2, data: _calcATR(fullData, 14).slice(-data.length), showSymbol: false, lineStyle: { width: 1, color: '#16a085' } }
+      { name: 'ATR', type: 'line', xAxisIndex: 2, yAxisIndex: 2, data: _calcATR(fullData, 14).slice(-data.length), showSymbol: false, lineStyle: { width: fz(1), color: '#16a085' } }
     ];
   } else {
     indLegend = ['MFI'];
     indAxisConf = { scale: false, min: 0, max: 100 };
-    indMarkLine = { silent: true, symbol: 'none', lineStyle: { color: '#c0c4cc', type: 'dashed', width: 1 }, label: { show: false }, data: [{ yAxis: 80 }, { yAxis: 20 }] };
+    indMarkLine = { silent: true, symbol: 'none', lineStyle: { color: '#c0c4cc', type: 'dashed', width: fz(1) }, label: { show: false }, data: [{ yAxis: 80 }, { yAxis: 20 }] };
     indSeries = [
-      { name: 'MFI', type: 'line', xAxisIndex: 2, yAxisIndex: 2, data: _calcMFI(fullData, 14).slice(-data.length), showSymbol: false, lineStyle: { width: 1, color: '#8e44ad' }, markLine: indMarkLine }
+      { name: 'MFI', type: 'line', xAxisIndex: 2, yAxisIndex: 2, data: _calcMFI(fullData, 14).slice(-data.length), showSymbol: false, lineStyle: { width: fz(1), color: '#8e44ad' }, markLine: indMarkLine }
     ];
   }
   return {
     backgroundColor: '#fff',
     animation: false,
-    legend: { data: ['K','VOL'].concat(indLegend).concat(['BOLL']), top: 0, right: 6, itemWidth: 12, itemHeight: 8, textStyle: { fontSize: 9, color: '#909399' } },
+    legend: { data: ['K','VOL'].concat(indLegend).concat(['BOLL']), top: 0, right: 6, itemWidth: fz(12), itemHeight: fz(8), textStyle: { fontSize: fz(9), color: '#909399' } },
     grid: [
-      { left: 44, right: 8, top: 16, height: '52%' },
-      { left: 44, right: 8, top: '69%', height: '11%' },
-      { left: 44, right: 8, top: '81%', height: '17%' }
+      { left: fz(44), right: fz(8), top: fz(16), height: '52%' },
+      { left: fz(44), right: fz(8), top: '69%', height: '11%' },
+      { left: fz(44), right: fz(8), top: '81%', height: '17%' }
     ],
     tooltip: { trigger: 'axis', axisPointer: { type: 'cross' }, valueFormatter: fmtTip },
     xAxis: [
       { type: 'category', data: dates, boundaryGap: true, axisLabel: { show: false }, axisLine: { lineStyle: { color: '#dcdfe6' } }, axisPointer: { label: { show: false } } },
       { type: 'category', gridIndex: 1, data: dates, axisLabel: { show: false } },
-      { type: 'category', gridIndex: 2, data: dates, axisLabel: { color: '#909399', fontSize: 9, hideOverlap: true } }
+      { type: 'category', gridIndex: 2, data: dates, axisLabel: { color: '#909399', fontSize: fz(9), hideOverlap: true } }
     ],
     yAxis: [
-      { scale: true, splitLine: { lineStyle: { color: '#f2f2f2' } }, axisLabel: { color: '#909399', fontSize: 9 } },
+      { scale: true, splitLine: { lineStyle: { color: '#f2f2f2' } }, axisLabel: { color: '#909399', fontSize: fz(9) } },
       { gridIndex: 1, scale: true, splitLine: { show: false }, axisLabel: { show: false } },
-      Object.assign({ gridIndex: 2, splitLine: { show: false }, axisLabel: { color: '#909399', fontSize: 9 } }, indAxisConf)
+      Object.assign({ gridIndex: 2, splitLine: { show: false }, axisLabel: { color: '#909399', fontSize: fz(9) } }, indAxisConf)
     ],
     series: [
       { name: 'K', type: 'candlestick', data: ohlc, itemStyle: { color: '#e74c3c', color0: '#27ae60', borderColor: '#e74c3c', borderColor0: '#27ae60' } },
-      { name: 'BOLL', type: 'line', data: mid, xAxisIndex: 0, yAxisIndex: 0, showSymbol: false, lineStyle: { width: 1, color: '#f5a623' }, z: 3 },
-      { name: 'UB', type: 'line', data: upper, xAxisIndex: 0, yAxisIndex: 0, showSymbol: false, lineStyle: { width: 1, color: '#9aa0a6' }, z: 3 },
-      { name: 'LB', type: 'line', data: lower, xAxisIndex: 0, yAxisIndex: 0, showSymbol: false, lineStyle: { width: 1, color: '#9aa0a6' }, z: 3 },
+      { name: 'BOLL', type: 'line', data: mid, xAxisIndex: 0, yAxisIndex: 0, showSymbol: false, lineStyle: { width: fz(1), color: '#f5a623' }, z: 3 },
+      { name: 'UB', type: 'line', data: upper, xAxisIndex: 0, yAxisIndex: 0, showSymbol: false, lineStyle: { width: fz(1), color: '#9aa0a6' }, z: 3 },
+      { name: 'LB', type: 'line', data: lower, xAxisIndex: 0, yAxisIndex: 0, showSymbol: false, lineStyle: { width: fz(1), color: '#9aa0a6' }, z: 3 },
       { name: 'VOL', type: 'bar', xAxisIndex: 1, yAxisIndex: 1, data: vols, itemStyle: { color: '#bcd4ef' } }
     ].concat(indSeries)
   };
@@ -519,6 +531,7 @@ Vue.component('fut-compact-rt', {
   },
   mounted(){
     this._setupIO();
+    window.addEventListener('__zoomchange', this._onZoom);
     if(typeof ResizeObserver !== 'undefined'){
       const el = this.$refs.chart;
       if(el){
@@ -528,12 +541,14 @@ Vue.component('fut-compact-rt', {
     }
   },
   beforeDestroy(){
+    window.removeEventListener('__zoomchange', this._onZoom);
     if(this._io){ try{ this._io.disconnect(); }catch(e){} this._io = null; }
     if(this._timer){ clearInterval(this._timer); this._timer = null; }
     if(this._ro){ try{ this._ro.disconnect(); }catch(e){} this._ro = null; }
     if(this._chart){ try{ this._chart.dispose(); }catch(e){} this._chart = null; }
   },
   methods: {
+    _onZoom(){ this._redraw(); },
     _setupIO(){
       const start = () => { if(!this._timer){ this._timer = setInterval(() => this._drawChart(), 3000); this._drawChart(); } };
       const stop = () => { if(this._timer){ clearInterval(this._timer); this._timer = null; } };
@@ -625,6 +640,7 @@ Vue.component('fut-kline', {
   data(){ return { src: '', _chart: null, _timer: null, _visible: false, _io: null, _ro: null, _lastData: null, _lastFull: null }; },
   mounted(){
     this._setupIO();
+    window.addEventListener('__zoomchange', this._onZoom);
     if(typeof ResizeObserver !== 'undefined'){
       const el = this.$refs.chart;
       if(el){
@@ -635,12 +651,14 @@ Vue.component('fut-kline', {
   },
   watch: { period(){ if(this._visible) this._draw(); }, count(){ if(this._visible) this._draw(); }, indicator(){ this._redraw(); } },
   beforeDestroy(){
+    window.removeEventListener('__zoomchange', this._onZoom);
     if(this._io){ try{ this._io.disconnect(); }catch(e){} this._io = null; }
     if(this._timer){ clearInterval(this._timer); this._timer = null; }
     if(this._ro){ try{ this._ro.disconnect(); }catch(e){} this._ro = null; }
     if(this._chart){ try{ this._chart.dispose(); }catch(e){} this._chart = null; }
   },
   methods: {
+    _onZoom(){ this._redraw(); },
     _setupIO(){
       const start = () => { if(!this._timer){ this._timer = setInterval(() => this._draw(), 15000); this._draw(); } };
       const stop = () => { if(this._timer){ clearInterval(this._timer); this._timer = null; } };
@@ -737,6 +755,7 @@ new Vue({
       timer: null,
       showBands: true,
       onTop: true,
+      zoom: (function(){ try{ var v = parseInt(localStorage.getItem('zoom_futures') || '100', 10); return (isFinite(v) && v >= 50 && v <= 150) ? v : 100; }catch(e){ return 100; } })(),
       indicator: 'mfi',
       klineCount: 120,
       indicatorVals: {},
@@ -764,6 +783,12 @@ new Vue({
         .finally(() => { this.loading = false; });
     },
     reload(force) { this.fetchSnapshot(!!force); },
+    onZoomChange() {
+      zoom = this.zoom;
+      try{ localStorage.setItem('zoom_futures', this.zoom); }catch(e){}
+      document.documentElement.style.setProperty('--zoom', zoom / 100);
+      window.dispatchEvent(new Event('__zoomchange'));
+    },
     applyRefreshInterval() {
       if (this.timer) { clearInterval(this.timer); this.timer = null; }
       if (this.refreshInterval && this.refreshInterval > 0) {
@@ -797,6 +822,10 @@ new Vue({
       }
     },
     closeWin() { try { window.close(); } catch(e){} },
+  },
+  created() {
+    zoom = this.zoom;
+    document.documentElement.style.setProperty('--zoom', zoom / 100);
   },
   mounted() {
     this.fetchSnapshot(true).then(() => this.applyRefreshInterval());
