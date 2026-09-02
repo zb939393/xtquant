@@ -131,6 +131,32 @@ def create_app():
         # 股指期货监控看板：独立前端模板（复用同一 Vue2/Element-UI/ECharts 技术栈）
         return render_template("futures.html")
 
+    @app.route("/popup-setup")
+    def popup_setup():
+        """B 机器配置助手：说明如何在本机注册 xtquant-popup:// 协议。
+
+        访问入口：
+          A 本机   http://127.0.0.1:5000/popup-setup
+          B 局域网 http://A_IP:5000/popup-setup
+        """
+        from flask import request
+        from config import Config
+        # 判断访问者来源（A 本机 / B 局域网）
+        try:
+            from api.popup_helper import is_local_request
+            is_local = is_local_request()
+        except Exception:
+            is_local = request.remote_addr in ("127.0.0.1", "::1")
+        # A 服务自身的局域网地址（拼出 B 机器要访问的 URL）
+        public_host = (Config.PUBLIC_HOST or request.host.split(":")[0])
+        server_url = "http://%s:%d" % (public_host, Config.PORT)
+        return render_template(
+            "popup_setup.html",
+            is_local=is_local,
+            remote_addr=request.remote_addr or "",
+            server_url=server_url,
+        )
+
     return app
 
 

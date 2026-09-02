@@ -53,6 +53,7 @@
   <div class="header">
     <div class="title">A股市场概况<span class="sub">中金所 CFFEX · 红涨绿跌</span></div>
     <div class="head-right">
+      <a href="/popup-setup" target="_blank" style="font-size:12px;color:#909399;text-decoration:none;" title="B 机器配置助手：注册 xtquant-popup 协议、查看日志位置">🖥 B 机器配置</a>
       <span class="updated" v-if="updatedAt">更新 [# updatedAt #]</span>
       <button class="btn" :disabled="launching" @click="launchIndustry">[# launching ? '启动中…' : '行业分布窗口' #]</button>
       <button class="btn" :disabled="launchingZF" @click="launchZhangfu">[# launchingZF ? '启动中…' : '涨幅分布窗口' #]</button>

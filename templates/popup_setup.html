@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>独立弹窗 · B 机器配置助手</title>
+<style>
+  :root {
+    --bg: #0f1218; --panel: #1a1f2b; --line: #2a3040;
+    --text: #e6e8ee; --muted: #9aa3b2; --accent: #5b8def;
+    --ok: #28a745; --warn: #f0a020; --err: #dc3545;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+         background: var(--bg); color: var(--text); line-height: 1.6; }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 32px 20px 60px; }
+  h1 { font-size: 24px; margin: 0 0 8px; }
+  h2 { font-size: 18px; margin: 32px 0 12px; padding-bottom: 6px; border-bottom: 1px solid var(--line); }
+  h3 { font-size: 15px; margin: 24px 0 8px; color: var(--accent); }
+  .sub { color: var(--muted); font-size: 13px; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
+           padding: 18px 20px; margin: 16px 0; }
+  .badge { display: inline-block; padding: 2px 10px; border-radius: 4px; font-size: 12px;
+           font-weight: 600; margin-right: 6px; vertical-align: middle; }
+  .badge.local  { background: #1f3a5f; color: #88b4ff; }
+  .badge.remote { background: #3a2a1f; color: #ffb888; }
+  .ok   { color: var(--ok); }
+  .warn { color: var(--warn); }
+  .err  { color: var(--err); }
+  code, pre { font-family: "Cascadia Code", "Consolas", "Courier New", monospace; font-size: 13px; }
+  code { background: #232938; padding: 1px 6px; border-radius: 3px; color: #f0d8a8; }
+  pre { background: #0a0d14; border: 1px solid var(--line); border-radius: 6px;
+        padding: 12px 14px; overflow-x: auto; line-height: 1.5; }
+  pre .c { color: #6b7280; }
+  ol, ul { padding-left: 22px; }
+  li { margin: 6px 0; }
+  .step-num { display: inline-block; width: 22px; height: 22px; line-height: 22px;
+              text-align: center; background: var(--accent); color: #fff;
+              border-radius: 50%; font-size: 12px; font-weight: 700; margin-right: 8px; }
+  .kv { display: grid; grid-template-columns: 140px 1fr; gap: 8px 16px; font-size: 14px; }
+  .kv .k { color: var(--muted); }
+  .copyable { position: relative; }
+  .copyable pre { padding-right: 50px; }
+  .copyable .copy-btn { position: absolute; top: 6px; right: 6px;
+                        background: #2a3040; color: var(--text); border: 1px solid var(--line);
+                        padding: 3px 10px; border-radius: 4px; font-size: 11px;
+                        cursor: pointer; }
+  .copyable .copy-btn:hover { background: #353b50; }
+  .copyable .copy-btn.ok { background: #1f4a2f; color: #88e0a0; border-color: #1f4a2f; }
+  .diag { padding: 10px 14px; border-radius: 6px; margin: 12px 0; }
+  .diag.ok   { background: #0f2a17; border-left: 3px solid var(--ok); }
+  .diag.warn { background: #2a1f0a; border-left: 3px solid var(--warn); }
+  .diag.err  { background: #2a0f12; border-left: 3px solid var(--err); }
+  .back { color: var(--accent); text-decoration: none; font-size: 13px; }
+  .back:hover { text-decoration: underline; }
+  .troubleshoot { font-size: 13px; }
+  .troubleshoot summary { cursor: pointer; padding: 6px 0; color: var(--accent); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <a class="back" href="/">← 返回首页</a>
+  <h1 style="margin-top:14px">🖥 独立弹窗 · 配置助手</h1>
+  <div class="sub">
+    <span class="badge {% if is_local %}local{% else %}remote{% endif %}">
+      {% if is_local %}A 机器（本机）{% else %}B 机器（局域网）{% endif %}
+    </span>
+    来源 IP：<code>{{ remote_addr }}</code> · 服务器地址：<code>{{ server_url }}</code>
+  </div>
+
+  {% if is_local %}
+  <!-- ==================== A 机器视图 ==================== -->
+  <div class="panel">
+    <h2 style="margin-top:0">📦 在 A 机器上打包 launcher.exe</h2>
+    <p>把 <code>popup_launcher.py</code> 打成单文件 exe，并复制到 B 机器使用。</p>
+
+    <h3><span class="step-num">1</span>安装 pyinstaller</h3>
+    <div class="copyable"><pre>python -m pip install pyinstaller</pre></div>
+
+    <h3><span class="step-num">2</span>打包 + 注册本机协议</h3>
+    <div class="copyable"><pre>tools\build_popup_launcher.bat</pre>
+<button class="copy-btn" onclick="copyPre(this)">复制</button></div>
+    <p class="sub">该脚本会生成 <code>dist\popup_launcher.exe</code>（约 18MB），并把 A 机器的 <code>xtquant-popup://</code> 协议注册好（HKCU，无需管理员）。</p>
+
+    <h3><span class="step-num">3</span>把 exe 拷贝到 B 机器</h3>
+    <p>把 <code>D:\xtquant\dist\popup_launcher.exe</code> 拷贝到 B 机器任意目录（如 B 机器的 <code>D:\C盘应用\</code>）。</p>
+    <p class="warn">⚠ 必须在 A 机器打包的 exe 拷过去；不能用 B 机器的 Python + popup_launcher.py 替代（除非 B 机器装了完全相同的 Python + 依赖）。</p>
+  </div>
+
+  <div class="panel">
+    <h2 style="margin-top:0">🔍 A 机器本身状态自检</h2>
+    <p>点下面的按钮测试：</p>
+    <ul>
+      <li>点 <code>测试协议唤起</code> → 浏览器应立即失焦（进入 launcher 启动的 PyWebView 窗口）</li>
+      <li>点 <code>测试弹窗 URL 打开</code> → 在新标签页打开弹窗页面</li>
+    </ul>
+    <button onclick="testProtocol()" style="padding:6px 14px;background:var(--accent);color:#fff;border:0;border-radius:4px;cursor:pointer;">测试协议唤起（应失焦）</button>
+    <button onclick="testWindowOpen()" style="padding:6px 14px;background:#2a3040;color:var(--text);border:1px solid var(--line);border-radius:4px;cursor:pointer;margin-left:8px;">测试弹窗 URL 打开</button>
+    <div id="test-result" style="margin-top:10px"></div>
+  </div>
+
+  {% else %}
+  <!-- ==================== B 机器视图 ==================== -->
+  <div class="panel">
+    <h2 style="margin-top:0">🚀 三步在 B 机器启用独立弹窗</h2>
+    <p>当前 <code>{{ server_url }}</code> 的「独立弹窗」按钮在你 B 机器浏览器点了之后没反应？
+按下面三步即可让 B 桌面弹出 PyWebView 窗口。</p>
+
+    <h3><span class="step-num">1</span>从 A 机器拿 launcher.exe</h3>
+    <p>让 A 机器管理员运行 <code>tools\build_popup_launcher.bat</code>，把生成的 <code>dist\popup_launcher.exe</code> 拷贝到 B 机器的任意目录（例如 <code>D:\C盘应用\</code>）。</p>
+    <p class="warn">⚠ 必须用 A 机器打包好的 exe（约 18 MB，含 pywebview 依赖），不要用源码 .py 替代。</p>
+
+    <h3><span class="step-num">2</span>在 B 机器 cmd 注册协议</h3>
+    <p>在 B 机器打开 <strong>cmd</strong>（按 <kbd>Win+R</kbd> → 输入 <code>cmd</code> → 回车），执行：</p>
+    <div class="copyable"><pre>D:\C盘应用\popup_launcher.exe --register</pre>
+<button class="copy-btn" onclick="copyPre(this)">复制</button></div>
+    <p>执行后会<strong>弹一个 Windows 原生弹窗</strong>显示注册结果：
+    <ul>
+      <li><span class="ok">✅ 成功</span>：显示 <code>REGISTERED · Handler: ...</code>，关掉弹窗即可</li>
+      <li><span class="err">❌ 失败</span>：显示 <code>REGISTER FAILED ...</code>，按弹窗里提示以<strong>管理员身份</strong>重试</li>
+    </ul>
+    </p>
+    <p class="sub">如果 cmd 跑命令看不到任何输出也没弹窗，<code>--noconsole</code> 打包模式下 print 不可见，但会弹窗；如果连弹窗都没有，说明 exe 损坏或缺 dll，请检查 exe 版本和 B 机器是否装了 WebView2。</p>
+
+    <h3><span class="step-num">3</span>验证 + 开始使用</h3>
+    <p>在 B 浏览器：</p>
+    <ol>
+      <li>访问 <code>{{ server_url }}</code>，<strong>Ctrl+F5</strong> 硬刷新</li>
+      <li>进入任意有「独立弹窗」按钮的页面（如 <a href="/option/board" style="color:var(--accent)">期权看板</a> 或 <a href="/futures/board" style="color:var(--accent)">期指看板</a>）</li>
+      <li>点「🖥 独立弹窗」按钮 → <strong>B 桌面</strong>应弹出 PyWebView 窗口</li>
+    </ol>
+    <p>本页面也提供了一键验证（看下面）。</p>
+  </div>
+
+  <div class="panel">
+    <h2 style="margin-top:0">🧪 浏览器端验证</h2>
+    <p>如果不确定是否生效，可以点下面几个按钮测试。</p>
+
+    <button onclick="testProtocol()" style="padding:6px 14px;background:var(--accent);color:#fff;border:0;border-radius:4px;cursor:pointer;">测试协议唤起（应弹 PyWebView）</button>
+    <button onclick="testWindowOpen()" style="padding:6px 14px;background:#2a3040;color:var(--text);border:1px solid var(--line);border-radius:4px;cursor:pointer;margin-left:8px;">测试弹窗 URL（新标签）</button>
+    <div id="test-result" style="margin-top:10px"></div>
+
+    <details class="troubleshoot" style="margin-top:18px">
+      <summary>❓ 点「测试协议唤起」没反应？</summary>
+      <ul>
+        <li>按 <kbd>F12</kbd> 打开 Console，看是否有 <code>scheme does not have a registered handler</code> → 协议未注册，回到步骤 2</li>
+        <li>看到 <code>user gesture is required</code> → 多半是浏览器策略问题，刷新页面后立即点（不要在 setTimeout 内调用）</li>
+        <li>看到 <code>window.open blocked by popup blocker</code> → 浏览器拦截了新窗口，点击地址栏左侧的弹窗图标允许</li>
+        <li>协议唤起成功但 PyWebView 窗口启动后白屏 → B 机器缺 WebView2 Runtime（<a href="https://developer.microsoft.com/microsoft-edge/webview2/" target="_blank" style="color:var(--accent)">下载</a>）</li>
+        <li>PyWebView 窗口立刻关闭 → 看 <code>C:\Users\&lt;B 用户&gt;\.xtquant\popup_launcher.log</code> 日志最后几行</li>
+      </ul>
+    </details>
+  </div>
+  {% endif %}
+
+  <div class="panel">
+    <h2 style="margin-top:0">🛠 维护命令速查</h2>
+    <div class="kv">
+      <div class="k">注册协议</div><div><code>popup_launcher.exe --register</code></div>
+      <div class="k">查询注册状态</div><div><code>popup_launcher.exe --register-status</code></div>
+      <div class="k">注销协议</div><div><code>popup_launcher.exe --unregister</code></div>
+      <div class="k">日志位置</div><div><code>%USERPROFILE%\.xtquant\popup_launcher.log</code></div>
+      <div class="k">注册表位置</div><div><code>HKCU\Software\Classes\xtquant-popup</code></div>
+    </div>
+    <p class="sub">所有维护命令都会弹 Windows 原生弹窗显示结果（因为 exe 是 --noconsole 打包的 GUI 进程，cmd 里 print 看不到）。</p>
+  </div>
+
+</div>
+
+<script>
+function copyPre(btn){
+  var pre = btn.parentElement.querySelector('pre');
+  navigator.clipboard.writeText(pre.innerText.trim()).then(function(){
+    btn.textContent = '已复制';
+    btn.classList.add('ok');
+    setTimeout(function(){ btn.textContent='复制'; btn.classList.remove('ok'); }, 1500);
+  });
+}
+function testProtocol(){
+  var r = document.getElementById('test-result');
+  r.innerHTML = '<div class="diag warn">⏳ 正在尝试协议唤起 xtquant-popup://...<br>若浏览器失焦/出现 PyWebView 窗口表示成功；800ms 后没反应则降级到下方链接</div>';
+  var url = 'xtquant-popup://?' + new URLSearchParams({
+    url: location.origin + '/option/popup',
+    title: '测试弹窗',
+    w: 800, h: 600
+  }).toString();
+  var a = document.createElement('a');
+  a.href = url; a.style.display = 'none';
+  document.body.appendChild(a);
+  a.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+  setTimeout(function(){
+    document.body.removeChild(a);
+    r.innerHTML += '<div class="diag warn">800ms 协议超时。请看：<br>· 若已弹 PyWebView → 协议注册成功 ✅<br>· 若浏览器提示「scheme not registered」→ 协议未注册，回主页重做步骤 2<br>· 若浏览器拦截新窗口 → 看地址栏左侧弹窗图标</div>';
+  }, 1000);
+}
+function testWindowOpen(){
+  window.open('{{ server_url }}/option/popup', '_blank', 'noopener');
+}
+</script>
+</body>
+</html>
