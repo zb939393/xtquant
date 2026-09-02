@@ -15,6 +15,7 @@
 """
 import os
 import sys
+import time
 from urllib.parse import urlparse, parse_qs
 
 
@@ -112,22 +113,49 @@ class Api:
             return False
 
 
-def _cli_register(cmd):
-    """命令行协议注册/注销。无需 pyinstaller 也能跑（pywin32/winreg 是 stdlib）。"""
+def _msgbox(title, text, icon=0):
+    """原生 Windows 弹窗。GUI 进程（--noconsole）下 print 没地方显示，必须用 MessageBox。"""
     if sys.platform != "win32":
-        print("[register] only supported on Windows")
+        return
+    try:
+        import ctypes
+        ctypes.windll.user32.MessageBoxW(None, text, title, icon)
+    except Exception:
+        pass
+
+
+def _log_line(text):
+    """写一行到 popup_launcher.log + 尝试 print（console 模式可见，GUI 模式静默）。"""
+    try:
+        log_path = os.path.join(os.path.expanduser("~"), ".xtquant", "popup_launcher.log")
+        os.makedirs(os.path.dirname(log_path), exist_ok=True)
+        with open(log_path, "a", encoding="utf-8") as f:
+            f.write("[%s] %s\n" % (time.strftime("%Y-%m-%d %H:%M:%S"), text))
+    except Exception:
+        pass
+    try:
+        print(text)
+    except Exception:
+        pass
+
+
+def _cli_register(cmd):
+    """命令行协议注册/注销。无需 pyinstaller 也能跑（pywin32/winreg 是 stdlib）。
+
+    GUI 进程（pyinstaller --noconsole）下 print 没控制台显示，
+    所以这里用 ctypes.MessageBoxW 弹原生 Windows 弹窗 + 写文件日志双保险。
+    """
+    if sys.platform != "win32":
+        _msgbox("xtquant-popup", "Only supported on Windows")
         return False
     try:
         import winreg
     except ImportError:
-        print("[register] winreg module not available")
+        _msgbox("xtquant-popup", "winreg module not available", icon=16)  # 16=error icon
         return False
     base = r"Software\Classes\xtquant-popup"
     exe = os.path.abspath(sys.executable if getattr(sys, 'frozen', False) else __file__)
-    # 打包后 sys.executable 就是 popup_launcher.exe 自身
-    # 未打包运行时是 python.exe，需要拼 script 路径
     if not getattr(sys, 'frozen', False):
-        # 非打包：exe 写 python.exe + popup_launcher.py
         cmdline = '"%s" "%s" "%%1"' % (sys.executable, os.path.abspath(__file__))
     else:
         cmdline = '"%s" "%%1"' % exe
@@ -136,26 +164,37 @@ def _cli_register(cmd):
         try:
             with winreg.OpenKey(winreg.HKEY_CURRENT_USER, base + r"\shell\open\command") as k:
                 val, _ = winreg.QueryValueEx(k, None)
-                print("[register] OK -> %s" % val)
+                msg = "[xtquant-popup] OK registered:\n\n%s\n\n(written to HKCU)" % val
+                _log_line(msg)
+                _msgbox("xtquant-popup · status", msg)
                 return True
         except FileNotFoundError:
-            print("[register] NOT registered. Run with --register to register.")
+            msg = "[xtquant-popup] NOT registered.\n\nRun with --register to register."
+            _log_line(msg)
+            _msgbox("xtquant-popup · status", msg, icon=48)  # 48=warning icon
             return False
         except Exception as e:
-            print("[register] ERROR: %s" % e)
+            msg = "[xtquant-popup] query error: %s" % e
+            _log_line(msg)
+            _msgbox("xtquant-popup · status", msg, icon=16)
             return False
 
     if cmd == "--unregister":
-        # 递归删除键（Python 没有现成 API；用 _winreg 底层）
         try:
             _delete_key_recursive(winreg.HKEY_CURRENT_USER, base)
-            print("[register] unregistered xtquant-popup from HKCU")
+            msg = "[xtquant-popup] unregistered from HKCU"
+            _log_line(msg)
+            _msgbox("xtquant-popup", msg)
             return True
         except FileNotFoundError:
-            print("[register] nothing to unregister")
+            msg = "[xtquant-popup] nothing to unregister"
+            _log_line(msg)
+            _msgbox("xtquant-popup", msg, icon=48)
             return True
         except Exception as e:
-            print("[register] unregister failed: %s" % e)
+            msg = "[xtquant-popup] unregister failed: %s" % e
+            _log_line(msg)
+            _msgbox("xtquant-popup", msg, icon=16)
             return False
 
     if cmd == "--register":
@@ -169,12 +208,18 @@ def _cli_register(cmd):
                 winreg.SetValueEx(k, None, 0, winreg.REG_SZ, '"%s",0' % exe)
             with winreg.CreateKeyEx(winreg.HKEY_CURRENT_USER, base + r"\shell\open\command", 0, access) as k:
                 winreg.SetValueEx(k, None, 0, winreg.REG_SZ, cmdline)
-            print("[register] OK -> %s" % cmdline)
-            print("            (written to HKCU, no admin required)")
+            msg = ("[xtquant-popup] REGISTERED\n\n"
+                   "Handler: %s\n\n"
+                   "Now you can use xtquant-popup:// links in any browser.\n"
+                   "(No admin required; written to HKCU)" % cmdline)
+            _log_line(msg)
+            _msgbox("xtquant-popup", msg)
             return True
         except Exception as e:
-            print("[register] FAILED: %s" % e)
-            print("            如果键已存在且无权限，先执行 --unregister 再 --register")
+            msg = ("[xtquant-popup] REGISTER FAILED\n\n%s\n\n"
+                   "Try running this exe as Administrator, or run --unregister first." % e)
+            _log_line(msg)
+            _msgbox("xtquant-popup", msg, icon=16)
             return False
     return False
 
