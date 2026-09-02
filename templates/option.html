@@ -1230,13 +1230,23 @@ new Vue({
       }
     },
     launchPopup() {
-      window.xtquantLaunchPopup({
-        url: '/option/popup/launch',
-        title: '期权自选股看盘',
-        vm: this,
-        onStart: () => { this.launchingPopup = true; },
-        onEnd:   () => { this.launchingPopup = false; },
-      });
+      try {
+        if (typeof window.xtquantLaunchPopup !== 'function') {
+          this.$message.error('弹窗工具未加载，请按 Ctrl+F5 硬刷新页面');
+          try { window.alert('弹窗工具未加载，请按 Ctrl+F5 硬刷新页面'); } catch (e) {}
+          return;
+        }
+        window.xtquantLaunchPopup({
+          url: '/option/popup/launch',
+          title: '期权自选股看盘',
+          vm: this,
+          onStart: () => { this.launchingPopup = true; },
+          onEnd:   () => { this.launchingPopup = false; },
+        });
+      } catch (e) {
+        try { this.$message.error('启动失败：' + e.message); } catch (e2) {}
+        try { window.alert('启动失败：' + e.message); } catch (e2) {}
+      }
     },
   },
   mounted() {

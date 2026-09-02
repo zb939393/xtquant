@@ -85,8 +85,13 @@ def popup_launch(popup_path, title, width, height, min_w=200, min_h=200, log_nam
 
     返回 Flask Response（jsonify）。
     """
+    import logging
+    _log = logging.getLogger("popup_helper")
     try:
-        if is_local_request():
+        is_local = is_local_request()
+        _log.info("popup_launch: path=%s remote_addr=%s host=%s is_local=%s",
+                  popup_path, request.remote_addr, request.host, is_local)
+        if is_local:
             # 兼容：A 本机仍用 127.0.0.1 访问自己的服务，弹窗在 A 桌面弹出。
             url = "http://127.0.0.1:%d%s" % (Config.PORT, popup_path)
             _popen_local_launcher(url, title, width, height, min_w, min_h, log_name)
@@ -95,7 +100,9 @@ def popup_launch(popup_path, title, width, height, min_w=200, min_h=200, log_nam
         # 局域网 B 访问：不 Popen（避免在没人看的 A 桌面弹窗），
         # 返回参数让前端尝试协议唤起 + 降级。
         remote_url = _build_remote_url(request, popup_path)
+        _log.info("popup_launch: client_launch -> %s", remote_url)
         return jsonify({"ok": True, "action": "client_launch",
                         "url": remote_url, "title": title, "w": width, "h": height})
     except Exception as e:
+        _log.exception("popup_launch error: %s", e)
         return jsonify({"ok": False, "error": str(e)})

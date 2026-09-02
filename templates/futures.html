@@ -1140,13 +1140,23 @@ new Vue({
       return { '1min': '1分钟', '5min': '5分钟', '30min': '30分钟', '60min': '60分钟', day: '日线', week: '周线', month: '月线' }[p] || p;
     },
     launchPopup() {
-      window.xtquantLaunchPopup({
-        url: '/futures/popup/launch',
-        title: '期指综合看盘',
-        vm: this,
-        onStart: () => { this.popupLaunching = true; },
-        onEnd:   () => { this.popupLaunching = false; },
-      });
+      try {
+        if (typeof window.xtquantLaunchPopup !== 'function') {
+          this.$message.error('弹窗工具未加载，请按 Ctrl+F5 硬刷新页面');
+          try { window.alert('弹窗工具未加载，请按 Ctrl+F5 硬刷新页面'); } catch (e) {}
+          return;
+        }
+        window.xtquantLaunchPopup({
+          url: '/futures/popup/launch',
+          title: '期指综合看盘',
+          vm: this,
+          onStart: () => { this.popupLaunching = true; },
+          onEnd:   () => { this.popupLaunching = false; },
+        });
+      } catch (e) {
+        try { this.$message.error('启动失败：' + e.message); } catch (e2) {}
+        try { window.alert('启动失败：' + e.message); } catch (e2) {}
+      }
     },
     goBack() { window.location.href = '/'; },
     updownCls(v) {

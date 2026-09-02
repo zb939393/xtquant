@@ -14,13 +14,40 @@
 //   B 机器装了 popup_launcher.exe 并注册该协议 → 唤起 B 本地 PyWebView 窗口
 //   没装 → 浏览器不会失焦，800ms 后降级 window.open(url)
 //
-// 依赖：本文件无任何依赖，浏览器原生即可。
+// 调试：F12 控制台看 [xtq-popup] 前缀的日志；任何错误都会 alert 弹窗（B 用户能看到）。
 
 (function (global) {
   'use strict';
 
   // 协议唤起后允许等待失焦的最大时长（毫秒）。超过则视为「未装客户端」走降级。
   var PROTOCOL_TIMEOUT_MS = 800;
+
+  // ---- 调试工具 ----
+  function log() {
+    if (global.console && global.console.log) {
+      var a = ['[xtq-popup]'];
+      for (var i = 0; i < arguments.length; i++) a.push(arguments[i]);
+      try { global.console.log.apply(global.console, a); } catch (e) {}
+    }
+  }
+  function warn() {
+    if (global.console && global.console.warn) {
+      var a = ['[xtq-popup]'];
+      for (var i = 0; i < arguments.length; i++) a.push(arguments[i]);
+      try { global.console.warn.apply(global.console, a); } catch (e) {}
+    }
+  }
+  // 强可见的提示：先 console.warn 再 alert（最后兜底，确保用户能看到）
+  function alertMsg(text) {
+    warn(text);
+    try { global.alert(text); } catch (e) {}
+  }
+
+  // 暴露给模板调试用：window.xtqDebug = true 后所有日志都打
+  global.xtqDebug = false;
+  function dlog() {
+    if (global.xtqDebug) log.apply(null, arguments);
+  }
 
   // 把 {a:1,b:'x y'} 编码成 URL query 字符串（空格→+，中文→%E4%B8...）
   function encodeQuery(obj) {
@@ -35,29 +62,29 @@
   }
 
   // 通过隐藏 <a> + 模拟点击触发协议。
-  // 浏览器会先尝试调起已注册 xtquant-popup:// 协议的应用；
-  // 调起成功 → 当前标签会进入后台（document.hidden=true / 触发 blur）；
-  // 调起失败（无应用）→ 不会失焦，800ms 后由调用方降级。
   function tryProtocol(protocolUrl) {
+    log('tryProtocol', protocolUrl);
     return new Promise(function (resolve) {
       var fired = false;
       var anchor = document.createElement('a');
       anchor.href = protocolUrl;
       anchor.style.display = 'none';
       anchor.rel = 'noopener';
-      anchor.target = '_self';  // 不开新标签，让浏览器尝试协议唤起
+      anchor.target = '_self';
       document.body.appendChild(anchor);
 
       function onBlur() {
         if (fired) return;
         fired = true;
         cleanup();
-        resolve(true);  // 已唤起
+        log('protocol invoked: window blur detected');
+        resolve(true);
       }
       function onVis() {
         if (document.hidden && !fired) {
           fired = true;
           cleanup();
+          log('protocol invoked: document.hidden=true');
           resolve(true);
         }
       }
@@ -77,15 +104,62 @@
         if (fired) return;
         fired = true;
         cleanup();
-        resolve(false);  // 超时未失焦 → 降级
+        log('protocol NOT invoked within', PROTOCOL_TIMEOUT_MS, 'ms — fallback');
+        resolve(false);
       }, PROTOCOL_TIMEOUT_MS);
 
       // 用 MouseEvent 让 Chrome/Edge 视为「用户手势」允许协议唤起
       try {
         var ev = new MouseEvent('click', { bubbles: true, cancelable: true, view: window, button: 0 });
         anchor.dispatchEvent(ev);
+        log('dispatched MouseEvent click on protocol anchor');
       } catch (e) {
-        anchor.click();
+        warn('dispatchEvent failed, fallback to anchor.click()', e);
+        try { anchor.click(); } catch (e2) { warn('anchor.click failed', e2); }
+      }
+    });
+  }
+
+  // 备用：直接用 location.href 触发协议（某些浏览器 anchor.click 不响应时会 work）
+  function tryProtocolViaLocation(protocolUrl) {
+    log('tryProtocolViaLocation', protocolUrl);
+    return new Promise(function (resolve) {
+      var fired = false;
+      function onBlur() {
+        if (fired) return;
+        fired = true;
+        cleanup();
+        log('location.href protocol invoked');
+        resolve(true);
+      }
+      function onVis() {
+        if (document.hidden && !fired) {
+          fired = true;
+          cleanup();
+          resolve(true);
+        }
+      }
+      function cleanup() {
+        window.removeEventListener('blur', onBlur, true);
+        document.removeEventListener('visibilitychange', onVis);
+        if (timer) clearTimeout(timer);
+      }
+      window.addEventListener('blur', onBlur, true);
+      document.addEventListener('visibilitychange', onVis);
+      var timer = setTimeout(function () {
+        if (fired) return;
+        fired = true;
+        cleanup();
+        log('location.href protocol NOT invoked — final fallback to window.open');
+        resolve(false);
+      }, PROTOCOL_TIMEOUT_MS);
+      try {
+        global.location.href = protocolUrl;
+        log('set location.href to protocol URL');
+      } catch (e) {
+        cleanup();
+        warn('location.href set failed', e);
+        resolve(false);
       }
     });
   }
@@ -98,21 +172,18 @@
         return;
       }
     } catch (e) {}
-    if (type === 'error') alert(text);
+    if (type === 'error') {
+      alertMsg(text);
+    } else {
+      log(type + ':', text);
+    }
   }
 
   /**
    * 弹出独立窗口。
-   * @param {Object} opts
-   * @param {string} opts.url   后端 launch 路由（如 /option/popup/launch）
-   * @param {Object} [opts.body]  POST body（默认空）
-   * @param {string} [opts.title] 弹窗标题，仅用于成功消息显示
-   * @param {Object} [opts.vm]    Vue 实例（用于 $message）
-   * @param {Function} [opts.onStart] 启动前回调（一般用于设置 loading）
-   * @param {Function} [opts.onEnd]   启动结束回调（无论成功失败）
-   * @returns {Promise<boolean>}
    */
   function launchPopup(opts) {
+    log('launchPopup() called with', opts);
     opts = opts || {};
     var postUrl = opts.url;
     var body = opts.body || {};
@@ -121,23 +192,42 @@
     var onStart = opts.onStart || function () {};
     var onEnd = opts.onEnd || function () {};
 
+    if (!postUrl) {
+      alertMsg('launchPopup: 缺少 url 参数');
+      onEnd();
+      return Promise.resolve(false);
+    }
+
     onStart();
-    return fetch(postUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-      cache: 'no-store',
-      credentials: 'same-origin',
-    })
-      .then(function (r) { return r.json(); })
+
+    return Promise.resolve()
+      .then(function () {
+        log('POST', postUrl, 'body=', body);
+        return fetch(postUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+          cache: 'no-store',
+          credentials: 'same-origin',
+          keepalive: true,  // 关键：B 端页面切走时请求不被取消
+        });
+      })
+      .then(function (r) {
+        log('fetch response status', r.status);
+        if (!r.ok) {
+          throw new Error('HTTP ' + r.status + ' ' + r.statusText);
+        }
+        return r.json();
+      })
       .then(function (resp) {
+        log('fetch response body', resp);
         if (!resp || !resp.ok) {
           var err = (resp && resp.error) || '启动失败';
           showMsg(vm ? (vm.$root || vm) : window, 'error', title + '启动失败：' + err);
           return false;
         }
         if (resp.action === 'local_started') {
-          // A 本机：后端已 Popen，弹窗在服务器桌面弹出（前端无需处理）
+          // A 本机：后端已 Popen，弹窗在服务器桌面弹出
           showMsg(vm ? (vm.$root || vm) : window, 'success', title + '已在本机启动');
           return true;
         }
@@ -149,31 +239,66 @@
             w: resp.w,
             h: resp.h,
           });
+          log('client_launch action, trying protocol', protoUrl);
           return tryProtocol(protoUrl).then(function (invoked) {
             if (invoked) {
               showMsg(vm ? (vm.$root || vm) : window, 'success', title + '已唤起本机弹窗');
               return true;
             }
-            // 降级：浏览器新标签打开弹窗 URL
-            try {
-              window.open(resp.url, '_blank', 'noopener');
-              showMsg(vm ? (vm.$root || vm) : window, 'success', title + '已在新标签打开');
-            } catch (e) {
-              showMsg(vm ? (vm.$root || vm) : window, 'error', title + '无法打开窗口：' + e.message);
-              return false;
-            }
-            return true;
+            // 协议唤起失败，尝试 location.href 兜底
+            return tryProtocolViaLocation(protoUrl).then(function (invoked2) {
+              if (invoked2) {
+                showMsg(vm ? (vm.$root || vm) : window, 'success', title + '已唤起本机弹窗');
+                return true;
+              }
+              // 最终降级：浏览器新标签打开弹窗 URL
+              log('final fallback: window.open', resp.url);
+              try {
+                var win = global.open(resp.url, '_blank', 'noopener');
+                if (!win) {
+                  // 被浏览器拦截，再 alert 提示用户手动允许
+                  alertMsg('浏览器拦截了新窗口。请在地址栏左侧允许弹窗，或手动访问：' + resp.url);
+                } else {
+                  showMsg(vm ? (vm.$root || vm) : window, 'success', title + '已在新标签打开');
+                }
+              } catch (e) {
+                alertMsg(title + '无法打开窗口：' + e.message + '\n请手动访问：' + resp.url);
+                return false;
+              }
+              return true;
+            });
           });
         }
         showMsg(vm ? (vm.$root || vm) : window, 'error', title + '：未知 action=' + resp.action);
         return false;
       })
       .catch(function (err) {
-        showMsg(vm ? (vm.$root || vm) : window, 'error', title + '启动失败：' + (err.message || err));
+        warn('launchPopup error', err);
+        alertMsg(title + '启动失败：' + (err && err.message ? err.message : err) +
+                 '\n（请打开 F12 控制台查看 [xtq-popup] 日志）');
         return false;
       })
       .then(function (ok) { onEnd(); return ok; });
   }
 
+  // 暴露 API
   global.xtquantLaunchPopup = launchPopup;
-})(window);
+  log('popup-launcher.js loaded, xtquantLaunchPopup is ready');
+  // ---- 全局错误捕获：把任何未处理的 JS 错误 alert 出来（最后兜底）----
+  // 这样即使按钮方法里 try/catch 漏了或 fetch 异常路径没走通，用户也能看到错误。
+  global.addEventListener('error', function (e) {
+    var msg = '[xtq-popup] Uncaught error: ' + (e && e.message) +
+              (e && e.filename ? ' at ' + e.filename + ':' + e.lineno : '');
+    warn(msg, e && e.error);
+    // 不 alert 所有 error（会刷屏），只 alert 包含 xtquantLaunchPopup 关键词的
+    if (e && e.error && /xtquantLaunchPopup|launchPopup/.test(String(e.error.stack || e.error))) {
+      try { global.alert(msg); } catch (ex) {}
+    }
+  });
+  global.addEventListener('unhandledrejection', function (e) {
+    var r = e && e.reason;
+    var msg = '[xtq-popup] Unhandled promise rejection: ' + (r && r.message ? r.message : r);
+    warn(msg, r);
+    try { global.alert(msg + '\n（F12 Console 看 [xtq-popup] 详细日志）'); } catch (ex) {}
+  });
+})(typeof window !== 'undefined' ? window : this);
