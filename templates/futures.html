@@ -254,6 +254,7 @@
 <script src="https://unpkg.com/vue@2.7.16/dist/vue.min.js"></script>
 <script src="https://unpkg.com/element-ui/lib/index.js"></script>
 <script src="https://unpkg.com/echarts@5.5.0/dist/echarts.min.js"></script>
+<script src="/static/js/popup-launcher.js"></script>
 <script>
 // ===== 行情请求调度器：并发上限 + 请求去重 + 超时（与期权/可转债看板一致） =====
 (function(){
@@ -1139,15 +1140,13 @@ new Vue({
       return { '1min': '1分钟', '5min': '5分钟', '30min': '30分钟', '60min': '60分钟', day: '日线', week: '周线', month: '月线' }[p] || p;
     },
     launchPopup() {
-      this.popupLaunching = true;
-      return fetch('/futures/popup/launch', { method: 'POST', cache: 'no-store' })
-        .then(r => r.json())
-        .then(resp => {
-          if (resp && resp.ok) { this.$message.success('已打开独立行情窗口'); }
-          else { throw new Error((resp && resp.error) || 'launch failed'); }
-        })
-        .catch(err => this.$message.error('打开独立窗口失败：' + err.message))
-        .finally(() => { this.popupLaunching = false; });
+      window.xtquantLaunchPopup({
+        url: '/futures/popup/launch',
+        title: '期指综合看盘',
+        vm: this,
+        onStart: () => { this.popupLaunching = true; },
+        onEnd:   () => { this.popupLaunching = false; },
+      });
     },
     goBack() { window.location.href = '/'; },
     updownCls(v) {

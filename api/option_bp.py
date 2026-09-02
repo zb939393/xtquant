@@ -17,6 +17,7 @@ from flask import Blueprint, jsonify, request, send_file, render_template
 from core import option_service
 from core import option_exquote_service as exquote
 from config import Config
+from .popup_helper import popup_launch
 
 option_bp = Blueprint("option", __name__)
 
@@ -443,37 +444,13 @@ def option_popup():
 
 @option_bp.route("/popup/launch", methods=["POST"])
 def option_popup_launch():
-    """在独立进程启动 PyWebView 窗口，加载 /option/popup（期权自选股看盘）。
-
-    通过 subprocess 派生独立 Python 进程运行 popup_launcher.py，
-    避免 pywebview 的 GUI 事件循环与 waitress 线程模型互相干扰。
-    """
+    """期权自选股看盘 独立弹窗：A 本机 Popen；局域网返回参数让前端协议唤起 + 降级。"""
     try:
         import webview  # noqa: F401  仅用于确认依赖已安装
     except Exception as e:
         return jsonify({"ok": False, "error": "pywebview 未安装: %s" % e})
-
-    try:
-        url = "http://127.0.0.1:%d/option/popup" % Config.PORT
-        # 项目根目录（option_bp.py 位于 <root>/api/ 下）
-        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        script = os.path.join(root, "popup_launcher.py")
-        flags = 0
-        if os.name == "nt":
-            # 脱离当前进程组，避免随 Flask 进程退出而关闭
-            flags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
-        log_path = os.path.join(Config.LOG_DIR, "popup_launcher.log")
-        with open(log_path, "a", encoding="utf-8") as f:
-            subprocess.Popen(
-                [sys.executable, script, url,
-                 "--title", "期权自选股看盘 · 独立窗口",
-                 "--width", "830", "--height", "380",
-                 "--min-width", "200", "--min-height", "200"],
-                creationflags=flags,
-                stdout=f,
-                stderr=f,
-                close_fds=True,
-            )
-        return jsonify({"ok": True, "url": url})
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)})
+    return popup_launch(
+        popup_path="/option/popup",
+        title="期权自选股看盘 · 独立窗口",
+        width=830, height=380, min_w=200, min_h=200,
+    )

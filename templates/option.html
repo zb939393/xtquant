@@ -277,6 +277,7 @@
 <script src="https://unpkg.com/vue@2.7.16/dist/vue.min.js"></script>
 <script src="https://unpkg.com/element-ui/lib/index.js"></script>
 <script src="https://unpkg.com/echarts@5.5.0/dist/echarts.min.js"></script>
+<script src="/static/js/popup-launcher.js"></script>
 <script>
 const COLUMNS = [
   {prop:'code',            label:'合约代码',   width:110, num:false, sortable:true,  fmt:'text'},
@@ -1229,21 +1230,13 @@ new Vue({
       }
     },
     launchPopup() {
-      this.launchingPopup = true;
-      fetch('/option/popup/launch', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({})
-      })
-        .then(r => r.json())
-        .then(resp => {
-          if (!resp.ok) throw new Error(resp.error || '启动失败');
-          this.$message.success('已打开期权自选股看盘独立窗口');
-        })
-        .catch(err => {
-          this.$message.error('独立弹窗启动失败：' + err.message);
-        })
-        .finally(() => { this.launchingPopup = false; });
+      window.xtquantLaunchPopup({
+        url: '/option/popup/launch',
+        title: '期权自选股看盘',
+        vm: this,
+        onStart: () => { this.launchingPopup = true; },
+        onEnd:   () => { this.launchingPopup = false; },
+      });
     },
   },
   mounted() {

@@ -17,6 +17,7 @@ from core import futures_service as fut
 from core import ak_service
 
 from config import Config
+from .popup_helper import popup_launch
 
 futures_bp = Blueprint("futures", __name__)
 
@@ -149,40 +150,17 @@ def futures_overview():
 
 @futures_bp.route("/popup/launch", methods=["POST"])
 def futures_popup_launch():
-    """在独立进程启动 PyWebView 窗口，加载 /futures/popup。
-
-    通过 subprocess 派生独立 Python 进程运行 popup_launcher.py，
-    避免 pywebview 的 GUI 事件循环与 waitress 线程模型互相干扰。
-    """
+    """期指综合看盘 独立弹窗：A 本机 Popen；局域网返回参数让前端协议唤起 + 降级。"""
     try:
         import webview  # noqa: F401  仅用于确认依赖已安装
     except Exception as e:
         return jsonify({"ok": False, "error": "pywebview 未安装: %s" % e})
-
-    try:
-        url = "http://127.0.0.1:%d/futures/popup" % Config.PORT
-        # 项目根目录（futures_bp.py 位于 <root>/api/ 下）
-        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        script = os.path.join(root, "popup_launcher.py")
-        flags = 0
-        if os.name == "nt":
-            # 脱离当前进程组，避免随 Flask 进程退出而关闭
-            flags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
-        log_path = os.path.join(Config.LOG_DIR, "popup_launcher.log")
-        with open(log_path, "a", encoding="utf-8") as f:
-            subprocess.Popen(
-                [sys.executable, script, url,
-                 "--title", "期指综合看盘 · 独立窗口",
-                 "--width", "1240", "--height", "700",
-                 "--min-width", "900", "--min-height", "400"],
-                creationflags=flags,
-                stdout=f,
-                stderr=f,
-                close_fds=True,
-            )
-        return jsonify({"ok": True, "url": url})
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)})
+    return popup_launch(
+        popup_path="/futures/popup",
+        title="期指综合看盘 · 独立窗口",
+        width=1240, height=700, min_w=900, min_h=400,
+        log_name="popup_launcher.log",
+    )
 
 
 @futures_bp.route("/news/data")
@@ -206,34 +184,16 @@ def futures_news_popup_page():
 
 @futures_bp.route("/popup/news/launch", methods=["POST"])
 def futures_news_popup_launch():
-    """在独立进程启动 PyWebView 窗口，加载 /futures/news/popup（7×24 快讯）。"""
+    """7×24 快讯 独立弹窗：A 本机 Popen；局域网返回参数让前端协议唤起 + 降级。"""
     try:
         import webview  # noqa: F401  仅用于确认依赖已安装
     except Exception as e:
         return jsonify({"ok": False, "error": "pywebview 未安装: %s" % e})
-
-    try:
-        url = "http://127.0.0.1:%d/futures/news/popup" % Config.PORT
-        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        script = os.path.join(root, "popup_launcher.py")
-        flags = 0
-        if os.name == "nt":
-            flags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
-        log_path = os.path.join(Config.LOG_DIR, "popup_launcher.log")
-        with open(log_path, "a", encoding="utf-8") as f:
-            subprocess.Popen(
-                [sys.executable, script, url,
-                 "--title", "7×24 快讯 · 独立窗口",
-                 "--width", "410", "--height", "380",
-                 "--min-width", "50", "--min-height", "50"],
-                creationflags=flags,
-                stdout=f,
-                stderr=f,
-                close_fds=True,
-            )
-        return jsonify({"ok": True, "url": url})
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)})
+    return popup_launch(
+        popup_path="/futures/news/popup",
+        title="7×24 快讯 · 独立窗口",
+        width=410, height=380, min_w=50, min_h=50,
+    )
 
 
 @futures_bp.route("/capital/popup")
@@ -297,34 +257,16 @@ def futures_capital_fflow():
 
 @futures_bp.route("/popup/capital/launch", methods=["POST"])
 def futures_capital_popup_launch():
-    """在独立进程启动 PyWebView 窗口，加载 /futures/capital/popup（股指资金）。"""
+    """股指资金 独立弹窗：A 本机 Popen；局域网返回参数让前端协议唤起 + 降级。"""
     try:
         import webview  # noqa: F401  仅用于确认依赖已安装
     except Exception as e:
         return jsonify({"ok": False, "error": "pywebview 未安装: %s" % e})
-
-    try:
-        url = "http://127.0.0.1:%d/futures/capital/popup" % Config.PORT
-        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        script = os.path.join(root, "popup_launcher.py")
-        flags = 0
-        if os.name == "nt":
-            flags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
-        log_path = os.path.join(Config.LOG_DIR, "popup_launcher.log")
-        with open(log_path, "a", encoding="utf-8") as f:
-            subprocess.Popen(
-                [sys.executable, script, url,
-                 "--title", "股指资金 · 独立窗口",
-                 "--width", "320", "--height", "400",
-                 "--min-width", "50", "--min-height", "50"],
-                creationflags=flags,
-                stdout=f,
-                stderr=f,
-                close_fds=True,
-            )
-        return jsonify({"ok": True, "url": url})
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)})
+    return popup_launch(
+        popup_path="/futures/capital/popup",
+        title="股指资金 · 独立窗口",
+        width=320, height=400, min_w=50, min_h=50,
+    )
 
 
 @futures_bp.route("/popup/industry")
@@ -353,34 +295,16 @@ def futures_industry_popup_page():
 
 @futures_bp.route("/popup/industry/launch", methods=["POST"])
 def futures_industry_popup_launch():
-    """在独立进程启动 PyWebView 窗口，加载 /futures/industry/popup（行业分布图）。"""
+    """行业板块分布 独立弹窗：A 本机 Popen；局域网返回参数让前端协议唤起 + 降级。"""
     try:
         import webview  # noqa: F401  仅用于确认依赖已安装
     except Exception as e:
         return jsonify({"ok": False, "error": "pywebview 未安装: %s" % e})
-
-    try:
-        url = "http://127.0.0.1:%d/futures/industry/popup" % Config.PORT
-        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        script = os.path.join(root, "popup_launcher.py")
-        flags = 0
-        if os.name == "nt":
-            flags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
-        log_path = os.path.join(Config.LOG_DIR, "popup_launcher.log")
-        with open(log_path, "a", encoding="utf-8") as f:
-            subprocess.Popen(
-                [sys.executable, script, url,
-                 "--title", "行业板块分布 · 独立窗口",
-                 "--width", "400", "--height", "400",
-                 "--min-width", "50", "--min-height", "50"],
-                creationflags=flags,
-                stdout=f,
-                stderr=f,
-                close_fds=True,
-            )
-        return jsonify({"ok": True, "url": url})
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)})
+    return popup_launch(
+        popup_path="/futures/industry/popup",
+        title="行业板块分布 · 独立窗口",
+        width=400, height=400, min_w=50, min_h=50,
+    )
 
 
 @futures_bp.route("/industry/stocks")
@@ -407,42 +331,25 @@ def futures_industry_stocks_data():
 
 @futures_bp.route("/popup/industry/stocks/launch", methods=["POST"])
 def futures_industry_stocks_launch():
-    """在独立进程启动 PyWebView 窗口，加载 /futures/industry/stocks（个股分布图）。"""
+    """板块成分股 独立弹窗（?board=&name=）：A 本机 Popen；局域网返回参数让前端协议唤起 + 降级。"""
     try:
         import webview  # noqa: F401  仅用于确认依赖已安装
     except Exception as e:
         return jsonify({"ok": False, "error": "pywebview 未安装: %s" % e})
 
-    try:
-        body = request.get_json(silent=True) or {}
-        board = str(body.get("board") or "").strip()
-        name = str(body.get("name") or "").strip()
-        if not board:
-            return jsonify({"ok": False, "error": "缺少 board 参数"})
-        from urllib.parse import quote
-        url = ("http://127.0.0.1:%d/futures/industry/stocks?board=%s&name=%s"
-               % (Config.PORT, quote(board), quote(name)))
-        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        script = os.path.join(root, "popup_launcher.py")
-        flags = 0
-        if os.name == "nt":
-            flags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
-        log_path = os.path.join(Config.LOG_DIR, "popup_launcher.log")
-        title = "%s · 个股分布" % (name or "板块成分股")
-        with open(log_path, "a", encoding="utf-8") as f:
-            subprocess.Popen(
-                [sys.executable, script, url,
-                 "--title", title,
-                 "--width", "400", "--height", "400",
-                 "--min-width", "50", "--min-height", "50"],
-                creationflags=flags,
-                stdout=f,
-                stderr=f,
-                close_fds=True,
-            )
-        return jsonify({"ok": True, "url": url})
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)})
+    body = request.get_json(silent=True) or {}
+    board = str(body.get("board") or "").strip()
+    name = str(body.get("name") or "").strip()
+    if not board:
+        return jsonify({"ok": False, "error": "缺少 board 参数"})
+    from urllib.parse import quote
+    popup_path = "/futures/industry/stocks?board=%s&name=%s" % (quote(board), quote(name))
+    title = "%s · 个股分布" % (name or "板块成分股")
+    return popup_launch(
+        popup_path=popup_path,
+        title=title,
+        width=400, height=400, min_w=50, min_h=50,
+    )
 
 
 @futures_bp.route("/stock/chart")
@@ -457,44 +364,28 @@ def futures_stock_chart_page():
 
 @futures_bp.route("/popup/stock/chart/launch", methods=["POST"])
 def futures_stock_chart_launch():
-    """在独立进程启动 PyWebView 窗口，加载 /futures/stock/chart（个股分时/K线）。"""
+    """个股分时/K线 独立弹窗（POST body: code/market/name/pre_close）：A 本机 Popen；局域网返回参数让前端协议唤起 + 降级。"""
     try:
         import webview  # noqa: F401  仅用于确认依赖已安装
     except Exception as e:
         return jsonify({"ok": False, "error": "pywebview 未安装: %s" % e})
 
-    try:
-        body = request.get_json(silent=True) or {}
-        code = str(body.get("code") or "").strip()
-        if not code:
-            return jsonify({"ok": False, "error": "缺少 code 参数"})
-        market = str(body.get("market") or "0").strip()
-        name = str(body.get("name") or "").strip()
-        pc = str(body.get("pre_close") or "0").strip()
-        from urllib.parse import quote
-        url = ("http://127.0.0.1:%d/futures/stock/chart?code=%s&market=%s&name=%s&pc=%s"
-               % (Config.PORT, quote(code), quote(market), quote(name), quote(pc)))
-        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        script = os.path.join(root, "popup_launcher.py")
-        flags = 0
-        if os.name == "nt":
-            flags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
-        log_path = os.path.join(Config.LOG_DIR, "popup_launcher.log")
-        title = "%s %s · 分时" % (name or "", code)
-        with open(log_path, "a", encoding="utf-8") as f:
-            subprocess.Popen(
-                [sys.executable, script, url,
-                 "--title", title,
-                 "--width", "760", "--height", "520",
-                 "--min-width", "50", "--min-height", "50"],
-                creationflags=flags,
-                stdout=f,
-                stderr=f,
-                close_fds=True,
-            )
-        return jsonify({"ok": True, "url": url})
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)})
+    body = request.get_json(silent=True) or {}
+    code = str(body.get("code") or "").strip()
+    if not code:
+        return jsonify({"ok": False, "error": "缺少 code 参数"})
+    market = str(body.get("market") or "0").strip()
+    name = str(body.get("name") or "").strip()
+    pc = str(body.get("pre_close") or "0").strip()
+    from urllib.parse import quote
+    popup_path = ("/futures/stock/chart?code=%s&market=%s&name=%s&pc=%s"
+                  % (quote(code), quote(market), quote(name), quote(pc)))
+    title = "%s %s · 分时" % (name or "", code)
+    return popup_launch(
+        popup_path=popup_path,
+        title=title,
+        width=760, height=520, min_w=50, min_h=50,
+    )
 
 
 @futures_bp.route("/popup/overview")
@@ -527,34 +418,16 @@ def futures_zhangfu_popup_page():
 
 @futures_bp.route("/popup/zhangfu/launch", methods=["POST"])
 def futures_zhangfu_popup_launch():
-    """在独立进程启动 PyWebView 窗口，加载 /futures/zhangfu/popup（涨幅分布图）。"""
+    """全市场涨幅分布 独立弹窗：A 本机 Popen；局域网返回参数让前端协议唤起 + 降级。"""
     try:
         import webview  # noqa: F401  仅用于确认依赖已安装
     except Exception as e:
         return jsonify({"ok": False, "error": "pywebview 未安装: %s" % e})
-
-    try:
-        url = "http://127.0.0.1:%d/futures/zhangfu/popup" % Config.PORT
-        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        script = os.path.join(root, "popup_launcher.py")
-        flags = 0
-        if os.name == "nt":
-            flags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
-        log_path = os.path.join(Config.LOG_DIR, "popup_launcher.log")
-        with open(log_path, "a", encoding="utf-8") as f:
-            subprocess.Popen(
-            [sys.executable, script, url,
-             "--title", "全市场涨幅分布 · 独立窗口",
-             "--width", "320", "--height", "180",
-             "--min-width", "50", "--min-height", "50"],
-            creationflags=flags,
-            stdout=f,
-            stderr=f,
-            close_fds=True,
-        )
-        return jsonify({"ok": True, "url": url})
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)})
+    return popup_launch(
+        popup_path="/futures/zhangfu/popup",
+        title="全市场涨幅分布 · 独立窗口",
+        width=320, height=180, min_w=50, min_h=50,
+    )
 
 
 @futures_bp.route("/amountflow/data")
@@ -576,34 +449,16 @@ def futures_amountflow_popup_page():
 
 @futures_bp.route("/popup/amountflow/launch", methods=["POST"])
 def futures_amountflow_popup_launch():
-    """在独立进程启动 PyWebView 窗口，加载 /futures/amountflow/popup（两市成交分析）。"""
+    """两市成交分析 独立弹窗：A 本机 Popen；局域网返回参数让前端协议唤起 + 降级。"""
     try:
         import webview  # noqa: F401  仅用于确认依赖已安装
     except Exception as e:
         return jsonify({"ok": False, "error": "pywebview 未安装: %s" % e})
-
-    try:
-        url = "http://127.0.0.1:%d/futures/amountflow/popup" % Config.PORT
-        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        script = os.path.join(root, "popup_launcher.py")
-        flags = 0
-        if os.name == "nt":
-            flags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
-        log_path = os.path.join(Config.LOG_DIR, "popup_launcher.log")
-        with open(log_path, "a", encoding="utf-8") as f:
-            subprocess.Popen(
-                [sys.executable, script, url,
-                 "--title", "两市成交分析 · 独立窗口",
-                 "--width", "320", "--height", "500",
-                 "--min-width", "50", "--min-height", "50"],
-                creationflags=flags,
-                stdout=f,
-                stderr=f,
-                close_fds=True,
-            )
-        return jsonify({"ok": True, "url": url})
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)})
+    return popup_launch(
+        popup_path="/futures/amountflow/popup",
+        title="两市成交分析 · 独立窗口",
+        width=320, height=500, min_w=50, min_h=50,
+    )
 
 
 @futures_bp.route("/external/popup")
@@ -642,31 +497,13 @@ def futures_external_img():
 
 @futures_bp.route("/popup/external/launch", methods=["POST"])
 def futures_external_popup_launch():
-    """在独立进程启动 PyWebView 窗口，加载 /futures/external/popup（外围股市）。"""
+    """外围股市 独立弹窗：A 本机 Popen；局域网返回参数让前端协议唤起 + 降级。"""
     try:
         import webview  # noqa: F401  仅用于确认依赖已安装
     except Exception as e:
         return jsonify({"ok": False, "error": "pywebview 未安装: %s" % e})
-
-    try:
-        url = "http://127.0.0.1:%d/futures/external/popup" % Config.PORT
-        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        script = os.path.join(root, "popup_launcher.py")
-        flags = 0
-        if os.name == "nt":
-            flags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
-        log_path = os.path.join(Config.LOG_DIR, "popup_launcher.log")
-        with open(log_path, "a", encoding="utf-8") as f:
-            subprocess.Popen(
-                [sys.executable, script, url,
-                 "--title", "外围股市 · 独立窗口",
-                 "--width", "400", "--height", "600",
-                 "--min-width", "50", "--min-height", "50"],
-                creationflags=flags,
-                stdout=f,
-                stderr=f,
-                close_fds=True,
-            )
-        return jsonify({"ok": True, "url": url})
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)})
+    return popup_launch(
+        popup_path="/futures/external/popup",
+        title="外围股市 · 独立窗口",
+        width=400, height=600, min_w=50, min_h=50,
+    )

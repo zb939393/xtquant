@@ -6,6 +6,7 @@
 <title>{{ name or '板块' }} · 个股分布</title>
 <script src="https://unpkg.com/vue@2.7.16/dist/vue.min.js"></script>
 <script src="https://unpkg.com/echarts@5.5.0/dist/echarts.min.js"></script>
+<script src="/static/js/popup-launcher.js"></script>
 <style>
   * { margin:0; padding:0; box-sizing:border-box; }
   html, body { height:100%; }
@@ -89,13 +90,12 @@ new Vue({
     },
     closeWin(){ try{ window.close(); }catch(e){} },
     openStockChart(code, market, name, preClose){
-      reqJSON('/futures/popup/stock/chart/launch', {
-        method: 'POST',
-        headers: {'Content-Type':'application/json'},
-        body: JSON.stringify({code: code, market: market, name: name, pre_close: preClose || 0}),
-      })
-        .then(resp => { if(!resp.ok) throw new Error(resp.error || '启动失败'); })
-        .catch(err => { this.updatedAt = '启动分时失败：' + err.message; });
+      window.xtquantLaunchPopup({
+        url: '/futures/popup/stock/chart/launch',
+        body: { code: code, market: market, name: name, pre_close: preClose || 0 },
+        title: (name || '') + ' ' + code + ' · 分时',
+        vm: this,
+      });
     },
     fetchData(force){
       if(this.loading) return;

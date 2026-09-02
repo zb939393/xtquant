@@ -12,6 +12,15 @@ class Config:
     DEBUG = True
     SECRET_KEY = "change-me-in-prod"
 
+    # ============== 局域网弹窗 ==============
+    # A 机器的局域网 IP / 域名（供 B 机器弹窗访问的 URL 前缀使用）。
+    # 推荐填写，例如 PUBLIC_HOST = "192.168.1.10"。
+    # 留空则使用请求 host 头推断（B 访问时使用的 IP/域名）作为兜底。
+    PUBLIC_HOST = ""
+    # 除 127.0.0.1/::1 外，仍按『服务器本机』处理的 IP 列表（罕见用法）。
+    # 例如 ["192.168.1.10"] 表示 A 用局域网 IP 访问自己的服务时仍走本机启动逻辑。
+    LAN_LOCAL_IPS = []
+
     # ============== xtquant（miniQMT 桥）==============
     # miniQMT / iQuant 的 userdata 目录
     XT_PATH = r"D:\国信iQuant策略交易平台\userdata_mini"

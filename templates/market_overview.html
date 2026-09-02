@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>A股市场概况</title>
 <script src="https://cdn.jsdelivr.net/npm/vue@2.7.16/dist/vue.min.js"></script>
+<script src="/static/js/popup-launcher.js"></script>
 <style>
   * { margin:0; padding:0; box-sizing:border-box; }
   body { font-family:"Microsoft YaHei",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; background:#f5f7fa; color:#303133; }
@@ -209,69 +210,51 @@ new Vue({
     sparkLeave(){ this.sparkTip.ix = null; },
     launchIndustry(){
       if(this.launching) return;
-      this.launching = true;
-      reqJSON('/futures/popup/industry/launch', { method:'POST', cache:'no-store' })
-        .then(resp => {
-          if(!resp.ok) throw new Error(resp.error || '启动失败');
-          this.updatedAt = '行业分布窗口已启动（独立窗口）';
-        })
-        .catch(err => { this.updatedAt = '启动失败：' + err.message; })
-        .finally(() => { this.launching = false; });
+      window.xtquantLaunchPopup({
+        url: '/futures/popup/industry/launch', title: '行业分布', vm: this,
+        onStart: () => { this.launching = true; },
+        onEnd:   () => { this.launching = false; this.updatedAt = '行业分布窗口已处理'; },
+      });
     },
     launchZhangfu(){
       if(this.launchingZF) return;
-      this.launchingZF = true;
-      reqJSON('/futures/popup/zhangfu/launch', { method:'POST', cache:'no-store' })
-        .then(resp => {
-          if(!resp.ok) throw new Error(resp.error || '启动失败');
-          this.updatedAt = '涨幅分布窗口已启动（独立窗口）';
-        })
-        .catch(err => { this.updatedAt = '启动失败：' + err.message; })
-        .finally(() => { this.launchingZF = false; });
+      window.xtquantLaunchPopup({
+        url: '/futures/popup/zhangfu/launch', title: '涨幅分布', vm: this,
+        onStart: () => { this.launchingZF = true; },
+        onEnd:   () => { this.launchingZF = false; this.updatedAt = '涨幅分布窗口已处理'; },
+      });
     },
     launchNews(){
       if(this.launchingNews) return;
-      this.launchingNews = true;
-      reqJSON('/futures/popup/news/launch', { method:'POST', cache:'no-store' })
-        .then(resp => {
-          if(!resp.ok) throw new Error(resp.error || '启动失败');
-          this.updatedAt = '新闻窗口已启动（独立窗口）';
-        })
-        .catch(err => { this.updatedAt = '启动失败：' + err.message; })
-        .finally(() => { this.launchingNews = false; });
+      window.xtquantLaunchPopup({
+        url: '/futures/popup/news/launch', title: '7×24 快讯', vm: this,
+        onStart: () => { this.launchingNews = true; },
+        onEnd:   () => { this.launchingNews = false; this.updatedAt = '新闻窗口已处理'; },
+      });
     },
     launchAmountFlow(){
       if(this.launchingAmountFlow) return;
-      this.launchingAmountFlow = true;
-      reqJSON('/futures/popup/amountflow/launch', { method:'POST', cache:'no-store' })
-        .then(resp => {
-          if(!resp.ok) throw new Error(resp.error || '启动失败');
-          this.updatedAt = '两市成交分析窗口已启动（独立窗口）';
-        })
-        .catch(err => { this.updatedAt = '启动失败：' + err.message; })
-        .finally(() => { this.launchingAmountFlow = false; });
+      window.xtquantLaunchPopup({
+        url: '/futures/popup/amountflow/launch', title: '两市成交分析', vm: this,
+        onStart: () => { this.launchingAmountFlow = true; },
+        onEnd:   () => { this.launchingAmountFlow = false; this.updatedAt = '两市成交分析窗口已处理'; },
+      });
     },
     launchExternal(){
       if(this.launchingExternal) return;
-      this.launchingExternal = true;
-      reqJSON('/futures/popup/external/launch', { method:'POST', cache:'no-store' })
-        .then(resp => {
-          if(!resp.ok) throw new Error(resp.error || '启动失败');
-          this.updatedAt = '外围股市窗口已启动（独立窗口）';
-        })
-        .catch(err => { this.updatedAt = '启动失败：' + err.message; })
-        .finally(() => { this.launchingExternal = false; });
+      window.xtquantLaunchPopup({
+        url: '/futures/popup/external/launch', title: '外围股市', vm: this,
+        onStart: () => { this.launchingExternal = true; },
+        onEnd:   () => { this.launchingExternal = false; this.updatedAt = '外围股市窗口已处理'; },
+      });
     },
     launchCapital(){
       if(this.launchingCapital) return;
-      this.launchingCapital = true;
-      reqJSON('/futures/popup/capital/launch', { method:'POST', cache:'no-store' })
-        .then(resp => {
-          if(!resp.ok) throw new Error(resp.error || '启动失败');
-          this.updatedAt = '股指资金窗口已启动（独立窗口）';
-        })
-        .catch(err => { this.updatedAt = '启动失败：' + err.message; })
-        .finally(() => { this.launchingCapital = false; });
+      window.xtquantLaunchPopup({
+        url: '/futures/popup/capital/launch', title: '股指资金', vm: this,
+        onStart: () => { this.launchingCapital = true; },
+        onEnd:   () => { this.launchingCapital = false; this.updatedAt = '股指资金窗口已处理'; },
+      });
     },
   },
   computed: {

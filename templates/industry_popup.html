@@ -6,6 +6,7 @@
 <title>行业板块分布 · 独立窗口</title>
 <script src="https://unpkg.com/vue@2.7.16/dist/vue.min.js"></script>
 <script src="https://unpkg.com/echarts@5.5.0/dist/echarts.min.js"></script>
+<script src="/static/js/popup-launcher.js"></script>
 <style>
   * { margin:0; padding:0; box-sizing:border-box; }
   html, body { height:100%; }
@@ -106,13 +107,13 @@ new Vue({
     },
     closeWin(){ try{ window.close(); }catch(e){} },
     openStocksWindow(board, name){
-      reqJSON('/futures/popup/industry/stocks/launch', {
-        method: 'POST',
-        headers: {'Content-Type':'application/json'},
-        body: JSON.stringify({board: board, name: name}),
-      })
-        .then(resp => { if(!resp.ok) throw new Error(resp.error || '启动失败'); })
-        .catch(err => { this.updatedAt = '启动个股分布失败：' + err.message; });
+      window.xtquantLaunchPopup({
+        url: '/futures/popup/industry/stocks/launch',
+        body: { board: board, name: name },
+        title: (name || '板块') + ' · 个股分布',
+        vm: this,
+        onEnd: () => { /* 失败消息由工具内部通过 $message 提示 */ },
+      });
     },
     onIndustryType(){
       this.list = [];

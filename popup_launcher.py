@@ -1,13 +1,21 @@
 # -*- coding: utf-8 -*-
 """PyWebView 独立行情窗口启动器。
 
-用法: python popup_launcher.py [url] [--title 标题] [--width 宽] [--height 高]
-打开一个脱离浏览器、无地址栏/导航栏的独立窗口。默认加载期指综合看盘弹窗页面
-（4 个分时 + 12 个 K线行情）；也可传 url 加载行业分布等其它页面。
+两种启动模式：
+
+1. 命令行参数模式（A 机器本机后端 subprocess.Popen 使用）：
+   python popup_launcher.py [url] [--title 标题] [--width 宽] [--height 高]
+   [--min-width 最小宽] [--min-height 最小高]
+
+2. 自定义协议模式（B 机器浏览器协议唤起使用）：
+   popup_launcher.exe "xtquant-popup://?url=<http://A:5000/option/popup>&title=<标题>&w=<宽>&h=<高>"
+   launcher 会解析 query 字符串，转成 webview.create_window 参数。
+
 依赖 pywebview，Windows 后端为 WebView2(EdgeChromium)。
 """
 import os
 import sys
+from urllib.parse import urlparse, parse_qs
 
 
 class Api:
@@ -105,15 +113,43 @@ class Api:
 
 
 def main():
-    import argparse
-    parser = argparse.ArgumentParser(description="PyWebView 独立行情窗口启动器")
-    parser.add_argument("url", nargs="?", default="http://127.0.0.1:5000/futures/popup")
-    parser.add_argument("--title", default="期指综合看盘 · 独立窗口")
-    parser.add_argument("--width", type=int, default=1560)
-    parser.add_argument("--height", type=int, default=1020)
-    parser.add_argument("--min-width", type=int, default=200)
-    parser.add_argument("--min-height", type=int, default=200)
-    args = parser.parse_args()
+    # 模式 2：自定义协议唤起（xtquant-popup://?url=...&title=...&w=...&h=...）
+    # 浏览器/系统把 xtquant-popup:// 链接转交给本 launcher，第一个参数就是完整 URL。
+    if len(sys.argv) > 1 and sys.argv[1].lower().startswith("xtquant-popup:"):
+        proto_url = sys.argv[1]
+        q = parse_qs(urlparse(proto_url).query)
+        url = (q.get("url") or ["http://127.0.0.1:5000/futures/popup"])[0]
+        title = (q.get("title") or ["期指综合看盘 · 独立窗口"])[0]
+        try:
+            width = int((q.get("w") or ["1240"])[0])
+        except (TypeError, ValueError):
+            width = 1240
+        try:
+            height = int((q.get("h") or ["700"])[0])
+        except (TypeError, ValueError):
+            height = 700
+        try:
+            min_width = int((q.get("minw") or ["200"])[0])
+        except (TypeError, ValueError):
+            min_width = 200
+        try:
+            min_height = int((q.get("minh") or ["200"])[0])
+        except (TypeError, ValueError):
+            min_height = 200
+    else:
+        # 模式 1：命令行参数
+        import argparse
+        parser = argparse.ArgumentParser(description="PyWebView 独立行情窗口启动器")
+        parser.add_argument("url", nargs="?", default="http://127.0.0.1:5000/futures/popup")
+        parser.add_argument("--title", default="期指综合看盘 · 独立窗口")
+        parser.add_argument("--width", type=int, default=1560)
+        parser.add_argument("--height", type=int, default=1020)
+        parser.add_argument("--min-width", type=int, default=200)
+        parser.add_argument("--min-height", type=int, default=200)
+        a = parser.parse_args()
+        url, title, width, height, min_width, min_height = (
+            a.url, a.title, a.width, a.height, a.min_width, a.min_height
+        )
 
     try:
         import webview
@@ -125,11 +161,11 @@ def main():
     # 独立窗口：无地址栏/导航栏；保留系统标题栏便于拖动/最小化/关闭；
     # on_top=True 保证弹窗显示在浏览器等其它窗口前面。
     window = webview.create_window(
-        args.title,
-        url=args.url,
-        width=args.width,
-        height=args.height,
-        min_size=(args.min_width, args.min_height),
+        title,
+        url=url,
+        width=width,
+        height=height,
+        min_size=(min_width, min_height),
         resizable=True,
         text_select=True,
         on_top=True,
