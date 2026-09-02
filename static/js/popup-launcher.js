@@ -62,6 +62,8 @@
   }
 
   // 通过隐藏 <a> + 模拟点击触发协议。
+  // 浏览器处理失败时会立即输出 "Failed to launch ... because the scheme does not have a registered handler"
+  // 这种错误在主 console 上；我们用一个 error listener 捕获，立即 resolve(false) 走降级。
   function tryProtocol(protocolUrl) {
     log('tryProtocol', protocolUrl);
     return new Promise(function (resolve) {
@@ -73,40 +75,44 @@
       anchor.target = '_self';
       document.body.appendChild(anchor);
 
-      function onBlur() {
+      function done(invoked, why) {
         if (fired) return;
         fired = true;
         cleanup();
-        log('protocol invoked: window blur detected');
-        resolve(true);
+        log('tryProtocol result: invoked=' + invoked + (why ? ' (' + why + ')' : ''));
+        resolve(invoked);
+      }
+
+      function onBlur() {
+        done(true, 'window blur');
       }
       function onVis() {
-        if (document.hidden && !fired) {
-          fired = true;
-          cleanup();
-          log('protocol invoked: document.hidden=true');
-          resolve(true);
+        if (document.hidden) done(true, 'document.hidden');
+      }
+
+      // 监听浏览器对协议处理的错误输出：「Failed to launch '...' because the scheme does not have a registered handler」
+      // 这类消息会作为 error 事件冒泡到 window（Chrome/Edge 行为）。捕获到即代表未注册。
+      function onErr(e) {
+        var msg = e && (e.message || '');
+        if (/scheme does not have a registered handler|user gesture is required|Not allowed to launch/i.test(msg)) {
+          done(false, 'browser rejected: ' + msg);
         }
       }
 
       function cleanup() {
         window.removeEventListener('blur', onBlur, true);
         document.removeEventListener('visibilitychange', onVis);
+        window.removeEventListener('error', onErr, true);
         if (anchor && anchor.parentNode) anchor.parentNode.removeChild(anchor);
         if (timer) clearTimeout(timer);
       }
 
-      // capture 阶段确保在应用层处理之前就能感知到
       window.addEventListener('blur', onBlur, true);
       document.addEventListener('visibilitychange', onVis);
+      window.addEventListener('error', onErr, true);
 
-      var timer = setTimeout(function () {
-        if (fired) return;
-        fired = true;
-        cleanup();
-        log('protocol NOT invoked within', PROTOCOL_TIMEOUT_MS, 'ms — fallback');
-        resolve(false);
-      }, PROTOCOL_TIMEOUT_MS);
+      // 兜底超时：800ms 内没失焦也没收到错误 → 视为未注册
+      var timer = setTimeout(function () { done(false, 'timeout ' + PROTOCOL_TIMEOUT_MS + 'ms'); }, PROTOCOL_TIMEOUT_MS);
 
       // 用 MouseEvent 让 Chrome/Edge 视为「用户手势」允许协议唤起
       try {
@@ -120,48 +126,13 @@
     });
   }
 
-  // 备用：直接用 location.href 触发协议（某些浏览器 anchor.click 不响应时会 work）
+  // 备用：直接用 location.href 触发协议（必须在用户手势同步上下文里调用，否则浏览器会拒绝）
+  // 所以这里不再等待 setTimeout，而是立即执行（如果第一次 anchor.click 在同步上下文失败，
+  // 那 location.href 在异步上下文里也会失败 —— 浏览器已经失去 user gesture）
+  // 因此这里直接返回 false，交给外层做 window.open 降级。
   function tryProtocolViaLocation(protocolUrl) {
-    log('tryProtocolViaLocation', protocolUrl);
-    return new Promise(function (resolve) {
-      var fired = false;
-      function onBlur() {
-        if (fired) return;
-        fired = true;
-        cleanup();
-        log('location.href protocol invoked');
-        resolve(true);
-      }
-      function onVis() {
-        if (document.hidden && !fired) {
-          fired = true;
-          cleanup();
-          resolve(true);
-        }
-      }
-      function cleanup() {
-        window.removeEventListener('blur', onBlur, true);
-        document.removeEventListener('visibilitychange', onVis);
-        if (timer) clearTimeout(timer);
-      }
-      window.addEventListener('blur', onBlur, true);
-      document.addEventListener('visibilitychange', onVis);
-      var timer = setTimeout(function () {
-        if (fired) return;
-        fired = true;
-        cleanup();
-        log('location.href protocol NOT invoked — final fallback to window.open');
-        resolve(false);
-      }, PROTOCOL_TIMEOUT_MS);
-      try {
-        global.location.href = protocolUrl;
-        log('set location.href to protocol URL');
-      } catch (e) {
-        cleanup();
-        warn('location.href set failed', e);
-        resolve(false);
-      }
-    });
+    log('tryProtocolViaLocation skipped: user gesture would be lost; rely on window.open fallback');
+    return Promise.resolve(false);
   }
 
   // 显示消息（优先用 Element-UI 的 $message，回退到 alert）
@@ -245,28 +216,21 @@
               showMsg(vm ? (vm.$root || vm) : window, 'success', title + '已唤起本机弹窗');
               return true;
             }
-            // 协议唤起失败，尝试 location.href 兜底
-            return tryProtocolViaLocation(protoUrl).then(function (invoked2) {
-              if (invoked2) {
-                showMsg(vm ? (vm.$root || vm) : window, 'success', title + '已唤起本机弹窗');
-                return true;
+            // 协议未注册/唤起失败，最终降级：浏览器新标签打开弹窗 URL
+            // 同时明确告诉用户：想让 PyWebView 弹窗就执行 popup_launcher.exe --register 注册协议
+            log('final fallback: window.open', resp.url);
+            try {
+              var win = global.open(resp.url, '_blank', 'noopener');
+              if (!win) {
+                alertMsg('浏览器拦截了新窗口。请在地址栏左侧允许弹窗，或手动访问：' + resp.url);
+              } else {
+                showMsg(vm ? (vm.$root || vm) : window, 'success', title + '已在新标签打开（PyWebView 未注册协议，浏览器降级）');
               }
-              // 最终降级：浏览器新标签打开弹窗 URL
-              log('final fallback: window.open', resp.url);
-              try {
-                var win = global.open(resp.url, '_blank', 'noopener');
-                if (!win) {
-                  // 被浏览器拦截，再 alert 提示用户手动允许
-                  alertMsg('浏览器拦截了新窗口。请在地址栏左侧允许弹窗，或手动访问：' + resp.url);
-                } else {
-                  showMsg(vm ? (vm.$root || vm) : window, 'success', title + '已在新标签打开');
-                }
-              } catch (e) {
-                alertMsg(title + '无法打开窗口：' + e.message + '\n请手动访问：' + resp.url);
-                return false;
-              }
-              return true;
-            });
+            } catch (e) {
+              alertMsg(title + '无法打开窗口：' + e.message + '\n请手动访问：' + resp.url);
+              return false;
+            }
+            return true;
           });
         }
         showMsg(vm ? (vm.$root || vm) : window, 'error', title + '：未知 action=' + resp.action);

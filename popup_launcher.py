@@ -112,7 +112,98 @@ class Api:
             return False
 
 
+def _cli_register(cmd):
+    """命令行协议注册/注销。无需 pyinstaller 也能跑（pywin32/winreg 是 stdlib）。"""
+    if sys.platform != "win32":
+        print("[register] only supported on Windows")
+        return False
+    try:
+        import winreg
+    except ImportError:
+        print("[register] winreg module not available")
+        return False
+    base = r"Software\Classes\xtquant-popup"
+    exe = os.path.abspath(sys.executable if getattr(sys, 'frozen', False) else __file__)
+    # 打包后 sys.executable 就是 popup_launcher.exe 自身
+    # 未打包运行时是 python.exe，需要拼 script 路径
+    if not getattr(sys, 'frozen', False):
+        # 非打包：exe 写 python.exe + popup_launcher.py
+        cmdline = '"%s" "%s" "%%1"' % (sys.executable, os.path.abspath(__file__))
+    else:
+        cmdline = '"%s" "%%1"' % exe
+
+    if cmd == "--register-status":
+        try:
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, base + r"\shell\open\command") as k:
+                val, _ = winreg.QueryValueEx(k, None)
+                print("[register] OK -> %s" % val)
+                return True
+        except FileNotFoundError:
+            print("[register] NOT registered. Run with --register to register.")
+            return False
+        except Exception as e:
+            print("[register] ERROR: %s" % e)
+            return False
+
+    if cmd == "--unregister":
+        # 递归删除键（Python 没有现成 API；用 _winreg 底层）
+        try:
+            _delete_key_recursive(winreg.HKEY_CURRENT_USER, base)
+            print("[register] unregistered xtquant-popup from HKCU")
+            return True
+        except FileNotFoundError:
+            print("[register] nothing to unregister")
+            return True
+        except Exception as e:
+            print("[register] unregister failed: %s" % e)
+            return False
+
+    if cmd == "--register":
+        # 用 KEY_SET_VALUE 权限（不要 ALL_ACCESS），键已存在时也能写
+        access = winreg.KEY_SET_VALUE
+        try:
+            with winreg.CreateKeyEx(winreg.HKEY_CURRENT_USER, base, 0, access) as k:
+                winreg.SetValueEx(k, None, 0, winreg.REG_SZ, "URL:xtquant-popup Protocol")
+                winreg.SetValueEx(k, "URL Protocol", 0, winreg.REG_SZ, "")
+            with winreg.CreateKeyEx(winreg.HKEY_CURRENT_USER, base + r"\DefaultIcon", 0, access) as k:
+                winreg.SetValueEx(k, None, 0, winreg.REG_SZ, '"%s",0' % exe)
+            with winreg.CreateKeyEx(winreg.HKEY_CURRENT_USER, base + r"\shell\open\command", 0, access) as k:
+                winreg.SetValueEx(k, None, 0, winreg.REG_SZ, cmdline)
+            print("[register] OK -> %s" % cmdline)
+            print("            (written to HKCU, no admin required)")
+            return True
+        except Exception as e:
+            print("[register] FAILED: %s" % e)
+            print("            如果键已存在且无权限，先执行 --unregister 再 --register")
+            return False
+    return False
+
+
+def _delete_key_recursive(root, sub_key):
+    """递归删除注册表键。stdlib 没有原生 API；用 _winreg 内部枚举 + 删除。"""
+    import winreg
+    try:
+        with winreg.OpenKey(root, sub_key, 0, winreg.KEY_ALL_ACCESS) as parent:
+            while True:
+                try:
+                    child = winreg.EnumKey(parent, 0)
+                except OSError:
+                    break
+                _delete_key_recursive(root, sub_key + "\\" + child)
+        winreg.DeleteKey(root, sub_key)
+    except FileNotFoundError:
+        pass
+
+
 def main():
+    # === 维护命令：--register / --unregister ===
+    # 单独运行：popup_launcher.exe --register  → 把本 exe 注册为 xtquant-popup:// 协议 handler（HKCU，无需管理员）
+    # 单独运行：popup_launcher.exe --unregister → 注销协议
+    # 单独运行：popup_launcher.exe --register-status → 打印是否已注册
+    if len(sys.argv) > 1 and sys.argv[1].lower() in ("--register", "--unregister", "--register-status"):
+        _cli_register(sys.argv[1].lower())
+        return 0
+
     # 模式 2：自定义协议唤起（xtquant-popup://?url=...&title=...&w=...&h=...）
     # 浏览器/系统把 xtquant-popup:// 链接转交给本 launcher，第一个参数就是完整 URL。
     if len(sys.argv) > 1 and sys.argv[1].lower().startswith("xtquant-popup:"):

@@ -66,20 +66,39 @@ python tools\build_popup_launcher.py --register-only --exe-path "%CD%\dist\popup
 B 机器需要装 **Microsoft Edge WebView2 Runtime**（Windows 10/11 通常已自带；没装的话 pywebview 启动会提示下载）。
 下载：https://developer.microsoft.com/microsoft-edge/webview2/
 
-### 2. 注册协议
+### 2. 注册协议（关键步骤！）
 
-**首次**在 B 机器上**双击运行** `popup_launcher.exe`（可立即关闭），会自动注册 `xtquant-popup://` 协议到 `HKCU\Software\Classes\`。
-也可以命令行手动注册：
+把 A 上 `dist\popup_launcher.exe` 拷贝到 B 机器任意目录（如 `D:\xtquant-popup\`）。
+
+**⚠ 仅双击 exe 不会注册协议**——双击只是直接启动一个 PyWebView 窗口。注册协议必须显式执行：
+
 ```cmd
-popup_launcher.exe --register
+D:\xtquant-popup\popup_launcher.exe --register
 ```
-（这一步不会弹出窗口；失败请用管理员权限重试。）
+
+预期输出：
+```
+[register] OK -> "D:\xtquant-popup\popup_launcher.exe" "%1"
+            (written to HKCU, no admin required)
+```
+
+注销协议（如要清理）：
+```cmd
+D:\xtquant-popup\popup_launcher.exe --unregister
+```
+
+查看注册状态：
+```cmd
+D:\xtquant-popup\popup_launcher.exe --register-status
+```
+
+> 协议注册后，浏览器看到 `xtquant-popup://` 链接就会把控制权交给 `popup_launcher.exe`。
 
 ### 3. 浏览器访问 A 服务
 
 B 机器浏览器打开 `http://A_IP:5000`（如 `http://192.168.1.10:5000`），点击任意『独立弹窗』按钮（如期权看板的「🖥 独立弹窗」、市场概况的「行业分布窗口」等）：
-- 浏览器弹窗询问「是否打开 xtquant-popup:...」→ 允许 → B 桌面弹出 PyWebView 窗口
-- 没装客户端 → 自动降级在新标签页打开弹窗 URL（功能等价，但有浏览器外框）
+- **已注册协议** → B 桌面弹出 PyWebView 窗口（直接取 A 的数据）
+- **没注册协议** → 浏览器 F12 会输出 `scheme does not have a registered handler`，前端立即降级在新标签页打开弹窗 URL（功能等价，但有浏览器外框）。Element-UI 顶部会显示「PyWebView 未注册协议，浏览器降级」提示
 
 ## 故障排查
 

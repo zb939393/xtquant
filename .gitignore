@@ -27,6 +27,7 @@ flask_*.out
 _tmp_*.txt
 _tmp_*.log
 _tmp_*.err
+_test_*.py
 _opt_warm2.*
 _verify_referer.py
 edge_*.log
@@ -34,3 +35,7 @@ kline_*.png
 perf_*.py
 -w
 .trae/
+# pyinstaller 中间产物（最终产物在 dist\popup_launcher.exe，由 tools\build_popup_launcher.py 在 A 上现场构建）
+build/
+popup_launcher.spec
+dist/
