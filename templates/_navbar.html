@@ -1,0 +1,39 @@
+<style>
+  /* 顶部悬浮导航条（全局 _navbar.html）：默认隐藏，鼠标移到顶部激活；
+     隐藏时不占空间，激活时页面容器下移让出工具栏高度，内容不被遮挡 */
+  .nav-hover { position:fixed; top:0; left:0; right:0; height:40px; z-index:3000; }
+  .navbar { position:fixed; top:0; left:0; right:0; z-index:3001; display:flex; align-items:center; gap:8px; flex-wrap:wrap; padding:6px 16px; background:#fff; border-bottom:1px solid #ebeef5; box-shadow:0 2px 8px rgba(0,0,0,.1); opacity:0; pointer-events:none; transition:opacity .18s ease; }
+  .nav-hover:hover + .navbar, .navbar:hover { opacity:1; pointer-events:auto; }
+  .nav-title { font-size:15px; font-weight:700; color:#303133; margin-right:8px; }
+  .nav-link { font-size:14px; color:#606266; text-decoration:none; padding:4px 14px; border-radius:6px; transition:background .15s,color .15s; }
+  .nav-link:hover { background:#ecf5ff; color:#409eff; }
+  .nav-link.active { background:#409eff; color:#fff; }
+  /* 激活时容器下移 40px（#app 无顶部留白；.page 已有 20px 顶部留白，故下移 60px） */
+  #app, .wrap { transition:margin-top .18s ease; }
+  .nav-hover:hover ~ #app, .navbar:hover ~ #app,
+  .nav-hover:hover ~ .wrap, .navbar:hover ~ .wrap { margin-top:40px; }
+  .page { transition:margin-top .18s ease; }
+  .nav-hover:hover ~ .page, .navbar:hover ~ .page { margin-top:60px; }
+</style>
+<div class="nav-hover"></div>
+<div class="navbar">
+  <span class="nav-title">📊 xtquant 看盘</span>
+  <a class="nav-link" data-path="/cb/" href="/cb/board">可转债</a>
+  <a class="nav-link" data-path="/option/board" href="/option/board">期权</a>
+  <a class="nav-link" data-path="/futures/board" href="/futures/board">期指</a>
+  <a class="nav-link" data-path="/overview" href="/overview">市场概况</a>
+</div>
+<script>
+/* 导航条：根据当前路径高亮对应模块 */
+(function(){
+  var path = location.pathname;
+  document.querySelectorAll('.nav-link').forEach(function(a){
+    var dp = a.getAttribute('data-path') || '';
+    var match;
+    if(dp === '/cb/') match = path.indexOf('/cb/') === 0;
+    else if(dp === '/overview') match = (path === '/' || path.indexOf('/overview') === 0);
+    else match = path.indexOf(dp) === 0;
+    if(match) a.classList.add('active');
+  });
+})();
+</script>

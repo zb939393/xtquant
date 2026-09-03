@@ -143,12 +143,6 @@ def futures_popup():
     return render_template("futures_popup.html")
 
 
-@futures_bp.route("/overview")
-def futures_overview():
-    """A 股市场概况网页版（浏览器直接访问）。"""
-    return render_template("market_overview.html")
-
-
 @futures_bp.route("/popup/launch", methods=["POST"])
 def futures_popup_launch():
     """期指综合看盘 独立弹窗：A 本机 Popen；局域网返回参数让前端协议唤起 + 降级。"""

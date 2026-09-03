@@ -47,6 +47,7 @@
 </style>
 </head>
 <body>
+{% include '_navbar.html' %}
 <div id="app">
   <div class="topbar">
     <h2>📈 期权监控看板 <span class="legend">（上交所 / 深交所 ETF 期权 · <b class="c">购</b>/<b class="p">沽</b> · 红涨绿跌）</span></h2>
@@ -1170,7 +1171,7 @@ new Vue({
       const qs = this.buildParams(false) + '&format=csv';
       window.open('/option/full?' + qs, '_blank');
     },
-    goBack() { window.location.href = '/'; },
+    goBack() { window.location.href = '/cb/board'; },
     updownCls(v) {
       const n = num(v);
       if (isNaN(n)) return '';

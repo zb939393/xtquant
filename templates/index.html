@@ -37,6 +37,7 @@
 </style>
 </head>
 <body>
+{% include '_navbar.html' %}
 <div id="app">
   <div class="topbar">
     <h2>📊 可转债全指标看板</h2>
@@ -1812,7 +1813,7 @@ new Vue({
       if(this.watchOnly){
         this.watchOnly = false;
         document.title = '可转债全指标看板';
-        if(location.pathname.indexOf('/cb/watchlist') >= 0) location.href = '/';
+        if(location.pathname.indexOf('/cb/watchlist') >= 0) location.href = '/cb/board';
       } else {
         this.watchOnly = true;
         document.title = '⭐ 自选股看板';
@@ -1823,7 +1824,7 @@ new Vue({
       if(this.boardMode){
         this.boardMode = false;
         document.title = '可转债全指标看板';
-        if(location.pathname.indexOf('/cb/watchlist/board') >= 0) location.href = '/';
+        if(location.pathname.indexOf('/cb/watchlist/board') >= 0) location.href = '/cb/board';
       } else {
         this.boardMode = true;
         document.title = '📈 自选股看盘';

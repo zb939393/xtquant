@@ -91,6 +91,7 @@
 </style>
 </head>
 <body>
+{% include '_navbar.html' %}
 <div id="app">
   <div class="topbar">
     <h2>📈 股指期货监控看板 <span class="legend">（中金所 CFFEX · 当月连续 · <b class="up">红涨</b>/<b class="down">绿跌</b>）</span></h2>
@@ -1178,7 +1179,7 @@ new Vue({
         try { this.$message.error('启动失败：' + e.message); } catch (e2) {}
       }
     },
-    goBack() { window.location.href = '/'; },
+    goBack() { window.location.href = '/cb/board'; },
     updownCls(v) {
       const n = num(v);
       if (isNaN(n)) return '';

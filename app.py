@@ -36,6 +36,11 @@ def create_app():
     app.register_blueprint(option_bp, url_prefix="/option")
     app.register_blueprint(futures_bp, url_prefix="/futures")
 
+    # ---- 顶层路由：A 股市场概况网页版 ----
+    @app.route("/overview")
+    def overview():
+        return render_template("market_overview.html")
+
     # 预热顶层缓存，避免首屏阻塞。
     #  /cb/full：后台线程预热，不阻塞启动；
     #  /option/full：后台线程预热，并启动期有限等待（最多 30s）让首份全量数据就绪，
@@ -55,7 +60,8 @@ def create_app():
 
     @app.route("/")
     def index():
-        return render_template("index.html")
+        # 首页：A 股市场概况（市场概况作为默认首页）
+        return render_template("market_overview.html")
 
     @app.route("/health")
     def health():
@@ -75,7 +81,7 @@ def create_app():
             "service": "xtquant-flask",
             "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "endpoints": [
-                "GET  /",
+                "GET  /                    (市场概况首页)",
                 "GET  /health",
                 "GET  /api",
                 "GET  /market/quote/<code>",
@@ -85,6 +91,9 @@ def create_app():
                 "GET  /trade/orders",
                 "POST /trade/order",
                 "POST /trade/cancel",
+                "GET  /cb/board             (可转债主看板)",
+                "GET  /cb/watchlist",
+                "GET  /cb/watchlist/board",
                 "GET  /cb/panorama",
                 "GET  /cb/top_dual_low",
                 "GET  /cb/full",
@@ -102,7 +111,7 @@ def create_app():
                 "POST /futures/popup/launch",
                 "GET  /futures/popup/industry",
                 "GET  /futures/popup/overview",
-                "GET  /futures/overview   (市场概况网页版)",
+                "GET  /overview   (市场概况网页版)",
                 "GET  /futures/popup/integrated          (综合市场概况·独立弹窗页面)",
                 "POST /futures/popup/integrated/launch    (综合弹窗 PyWebView 启动)",
             ],
@@ -112,6 +121,11 @@ def create_app():
     def handle_err(e):
         logging.exception("unhandled: %s", e)
         return jsonify({"ok": False, "error": type(e).__name__ + ": " + str(e)}), 500
+
+    @app.route("/cb/board")
+    def cb_board():
+        # 可转债主看板（原首页 / 迁移至此）
+        return render_template("index.html")
 
     @app.route("/cb/watchlist")
     def cb_watchlist():
