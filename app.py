@@ -103,6 +103,8 @@ def create_app():
                 "GET  /futures/popup/industry",
                 "GET  /futures/popup/overview",
                 "GET  /futures/overview   (市场概况网页版)",
+                "GET  /futures/popup/integrated          (综合市场概况·独立弹窗页面)",
+                "POST /futures/popup/integrated/launch    (综合弹窗 PyWebView 启动)",
             ],
         })
 

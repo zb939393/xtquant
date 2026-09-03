@@ -200,6 +200,7 @@
         <el-switch v-model="showBands" size="mini" active-text="±σ通道" style="margin-right:12px;"></el-switch>
         <el-button size="mini" icon="el-icon-refresh" :loading="loadingBoard" @click="reload">刷新行情</el-button>
         <el-button size="mini" icon="el-icon-full-screen" type="success" :loading="launchingPopup" @click="launchPopup">🖥 独立弹窗</el-button>
+        <el-button size="mini" icon="el-icon-view" type="success" :loading="launchingIntegrated" @click="launchIntegratedPopup" title="集成行业分布/涨幅分布/新闻/成交分析/外围股市/股指资金/期指综合/期权等全部子窗的综合弹窗">📊 市场概况</el-button>
         <span class="muted">共 [# boardRows.length #] 个自选<span v-if="boardExpiredCount">（[# boardExpiredCount #] 个已到期/无行情）</span> · 实时刷新：[# refreshInterval/1000 #] 秒</span>
       </span>
     </div>
@@ -772,6 +773,7 @@ new Vue({
       loading: false,
       loadingBoard: false,
       launchingPopup: false,
+      launchingIntegrated: false,
       firstLoaded: false,
       statusMsg: '',
       rows: [],
@@ -1247,6 +1249,23 @@ new Vue({
       } catch (e) {
         try { this.$message.error('启动失败：' + e.message); } catch (e2) {}
         try { window.alert('启动失败：' + e.message); } catch (e2) {}
+      }
+    },
+    launchIntegratedPopup() {
+      try {
+        if (typeof window.xtquantLaunchPopup !== 'function') {
+          this.$message.error('弹窗工具未加载，请按 Ctrl+F5 硬刷新页面');
+          return;
+        }
+        window.xtquantLaunchPopup({
+          url: '/futures/popup/integrated/launch',
+          title: '市场概况 · 综合弹窗',
+          vm: this,
+          onStart: () => { this.launchingIntegrated = true; },
+          onEnd:   () => { this.launchingIntegrated = false; },
+        });
+      } catch (e) {
+        try { this.$message.error('启动失败：' + e.message); } catch (e2) {}
       }
     },
   },

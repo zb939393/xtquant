@@ -18,6 +18,7 @@ from core import ak_service
 
 from config import Config
 from .popup_helper import popup_launch
+from .popup_config import get_popup_size, POPUP_SIZES
 
 futures_bp = Blueprint("futures", __name__)
 
@@ -158,7 +159,7 @@ def futures_popup_launch():
     return popup_launch(
         popup_path="/futures/popup",
         title="期指综合看盘 · 独立窗口",
-        width=1240, height=700, min_w=900, min_h=400,
+        **POPUP_SIZES["futures"],
         log_name="popup_launcher.log",
     )
 
@@ -192,7 +193,7 @@ def futures_news_popup_launch():
     return popup_launch(
         popup_path="/futures/news/popup",
         title="7×24 快讯 · 独立窗口",
-        width=410, height=380, min_w=50, min_h=50,
+        **POPUP_SIZES["news"],
     )
 
 
@@ -265,7 +266,7 @@ def futures_capital_popup_launch():
     return popup_launch(
         popup_path="/futures/capital/popup",
         title="股指资金 · 独立窗口",
-        width=320, height=400, min_w=50, min_h=50,
+        **POPUP_SIZES["capital"],
     )
 
 
@@ -303,7 +304,7 @@ def futures_industry_popup_launch():
     return popup_launch(
         popup_path="/futures/industry/popup",
         title="行业板块分布 · 独立窗口",
-        width=400, height=400, min_w=50, min_h=50,
+        **POPUP_SIZES["industry"],
     )
 
 
@@ -348,7 +349,7 @@ def futures_industry_stocks_launch():
     return popup_launch(
         popup_path=popup_path,
         title=title,
-        width=400, height=400, min_w=50, min_h=50,
+        **POPUP_SIZES["industry_stocks"],
     )
 
 
@@ -384,7 +385,7 @@ def futures_stock_chart_launch():
     return popup_launch(
         popup_path=popup_path,
         title=title,
-        width=760, height=520, min_w=50, min_h=50,
+        **POPUP_SIZES["stock_chart"],
     )
 
 
@@ -426,7 +427,7 @@ def futures_zhangfu_popup_launch():
     return popup_launch(
         popup_path="/futures/zhangfu/popup",
         title="全市场涨幅分布 · 独立窗口",
-        width=320, height=180, min_w=50, min_h=50,
+        **POPUP_SIZES["zhangfu"],
     )
 
 
@@ -457,7 +458,7 @@ def futures_amountflow_popup_launch():
     return popup_launch(
         popup_path="/futures/amountflow/popup",
         title="两市成交分析 · 独立窗口",
-        width=320, height=500, min_w=50, min_h=50,
+        **POPUP_SIZES["amountflow"],
     )
 
 
@@ -505,5 +506,34 @@ def futures_external_popup_launch():
     return popup_launch(
         popup_path="/futures/external/popup",
         title="外围股市 · 独立窗口",
-        width=400, height=600, min_w=50, min_h=50,
+        **POPUP_SIZES["external"],
+    )
+
+
+@futures_bp.route("/popup/integrated")
+def futures_integrated_popup():
+    """综合市场概况·独立窗口页面：集成 行业分布 / 涨幅分布 / 新闻 / 两市成交 / 外围股市 /
+       股指资金 / 股指期货 / 期权 等全部子窗口为一个标签页式 PyWebView 窗口，供独立弹窗加载。
+    """
+    return render_template("integrated_popup.html")
+
+
+@futures_bp.route("/popup/integrated/launch", methods=["POST"])
+def futures_integrated_popup_launch():
+    """综合市场概况 独立弹窗：A 本机 Popen；局域网返回参数让前端协议唤起 + 降级。
+
+    集成弹窗一次性弹出包含所有子窗口的标签页，窗口默认采用 POPUP_SIZES["integrated"]。
+    """
+    try:
+        import webview  # noqa: F401  仅用于确认依赖已安装
+    except Exception as e:
+        return jsonify({"ok": False, "error": "pywebview 未安装: %s" % e})
+    size = get_popup_size("integrated")
+    return popup_launch(
+        popup_path="/futures/popup/integrated",
+        title="市场概况 · 综合独立窗口",
+        width=size["width"],
+        height=size["height"],
+        min_w=size["min_w"],
+        min_h=size["min_h"],
     )

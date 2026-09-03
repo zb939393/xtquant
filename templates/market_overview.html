@@ -18,6 +18,8 @@
   .btn { background:#409eff; color:#fff; border:none; border-radius:6px; padding:6px 14px; font-size:13px; cursor:pointer; }
   .btn:hover { background:#66b1ff; }
   .btn:disabled { background:#a0cfff; cursor:not-allowed; }
+  .btn-integrated { background:#667eea; }
+  .btn-integrated:hover { background:#7c89ee; }
   .summary { display:grid; grid-template-columns:repeat(6,minmax(0,1fr)); gap:12px; margin-bottom:18px; }
   .card { background:#fff; border:1px solid #ebeef5; border-radius:10px; padding:16px 12px; text-align:center; box-shadow:0 1px 3px rgba(0,0,0,.04); }
   .card .num { font-size:24px; font-weight:700; font-variant-numeric:tabular-nums; line-height:1.15; }
@@ -61,6 +63,7 @@
       <button class="btn" :disabled="launchingAmountFlow" @click="launchAmountFlow">[# launchingAmountFlow ? '启动中…' : '两市成交分析窗口' #]</button>
       <button class="btn" :disabled="launchingExternal" @click="launchExternal">[# launchingExternal ? '启动中…' : '外围股市窗口' #]</button>
       <button class="btn" :disabled="launchingCapital" @click="launchCapital">[# launchingCapital ? '启动中…' : '股指资金窗口' #]</button>
+      <button class="btn btn-integrated" :disabled="launchingIntegrated" @click="launchIntegrated">[# launchingIntegrated ? '启动中…' : '市场概况 · 综合弹窗' #]</button>
       <button class="btn" :disabled="loading" @click="fetchData(true)">[# loading ? '刷新中…' : '刷  新' #]</button>
     </div>
   </div>
@@ -126,6 +129,7 @@ new Vue({
     launchingAmountFlow: false,
     launchingExternal: false,
     launchingCapital: false,
+    launchingIntegrated: false,
     sparkTip: { ix: null, price: 0, pct: 0, left: 0, top: 0 },
   },
   created(){
@@ -255,6 +259,14 @@ new Vue({
         url: '/futures/popup/capital/launch', title: '股指资金', vm: this,
         onStart: () => { this.launchingCapital = true; },
         onEnd:   () => { this.launchingCapital = false; this.updatedAt = '股指资金窗口已处理'; },
+      });
+    },
+    launchIntegrated(){
+      if(this.launchingIntegrated) return;
+      window.xtquantLaunchPopup({
+        url: '/futures/popup/integrated/launch', title: '市场概况', vm: this,
+        onStart: () => { this.launchingIntegrated = true; },
+        onEnd:   () => { this.launchingIntegrated = false; this.updatedAt = '综合弹窗已处理'; },
       });
     },
   },

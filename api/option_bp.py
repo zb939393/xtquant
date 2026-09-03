@@ -18,6 +18,7 @@ from core import option_service
 from core import option_exquote_service as exquote
 from config import Config
 from .popup_helper import popup_launch
+from .popup_config import get_popup_size, POPUP_SIZES
 
 option_bp = Blueprint("option", __name__)
 
@@ -452,5 +453,5 @@ def option_popup_launch():
     return popup_launch(
         popup_path="/option/popup",
         title="期权自选股看盘 · 独立窗口",
-        width=830, height=380, min_w=200, min_h=200,
+        **POPUP_SIZES["option"],
     )

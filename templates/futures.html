@@ -218,6 +218,7 @@
               <el-option label="ATR" value="atr"></el-option>
             </el-select>
             <el-button type="primary" size="mini" icon="el-icon-rank" :loading="popupLaunching" @click="launchPopup" style="margin-left:10px;">独立弹窗</el-button>
+            <el-button type="success" size="mini" icon="el-icon-view" :loading="integratedLaunching" @click="launchIntegratedPopup" title="集成行业分布/涨幅分布/新闻/成交分析/外围股市/股指资金/期权等全部子窗的综合弹窗">市场概况</el-button>
           </span>
         </div>
         <div class="comp-rows">
@@ -1101,6 +1102,7 @@ new Vue({
       indicatorVals: {},
       klineCount: 240,
       popupLaunching: false,
+      integratedLaunching: false,
       compTimeframes: [
         { key: 'rt', label: '分时行情（不带盘口）' },
         { key: '1min', label: '1 分钟 K线' },
@@ -1157,6 +1159,23 @@ new Vue({
       } catch (e) {
         try { this.$message.error('启动失败：' + e.message); } catch (e2) {}
         try { window.alert('启动失败：' + e.message); } catch (e2) {}
+      }
+    },
+    launchIntegratedPopup() {
+      try {
+        if (typeof window.xtquantLaunchPopup !== 'function') {
+          this.$message.error('弹窗工具未加载，请按 Ctrl+F5 硬刷新页面');
+          return;
+        }
+        window.xtquantLaunchPopup({
+          url: '/futures/popup/integrated/launch',
+          title: '市场概况 · 综合弹窗',
+          vm: this,
+          onStart: () => { this.integratedLaunching = true; },
+          onEnd:   () => { this.integratedLaunching = false; },
+        });
+      } catch (e) {
+        try { this.$message.error('启动失败：' + e.message); } catch (e2) {}
       }
     },
     goBack() { window.location.href = '/'; },
