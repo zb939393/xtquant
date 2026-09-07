@@ -317,7 +317,7 @@ function buildRtOption(data, prevClose, kind, avgVolPerMin, delta, showBands, vw
       { left: fz(46), right: fz(46), top: '54%', height: '26%' },
       { left: fz(46), right: fz(46), top: '82%', height: '14%' }
     ],
-    tooltip: { trigger: 'axis', axisPointer: { type: 'cross' }, formatter: function(params){
+    tooltip: { trigger: 'axis', triggerOn: 'mousemove', axisPointer: { type: 'cross', label: { backgroundColor: 'transparent', borderColor: 'transparent', color: '#000' } }, backgroundColor: 'transparent', borderColor: 'transparent', padding: 4, textStyle: { color: '#333' }, formatter: function(params){
         if(!params || !params.length) return '';
         const idx = params[0].dataIndex;
         const t = session[idx];
@@ -330,11 +330,11 @@ function buildRtOption(data, prevClose, kind, avgVolPerMin, delta, showBands, vw
         s += '量(累计) ' + (v != null ? fmtWan(v) : '--') + '　均量/分 ' + (avg != null ? fmtAvgVol(avg) : '--');
         return s;
       } },
-    axisPointer: { link: [{ xAxisIndex: [0,1,2] }, { yAxisIndex: [0,2,4] }] },
+    axisPointer: { link: [{ xAxisIndex: 'all' }] },
     xAxis: [
-      { type: 'category', data: session, boundaryGap: false, axisLabel: { show: false }, axisLine: { lineStyle: { color: '#dcdfe6' } }, axisPointer: { type: 'cross', label: { show: false } } },
-      { type: 'category', gridIndex: 1, data: session, boundaryGap: false, axisLabel: { show: false }, axisPointer: { type: 'cross', label: { show: false } } },
-      { type: 'category', gridIndex: 2, data: session, boundaryGap: false, axisLabel: { show: false }, axisPointer: { type: 'cross', label: { show: false } } }
+      { type: 'category', data: session, boundaryGap: false, axisLabel: { show: false }, axisLine: { lineStyle: { color: '#dcdfe6' } }, axisPointer: { label: { backgroundColor: 'transparent', borderColor: 'transparent', color: '#000' } } },
+      { type: 'category', gridIndex: 1, data: session, boundaryGap: false, axisLabel: { show: false }, axisPointer: { label: { backgroundColor: 'transparent', borderColor: 'transparent', color: '#000' } } },
+      { type: 'category', gridIndex: 2, data: session, boundaryGap: false, axisLabel: { show: false }, axisPointer: { label: { backgroundColor: 'transparent', borderColor: 'transparent', color: '#000' } } }
     ],
     yAxis: [
       { type: 'value', min: leftMin, max: leftMax, scale: true, splitLine: { lineStyle: { color: '#f2f2f2' } }, axisLabel: { color: '#909399', fontSize: fz(9) } },
@@ -432,8 +432,8 @@ function buildMiniKlineOption(data, full, indicator){
       { left: fz(44), right: fz(8), top: '69%', height: '11%' },
       { left: fz(44), right: fz(8), top: '81%', height: '17%' }
     ],
-    tooltip: { trigger: 'axis', axisPointer: { type: 'cross' }, valueFormatter: fmtTip },
-    axisPointer: { link: [{ xAxisIndex: [0,1,2] }, { yAxisIndex: [0,1,2] }] },
+    tooltip: { trigger: 'axis', triggerOn: 'mousemove', axisPointer: { type: 'cross', label: { backgroundColor: 'transparent', borderColor: 'transparent', color: '#000' } }, valueFormatter: fmtTip, backgroundColor: 'transparent', borderColor: 'transparent', padding: 4, textStyle: { color: '#333' } },
+    axisPointer: { link: [{ xAxisIndex: 'all' }] },
     xAxis: [
       { type: 'category', data: dates, boundaryGap: true, axisLabel: { show: false }, axisLine: { lineStyle: { color: '#dcdfe6' } }, axisPointer: { label: { show: false } } },
       { type: 'category', gridIndex: 1, data: dates, axisLabel: { show: false } },

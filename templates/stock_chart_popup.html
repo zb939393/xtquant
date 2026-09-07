@@ -235,7 +235,7 @@ function buildRtOption(data, prevClose, kind, avgVolPerMin, delta, showBands){
       { left: 46, right: 46, top: '7%', height: '66%' },
       { left: 46, right: 46, top: '73%', height: '26%' }
     ],
-    tooltip: { trigger: 'axis', axisPointer: { type: 'line' }, formatter: function(params){
+    tooltip: { trigger: 'axis', triggerOn: 'mousemove', axisPointer: { type: 'cross', label: { backgroundColor: 'transparent', borderColor: 'transparent', color: '#000' } }, backgroundColor: 'transparent', borderColor: 'transparent', padding: 4, textStyle: { color: '#333' }, formatter: function(params){
         if(!params || !params.length) return '';
         const idx = params[0].dataIndex;
         const t = session[idx];
@@ -339,7 +339,7 @@ function buildMiniKlineOption(data, full, indicator, indVals){
       { left: 44, right: 8, top: '69%', height: '11%' },
       { left: 44, right: 8, top: '81%', height: '17%' }
     ],
-    tooltip: { trigger: 'axis', axisPointer: { type: 'cross' }, valueFormatter: fmtTip },
+    tooltip: { trigger: 'axis', triggerOn: 'mousemove', axisPointer: { type: 'cross', label: { backgroundColor: 'transparent', borderColor: 'transparent', color: '#000' } }, valueFormatter: fmtTip, backgroundColor: 'transparent', borderColor: 'transparent', padding: 4, textStyle: { color: '#333' } },
     xAxis: [
       { type: 'category', data: dates, boundaryGap: true, axisLabel: { show: false }, axisLine: { lineStyle: { color: '#dcdfe6' } }, axisPointer: { label: { show: false } } },
       { type: 'category', gridIndex: 1, data: dates, axisLabel: { show: false } },

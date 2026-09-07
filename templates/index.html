@@ -485,7 +485,8 @@ function buildMiniKlineOption(data, full, indicator){
       { left: 44, right: 8, top: '69%', height: '11%' },
       { left: 44, right: 8, top: '81%', height: '17%' }
     ],
-    tooltip: { trigger: 'axis', axisPointer: { type: 'cross' } },
+    tooltip: { trigger: 'axis', triggerOn: 'mousemove', axisPointer: { type: 'cross', label: { backgroundColor: 'transparent', borderColor: 'transparent' } }, backgroundColor: 'transparent', borderColor: 'transparent', padding: 4, textStyle: { color: '#333' } },
+    axisPointer: { link: [{ xAxisIndex: 'all' }] },
     xAxis: [
       { type: 'category', data: dates, boundaryGap: true, axisLabel: { show: false }, axisLine: { lineStyle: { color: '#dcdfe6' } }, axisPointer: { label: { show: false } } },
       { type: 'category', gridIndex: 1, data: dates, axisLabel: { show: false } },
@@ -853,7 +854,7 @@ function buildRtOption(data, prevClose, kind, avgVolPerMin, delta, showBands){
     animation: false,
     title: { show: avgVolPerMin > 0 || (lastDev != null && isFinite(lastDev)) || (isFinite(num(delta)) && num(delta) !== 0), text: '均量/分 ' + fmtAvgVol(num(avgVolPerMin)) + (isFinite(num(delta)) && num(delta) !== 0 ? '　Δ ' + fmtNum(num(delta), 2) : '') + (lastDev != null && isFinite(lastDev) ? '　VWAP偏离 ' + fmtPct(num(lastDev), 2, true) : ''), left: 4, top: 3, textStyle: { fontSize: 11, color: '#909399', fontWeight: 'normal' } },
     grid: [{ left: 46, right: hasPrev ? 40 : 12, top: 14, height: '58%' }, { left: 46, right: hasPrev ? 40 : 12, top: '74%', height: '18%' }],
-    tooltip: { trigger: 'axis', axisPointer: { type: 'line' }, formatter: function(params){
+    tooltip: { trigger: 'axis', triggerOn: 'mousemove', axisPointer: { type: 'cross', label: { backgroundColor: 'transparent', borderColor: 'transparent', color: '#000' } }, backgroundColor: 'transparent', borderColor: 'transparent', padding: 4, textStyle: { color: '#333' }, formatter: function(params){
         if(!params || !params.length) return '';
         const idx = params[0].dataIndex;
         const t = session[idx];
@@ -866,9 +867,10 @@ function buildRtOption(data, prevClose, kind, avgVolPerMin, delta, showBands){
         s += '量(累计) ' + (v != null ? fmtWan(v) : '--') + '　均量/分 ' + (avg != null ? fmtAvgVol(avg) : '--');
         return s;
       } },
+    axisPointer: { link: [{ xAxisIndex: 'all' }] },
     xAxis: [
-      { type: 'category', data: session, boundaryGap: false, axisLabel: { show: false }, axisLine: { lineStyle: { color: '#dcdfe6' } } },
-      { type: 'category', gridIndex: 1, data: session, boundaryGap: false, axisLabel: { show: false } }
+      { type: 'category', data: session, boundaryGap: false, axisLabel: { show: false }, axisLine: { lineStyle: { color: '#dcdfe6' } }, axisPointer: { label: { backgroundColor: 'transparent', borderColor: 'transparent', color: '#000' } } },
+      { type: 'category', gridIndex: 1, data: session, boundaryGap: false, axisLabel: { show: false }, axisPointer: { label: { backgroundColor: 'transparent', borderColor: 'transparent', color: '#000' } } }
     ],
     yAxis: [
       { type: 'value', min: leftMin, max: leftMax, scale: true, splitLine: { lineStyle: { color: '#f2f2f2' } }, axisLabel: { color: '#909399', fontSize: 9 } },
@@ -1441,9 +1443,10 @@ new Vue({
         animation: false,
         legend: { data: ['BOLL', 'UB', 'LB'], top: 2, right: 8, itemWidth: 14, itemHeight: 8, textStyle: { fontSize: 10, color: '#909399' } },
         grid: [{ left: 52, right: 14, top: 22, height: '52%' }, { left: 52, right: 14, top: '76%', height: '18%' }],
-        tooltip: { trigger: 'axis', axisPointer: { type: 'cross' }, valueFormatter: fmtTip },
+        tooltip: { trigger: 'axis', triggerOn: 'mousemove', axisPointer: { type: 'cross', label: { backgroundColor: 'transparent', borderColor: 'transparent', color: '#000' } }, valueFormatter: fmtTip, backgroundColor: 'transparent', borderColor: 'transparent', padding: 4, textStyle: { color: '#333' } },
+        axisPointer: { link: [{ xAxisIndex: 'all' }] },
         xAxis: [
-          { type: 'category', data: dates, axisLabel: { show: false }, axisLine: { lineStyle: { color: '#dcdfe6' } } },
+          { type: 'category', data: dates, axisLabel: { show: false }, axisLine: { lineStyle: { color: '#dcdfe6' } }, axisPointer: { label: { show: false } } },
           { type: 'category', gridIndex: 1, data: dates, axisLabel: { show: false } }
         ],
         yAxis: [
