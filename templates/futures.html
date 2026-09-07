@@ -562,12 +562,29 @@ function buildVwapOption(payload, prevClose, kind){
   const last = (payload && payload.last) || {};
   const upColor = '#e74c3c', downColor = '#27ae60', vwapColor = '#f5a623';
 
-  const times = series.map(function(s){ return s.t; });
-  const prices = series.map(function(s){ return s.p; });
-  const vwaps = series.map(function(s){ return (s.vw == null ? null : s.vw); });
-  const devs = series.map(function(s){ return (s.d == null ? null : s.d); });
-  const zs = series.map(function(s){ return (s.z == null ? null : s.z); });
-  const vols = series.map(function(s){ return s.v; });
+  // X 轴：与分时图（rtSessionAxis）完全一致，缺失分钟留空对齐刻度
+  const session = rtSessionAxis();
+  const idxOf = {};
+  session.forEach(function(t, i){ idxOf[t] = i; });
+  const prices = new Array(session.length).fill(null);
+  const vwaps = new Array(session.length).fill(null);
+  const devs = new Array(session.length).fill(null);
+  const zs = new Array(session.length).fill(null);
+  const vols = new Array(session.length).fill(null);
+  series.forEach(function(s){
+    const i = idxOf[s.t];
+    if(i === undefined) return;
+    prices[i] = s.p;
+    vwaps[i] = (s.vw == null ? null : s.vw);
+    devs[i] = (s.d == null ? null : s.d);
+    zs[i] = (s.z == null ? null : s.z);
+    vols[i] = s.v;
+  });
+  const seriesByIndex = new Array(session.length);
+  series.forEach(function(s){
+    const i = idxOf[s.t];
+    if(i !== undefined) seriesByIndex[i] = s;
+  });
 
   let lastP = 0;
   for(let i = prices.length - 1; i >= 0; i--){ if(prices[i] != null && isFinite(prices[i])){ lastP = prices[i]; break; } }
@@ -689,7 +706,7 @@ function buildVwapOption(payload, prevClose, kind){
     tooltip: { trigger: 'axis', axisPointer: { type: 'line' }, formatter: function(params){
         if(!params || !params.length) return '';
         const idx = params[0].dataIndex;
-        const s = series[idx];
+        const s = seriesByIndex[idx];
         if(!s) return '';
         let h = '<div style="font-size:11px;margin-bottom:2px;">' + (s.t || '') + '</div>';
         h += '价 ' + fmtNum(s.p, 2) + '　VWAP ' + (s.vw == null ? '--' : fmtNum(s.vw, 2)) + '<br/>';
@@ -712,9 +729,9 @@ function buildVwapOption(payload, prevClose, kind){
         return h;
       } },
     xAxis: [
-      { type: 'category', data: times, boundaryGap: false, axisLabel: { show: false }, axisLine: { lineStyle: { color: '#dcdfe6' } } },
-      { type: 'category', gridIndex: 1, data: times, boundaryGap: false, axisLabel: { show: false } },
-      { type: 'category', gridIndex: 2, data: times, boundaryGap: false, axisLabel: { show: false } }
+      { type: 'category', data: session, boundaryGap: false, axisLabel: { show: false }, axisLine: { lineStyle: { color: '#dcdfe6' } } },
+      { type: 'category', gridIndex: 1, data: session, boundaryGap: false, axisLabel: { show: false } },
+      { type: 'category', gridIndex: 2, data: session, boundaryGap: false, axisLabel: { show: false } }
     ],
     yAxis: [
       { type: 'value', min: leftMin, max: leftMax, scale: true, splitLine: { lineStyle: { color: '#f2f2f2' } }, axisLabel: { color: '#909399', fontSize: 9 } },
