@@ -488,7 +488,7 @@ function buildRtOption(data, prevClose, kind, avgVolPerMin, delta, showBands, vw
       { left: 46, right: 46, top: '54%', height: '26%' },
       { left: 46, right: 46, top: '82%', height: '14%' }
     ],
-    tooltip: { trigger: 'axis', axisPointer: { type: 'line' }, formatter: function(params){
+    tooltip: { trigger: 'axis', axisPointer: { type: 'cross' }, formatter: function(params){
         if(!params || !params.length) return '';
         const idx = params[0].dataIndex;
         const t = session[idx];
@@ -502,10 +502,11 @@ function buildRtOption(data, prevClose, kind, avgVolPerMin, delta, showBands, vw
         s += '量(累计) ' + (v != null ? fmtWan(v) : '--') + '　均量/分 ' + (avg != null ? fmtAvgVol(avg) : '--');
         return s;
       } },
+    axisPointer: { link: [{ xAxisIndex: [0,1,2] }, { yAxisIndex: [0,2,4] }] },
     xAxis: [
-      { type: 'category', data: session, boundaryGap: false, axisLabel: { show: false }, axisLine: { lineStyle: { color: '#dcdfe6' } } },
-      { type: 'category', gridIndex: 1, data: session, boundaryGap: false, axisLabel: { show: false } },
-      { type: 'category', gridIndex: 2, data: session, boundaryGap: false, axisLabel: { show: false } }
+      { type: 'category', data: session, boundaryGap: false, axisLabel: { show: false }, axisLine: { lineStyle: { color: '#dcdfe6' } }, axisPointer: { type: 'cross', label: { show: false } } },
+      { type: 'category', gridIndex: 1, data: session, boundaryGap: false, axisLabel: { show: false }, axisPointer: { type: 'cross', label: { show: false } } },
+      { type: 'category', gridIndex: 2, data: session, boundaryGap: false, axisLabel: { show: false }, axisPointer: { type: 'cross', label: { show: false } } }
     ],
     yAxis: [
       { type: 'value', min: leftMin, max: leftMax, scale: true, splitLine: { lineStyle: { color: '#f2f2f2' } }, axisLabel: { color: '#909399', fontSize: 9 } },
@@ -703,7 +704,7 @@ function buildVwapOption(payload, prevClose, kind){
       { left: 46, right: 46, top: '65%', height: '16%' },
       { left: 46, right: 46, top: '83%', height: '14%' }
     ],
-    tooltip: { trigger: 'axis', axisPointer: { type: 'line' }, formatter: function(params){
+    tooltip: { trigger: 'axis', axisPointer: { type: 'cross' }, formatter: function(params){
         if(!params || !params.length) return '';
         const idx = params[0].dataIndex;
         const s = seriesByIndex[idx];
@@ -728,10 +729,11 @@ function buildVwapOption(payload, prevClose, kind){
         }
         return h;
       } },
+    axisPointer: { link: [{ xAxisIndex: [0,1,2] }, { yAxisIndex: [0,2,3] }] },
     xAxis: [
-      { type: 'category', data: session, boundaryGap: false, axisLabel: { show: false }, axisLine: { lineStyle: { color: '#dcdfe6' } } },
-      { type: 'category', gridIndex: 1, data: session, boundaryGap: false, axisLabel: { show: false } },
-      { type: 'category', gridIndex: 2, data: session, boundaryGap: false, axisLabel: { show: false } }
+      { type: 'category', data: session, boundaryGap: false, axisLabel: { show: false }, axisLine: { lineStyle: { color: '#dcdfe6' } }, axisPointer: { type: 'cross', label: { show: false } } },
+      { type: 'category', gridIndex: 1, data: session, boundaryGap: false, axisLabel: { show: false }, axisPointer: { type: 'cross', label: { show: false } } },
+      { type: 'category', gridIndex: 2, data: session, boundaryGap: false, axisLabel: { show: false }, axisPointer: { type: 'cross', label: { show: false } } }
     ],
     yAxis: [
       { type: 'value', min: leftMin, max: leftMax, scale: true, splitLine: { lineStyle: { color: '#f2f2f2' } }, axisLabel: { color: '#909399', fontSize: 9 } },
