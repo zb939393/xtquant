@@ -1,6 +1,7 @@
 <style>
   /* 顶部悬浮导航条（全局 _navbar.html）：默认隐藏，鼠标移到顶部激活；
-     隐藏时不占空间，激活时页面容器下移让出工具栏高度，内容不被遮挡 */
+     隐藏时不占空间，激活时页面容器下移让出工具栏高度，内容不被遮挡；
+     可通过右上角开关「固定」为常驻显示（localStorage 记住状态） */
   .nav-hover { position:fixed; top:0; left:0; right:0; height:40px; z-index:3000; }
   .navbar { position:fixed; top:0; left:0; right:0; z-index:3001; display:flex; align-items:center; gap:8px; flex-wrap:wrap; padding:6px 16px; background:#fff; border-bottom:1px solid #ebeef5; box-shadow:0 2px 8px rgba(0,0,0,.1); opacity:0; pointer-events:none; transition:opacity .18s ease; }
   .nav-hover:hover + .navbar, .navbar:hover { opacity:1; pointer-events:auto; }
@@ -8,12 +9,20 @@
   .nav-link { font-size:14px; color:#606266; text-decoration:none; padding:4px 14px; border-radius:6px; transition:background .15s,color .15s; }
   .nav-link:hover { background:#ecf5ff; color:#409eff; }
   .nav-link.active { background:#409eff; color:#fff; }
-  /* 激活时容器下移 40px（#app 无顶部留白；.page 已有 20px 顶部留白，故下移 60px） */
+  .nav-pin { margin-left:auto; font-size:13px; color:#606266; border:1px solid #dcdfe6; background:#fff; border-radius:6px; padding:3px 12px; cursor:pointer; transition:all .15s; }
+  .nav-pin:hover { border-color:#409eff; color:#409eff; }
+  /* 固定显示模式：导航条常驻，hover 区隐藏，内容始终让出空间 */
+  body.nav-pinned .nav-hover { display:none; }
+  body.nav-pinned .navbar { opacity:1; pointer-events:auto; }
+  body.nav-pinned .nav-pin { background:#409eff; color:#fff; border-color:#409eff; }
+  /* 激活/固定时容器下移 40px（#app/.wrap 无顶部留白；.page 已有 20px 顶部留白，故下移 60px） */
   #app, .wrap { transition:margin-top .18s ease; }
   .nav-hover:hover ~ #app, .navbar:hover ~ #app,
-  .nav-hover:hover ~ .wrap, .navbar:hover ~ .wrap { margin-top:40px; }
+  .nav-hover:hover ~ .wrap, .navbar:hover ~ .wrap,
+  body.nav-pinned #app, body.nav-pinned .wrap { margin-top:40px; }
   .page { transition:margin-top .18s ease; }
-  .nav-hover:hover ~ .page, .navbar:hover ~ .page { margin-top:60px; }
+  .nav-hover:hover ~ .page, .navbar:hover ~ .page,
+  body.nav-pinned .page { margin-top:60px; }
 </style>
 <div class="nav-hover"></div>
 <div class="navbar">
@@ -22,9 +31,10 @@
   <a class="nav-link" data-path="/option/board" href="/option/board">期权</a>
   <a class="nav-link" data-path="/futures/board" href="/futures/board">期指</a>
   <a class="nav-link" data-path="/overview" href="/overview">市场概况</a>
+  <button class="nav-pin" type="button" title="切换导航条显示：固定常驻 / 悬浮隐藏">⚡ 悬浮</button>
 </div>
 <script>
-/* 导航条：根据当前路径高亮对应模块 */
+/* 导航条：根据当前路径高亮对应模块 + 固定/悬浮开关 */
 (function(){
   var path = location.pathname;
   document.querySelectorAll('.nav-link').forEach(function(a){
@@ -34,6 +44,21 @@
     else if(dp === '/overview') match = (path === '/' || path.indexOf('/overview') === 0);
     else match = path.indexOf(dp) === 0;
     if(match) a.classList.add('active');
+  });
+
+  // 固定/悬浮开关（localStorage 全局记忆）
+  var pinned = false;
+  try { pinned = localStorage.getItem('navbar_pinned') === '1'; } catch(e){}
+  var btn = document.querySelector('.nav-pin');
+  function applyPin(){
+    document.body.classList.toggle('nav-pinned', pinned);
+    if(btn) btn.textContent = pinned ? '📌 已固定' : '⚡ 悬浮';
+  }
+  applyPin();
+  if(btn) btn.addEventListener('click', function(){
+    pinned = !pinned;
+    try { localStorage.setItem('navbar_pinned', pinned ? '1' : '0'); } catch(e){}
+    applyPin();
   });
 })();
 </script>

@@ -15,6 +15,10 @@ import urllib.request
 from flask import Blueprint, jsonify, render_template, request, Response
 from core import futures_service as fut
 from core import ak_service
+try:
+    from core import vwap_service as vws
+except Exception:  # 计算模块不可用时看板 VWAP 模式优雅降级
+    vws = None
 
 from config import Config
 from .popup_helper import popup_launch
@@ -32,7 +36,10 @@ def _exq_unavailable():
 
 @futures_bp.route("/exquote/minute/<path:code>")
 def futures_exquote_minute(code):
-    """期指当日分时（扩展行情 get_minute_time_data）。"""
+    """期指当日分时（扩展行情 get_minute_time_data），并附带 VWAP 指标（ATR5/dev_atr/dev_z）。
+
+    指标按 1 分钟时间与 vwap 视图（TTL 15s）对齐合并；vwap 计算不可用时只返回分时。
+    """
     try:
         if _exq_unavailable():
             return jsonify({"ok": False, "src": "exhq", "data": [], "error": "exhq unavailable"})
@@ -40,10 +47,41 @@ def futures_exquote_minute(code):
         key = "fut_exq_minute_%s" % code
         cached = _EXQ_CACHE.get(key)
         if cached and (time.time() - cached[1]) < ttl:
-            return jsonify({"ok": True, "src": "exhq", "data": cached[0]})
+            body = {"ok": True, "src": "exhq", "data": cached[0]}
+            if cached[2]:
+                body["vwap_params"] = cached[2]
+            return jsonify(body)
         data = fut.fut_minute(code)
-        _EXQ_CACHE[key] = (data, time.time())
-        return jsonify({"ok": bool(data), "src": "exhq", "data": data})
+        # ---- 附带 VWAP 指标：复用 /futures/vwap 视图（含磁盘缓存 + 15s 内存缓存）----
+        vwap_params = None
+        if data and vws is not None:
+            try:
+                vk = "fut_vwap_%s_30_" % code
+                vc = _EXQ_CACHE.get(vk)
+                if vc and (time.time() - vc[1]) < 15:
+                    vw = vc[0]
+                else:
+                    vw = vws.build_vwap_view(code, days=30)
+                    _EXQ_CACHE[vk] = (vw, time.time())
+                if vw and vw.get("ok") and vw.get("series"):
+                    vwap_params = vw.get("params")
+                    by_t = {s["t"]: s for s in vw["series"]}
+                    for d in data:
+                        s = by_t.get(d.get("time"))
+                        if s:
+                            if s.get("a") is not None:
+                                d["atr5"] = s["a"]
+                            if s.get("da") is not None:
+                                d["dev_atr"] = s["da"]
+                            if s.get("z") is not None:
+                                d["dev_z"] = s["z"]
+            except Exception:
+                pass
+        _EXQ_CACHE[key] = (data, time.time(), vwap_params)
+        body = {"ok": bool(data), "src": "exhq", "data": data}
+        if vwap_params:
+            body["vwap_params"] = vwap_params
+        return jsonify(body)
     except Exception as e:
         return jsonify({"ok": False, "src": "exhq", "data": [], "error": str(e)})
 
@@ -103,6 +141,46 @@ def futures_exquote_kline(code):
         return jsonify({"ok": bool(data), "src": "exhq", "data": data})
     except Exception as e:
         return jsonify({"ok": False, "src": "exhq", "data": [], "error": str(e)})
+
+
+@futures_bp.route("/vwap/<path:code>")
+def futures_vwap(code):
+    """VWAP 偏离度日内策略视图（看板「VWAP」模式数据源）。
+
+    返回当日 1 分钟序列（价/VWAP/dev_z/量）+ 历史基线统计 + 按报告规则模拟出的
+    当日信号（含止损/止盈价位）。参数可选：days / k_long / k_short / rr / atr_mult。
+    计算涉及历史 1 分钟分页拉取，故按 code 做 TTL 缓存（默认 15s）。
+    """
+    try:
+        if vws is None:
+            return jsonify({"ok": False, "data": None, "error": "vwap_service unavailable"})
+        if _exq_unavailable():
+            return jsonify({"ok": False, "data": None, "error": "exhq unavailable"})
+        try:
+            ttl = int(request.args.get("ttl", "15"))
+        except Exception:
+            ttl = 15
+        params = {}
+        for k in ("k_long", "k_short", "rr", "atr_mult", "atr_period", "time_stop"):
+            v = request.args.get(k)
+            if v is not None and v != "":
+                params[k] = v
+        days = request.args.get("days", "30")
+        key = "fut_vwap_%s_%s_%s" % (code, days, "_".join("%s%s" % kv for kv in sorted(params.items())))
+        cached = _EXQ_CACHE.get(key)
+        if cached and (time.time() - cached[1]) < ttl:
+            body = cached[0]
+            body["cached"] = True
+            return jsonify(body)
+        try:
+            data = vws.build_vwap_view(code, params=params or None, days=int(days))
+        except Exception as e:
+            return jsonify({"ok": False, "data": None, "error": "calc failed: %s" % e})
+        data["cached"] = False
+        _EXQ_CACHE[key] = (data, time.time())
+        return jsonify(data)
+    except Exception as e:
+        return jsonify({"ok": False, "data": None, "error": str(e)})
 
 
 @futures_bp.route("/snapshot")

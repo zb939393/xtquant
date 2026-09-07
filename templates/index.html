@@ -305,16 +305,28 @@
           <board-rt :code="row.stock_code" :prev-close="row.stock_pre_close_rt" :price="row.stock_price" :chg-pct="row.stock_chg_pct" kind="stock" :show-book="boardSide[row.bond_code] === true" :show-ticks="boardSide[row.bond_code] === true" :show-bands="showBands"></board-rt>
         </div>
         <div class="board-panel board-panel-chart">
-          <div class="board-panel-title">正股 K线</div>
-          <board-kline :code="row.stock_code" :period="boardPeriod" :adjust="boardAdjust" :count="boardKlineCount" :indicator="boardKlineIndicator" kind="stock"></board-kline>
+          <div class="board-panel-title">正股 K线 <span class="cell-ind" v-if="ci(row.stock_code, boardPeriod)">
+            <span class="ci atr"><b>ATR</b>[# fmt2(ci(row.stock_code, boardPeriod).atr) #]</span>
+            <span class="ci adx"><b>ADX</b>[# fmt2(ci(row.stock_code, boardPeriod).adx) #]</span>
+            <span class="ci pdi"><b>+DI</b>[# fmt2(ci(row.stock_code, boardPeriod).pdi) #]</span>
+            <span class="ci mdi"><b>-DI</b>[# fmt2(ci(row.stock_code, boardPeriod).mdi) #]</span>
+            <span class="ci mfi"><b>MFI</b>[# fmt2(ci(row.stock_code, boardPeriod).mfi) #]</span>
+          </span></div>
+          <board-kline :code="row.stock_code" :period="boardPeriod" :adjust="boardAdjust" :count="boardKlineCount" :indicator="boardKlineIndicator" kind="stock" @indicators="onBoardIndicators"></board-kline>
         </div>
         <div class="board-panel board-panel-chart">
           <div class="board-panel-title">可转债分时图</div>
           <board-rt :code="row.bond_code" :prev-close="row.pre_close_rt" :price="row.bond_price" :chg-pct="row.bond_chg_pct" kind="bond" :show-book="boardSide[row.bond_code] === true" :show-ticks="boardSide[row.bond_code] === true" :show-bands="showBands"></board-rt>
         </div>
         <div class="board-panel board-panel-chart">
-          <div class="board-panel-title">可转债 K线</div>
-          <board-kline :code="row.bond_code" :period="boardPeriod" :adjust="boardAdjust" :count="boardKlineCount" :indicator="boardKlineIndicator" kind="bond"></board-kline>
+          <div class="board-panel-title">可转债 K线 <span class="cell-ind" v-if="ci(row.bond_code, boardPeriod)">
+            <span class="ci atr"><b>ATR</b>[# fmt2(ci(row.bond_code, boardPeriod).atr) #]</span>
+            <span class="ci adx"><b>ADX</b>[# fmt2(ci(row.bond_code, boardPeriod).adx) #]</span>
+            <span class="ci pdi"><b>+DI</b>[# fmt2(ci(row.bond_code, boardPeriod).pdi) #]</span>
+            <span class="ci mdi"><b>-DI</b>[# fmt2(ci(row.bond_code, boardPeriod).mdi) #]</span>
+            <span class="ci mfi"><b>MFI</b>[# fmt2(ci(row.bond_code, boardPeriod).mfi) #]</span>
+          </span></div>
+          <board-kline :code="row.bond_code" :period="boardPeriod" :adjust="boardAdjust" :count="boardKlineCount" :indicator="boardKlineIndicator" kind="bond" @indicators="onBoardIndicators"></board-kline>
         </div>
       </div>
     </div>
@@ -709,6 +721,22 @@ Vue.component('board-kline', {
         if(!data.length){ chart.clear(); return; }
         chart.setOption(buildMiniKlineOption(data, full, this.indicator), true);
         chart.resize();
+        // 计算 ATR/ADX/+DI/-DI/MFI 并回传父组件，供面板标题徽标显示（对齐期指综合看盘）
+        try {
+          const atrArr = _calcATR(full, 14);
+          const adxObj = _calcADX(full, 14);
+          const mfiArr = _calcMFI(full, 14);
+          const lastValid = (arr) => { for (let i = arr.length - 1; i >= 0; i--) { if (arr[i] !== null) return arr[i]; } return null; };
+          this.$emit('indicators', {
+            code: this.code,
+            period: period,
+            atr: lastValid(atrArr),
+            adx: lastValid(adxObj.adx),
+            pdi: lastValid(adxObj.pdi),
+            mdi: lastValid(adxObj.mdi),
+            mfi: lastValid(mfiArr),
+          });
+        } catch (e) {}
       }catch(e){
         this.src = 'err';
         try{ chart.clear(); }catch(_){}
@@ -1166,6 +1194,7 @@ new Vue({
       showBands:true,
       boardKlineIndicator:'mfi',
       boardSide:{},
+      boardIndVals:{},   // 看盘K线指标值缓存：code|period -> {atr,adx,pdi,mdi,mfi}
       watchCodes:[],
     };
   },
@@ -1922,6 +1951,20 @@ new Vue({
       const self = this;
       this.$nextTick(() => self.enableBoardDrag());
     },
+    // K线指标徽标：读取指定代码/周期的 ATR/ADX/+DI/-DI/MFI 值（由 board-kline 回传）
+    ci(code, period){
+      return this.boardIndVals[code + '|' + (period || '1d')] || null;
+    },
+    fmt2(v){
+      if(v === null || v === undefined) return '--';
+      const n = Number(v);
+      return isNaN(n) ? '--' : n.toFixed(2);
+    },
+    onBoardIndicators(p){
+      if(p && p.code && p.period){
+        this.$set(this.boardIndVals, p.code + '|' + p.period, { atr: p.atr, adx: p.adx, pdi: p.pdi, mdi: p.mdi, mfi: p.mfi });
+      }
+    },
   },
   mounted(){
     // 恢复上次设置的自动刷新频率（默认3s）
@@ -2044,7 +2087,16 @@ new Vue({
   .board-panels{ display:grid; grid-template-columns:1fr 1fr 1fr 1fr; gap:0; }
   .board-panel{ padding:10px 14px; border-right:1px solid #f0f2f5; }
   .board-panel:last-child{ border-right:none; }
-  .board-panel-title{ font-size:12px; font-weight:600; color:#909399; margin-bottom:8px; padding-left:2px; border-left:3px solid #409eff; }
+  .board-panel-title{ font-size:12px; font-weight:600; color:#909399; margin-bottom:8px; padding-left:2px; border-left:3px solid #409eff; display:flex; align-items:baseline; flex-wrap:wrap; gap:3px 8px; }
+  /* K线指标徽标（对齐期指综合看盘视觉）：ATR/ADX/+DI/-DI/MFI 实时数值 */
+  .cell-ind{ display:inline-flex; flex-wrap:wrap; align-items:baseline; gap:3px 8px; font-size:9px; font-variant-numeric:tabular-nums; line-height:1.2; }
+  .cell-ind .ci{ display:inline-flex; align-items:baseline; gap:2px; white-space:nowrap; }
+  .cell-ind .ci b{ font-weight:600; color:#aeb4bf; }
+  .cell-ind .ci.atr{ color:#16a085; }
+  .cell-ind .ci.adx{ color:#303133; }
+  .cell-ind .ci.pdi{ color:#e74c3c; }
+  .cell-ind .ci.mdi{ color:#27ae60; }
+  .cell-ind .ci.mfi{ color:#8e44ad; }
   .cb-grid{ display:grid; grid-template-columns:1fr 1fr; gap:6px 10px; }
   .cb-item{ display:flex; align-items:baseline; justify-content:space-between; gap:6px; padding:4px 6px; background:#fafbfc; border-radius:6px; }
   .cb-k{ font-size:12px; color:#909399; }

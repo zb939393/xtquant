@@ -216,19 +216,39 @@ function rtMapToSession(session, data){
   const prices = new Array(session.length).fill(null);
   const avgs = new Array(session.length).fill(null);
   const vols = new Array(session.length).fill(null);
+  const atr5s = new Array(session.length).fill(null);
+  const devAtrs = new Array(session.length).fill(null);
+  const devZs = new Array(session.length).fill(null);
   (data || []).forEach(function(d){
     const i = idxOf[d.time];
     if(i === undefined) return;
     prices[i] = Number(d.price);
     avgs[i] = Number(d.avg_price);
     vols[i] = Number(d.vol);
+    if(d.atr5 != null) atr5s[i] = Number(d.atr5);
+    if(d.dev_atr != null) devAtrs[i] = Number(d.dev_atr);
+    if(d.dev_z != null) devZs[i] = Number(d.dev_z);
   });
-  return { prices: prices, avgs: avgs, vols: vols };
+  return { prices: prices, avgs: avgs, vols: vols, atr5s: atr5s, devAtrs: devAtrs, devZs: devZs };
 }
-function buildRtOption(data, prevClose, kind, avgVolPerMin, delta, showBands){
+function buildRtOption(data, prevClose, kind, avgVolPerMin, delta, showBands, vwapParams){
   const session = rtSessionAxis();
   const mapped = rtMapToSession(session, data);
   const prices = mapped.prices, avgs = mapped.avgs, vols = mapped.vols;
+  const atr5s = mapped.atr5s, devAtrs = mapped.devAtrs, devZs = mapped.devZs;
+  let lastAtr5 = null, lastDevAtr = null, lastDevZ = null;
+  for(let i = devZs.length - 1; i >= 0; i--){
+    if(atr5s[i] != null && lastAtr5 == null) lastAtr5 = atr5s[i];
+    if(devAtrs[i] != null && lastDevAtr == null) lastDevAtr = devAtrs[i];
+    if(devZs[i] != null && lastDevZ == null) lastDevZ = devZs[i];
+    if(lastAtr5 != null && lastDevAtr != null && lastDevZ != null) break;
+  }
+  // ---- dev_z 轴范围与阈值：与综合看盘（futures.html）对齐 ----
+  const kLong = Number(vwapParams && vwapParams.k_long) || 1.0;
+  const kShort = Number(vwapParams && vwapParams.k_short) || -1.5;
+  let zmax = Math.max(Math.abs(kLong), Math.abs(kShort)) + 0.6;
+  devZs.forEach(function(z){ if(z != null && isFinite(z)){ const a = Math.abs(z); if(a > zmax) zmax = a; } });
+  zmax = zmax * 1.08;
   let last = 0;
   for(let i = prices.length - 1; i >= 0; i--){ if(prices[i] != null && isFinite(prices[i])){ last = prices[i]; break; } }
   // VWAP 偏离度：累计加权均价偏离 = (价 - VWAP) / VWAP * 100%
@@ -291,10 +311,11 @@ function buildRtOption(data, prevClose, kind, avgVolPerMin, delta, showBands){
   return {
     backgroundColor: '#fff',
     animation: false,
-    title: { show: avgVolPerMin > 0 || (lastDev != null && isFinite(lastDev)) || (isFinite(num(delta)) && num(delta) !== 0), text: '均量/分 ' + fmtAvgVol(num(avgVolPerMin)) + (isFinite(num(delta)) && num(delta) !== 0 ? '　Δ ' + fmtNum(num(delta), 2) : '') + (lastDev != null && isFinite(lastDev) ? '　VWAP偏离 ' + fmtPct(num(lastDev), 2, true) : ''), left: 4, top: 3, textStyle: { fontSize: fz(11), color: '#909399', fontWeight: 'normal' } },
+    title: { show: (lastDev != null && isFinite(lastDev)) || (lastDevZ != null && isFinite(lastDevZ)) || (isFinite(num(delta)) && num(delta) !== 0), text: (isFinite(num(delta)) && num(delta) !== 0 ? '　Δ ' + fmtNum(num(delta), 2) : '') + (lastDev != null && isFinite(lastDev) ? '　VWAP偏离 ' + fmtPct(num(lastDev), 2, true) : '') + (lastAtr5 != null && isFinite(lastAtr5) ? '　ATR5 ' + fmtNum(lastAtr5, 2) : '') + (lastDevAtr != null && isFinite(lastDevAtr) ? '　dev_atr ' + fmtNum(lastDevAtr, 3) : '') + (lastDevZ != null && isFinite(lastDevZ) ? '　dev_z ' + fmtNum(lastDevZ, 2) : ''), left: 4, top: 3, textStyle: { fontSize: fz(11), color: '#909399', fontWeight: 'normal' } },
     grid: [
-      { left: fz(46), right: fz(46), top: '7%', height: '66%' },
-      { left: fz(46), right: fz(46), top: '73%', height: '26%' }
+      { left: fz(46), right: fz(46), top: '7%', height: '46%' },
+      { left: fz(46), right: fz(46), top: '54%', height: '26%' },
+      { left: fz(46), right: fz(46), top: '82%', height: '14%' }
     ],
     tooltip: { trigger: 'axis', axisPointer: { type: 'line' }, formatter: function(params){
         if(!params || !params.length) return '';
@@ -311,14 +332,16 @@ function buildRtOption(data, prevClose, kind, avgVolPerMin, delta, showBands){
       } },
     xAxis: [
       { type: 'category', data: session, boundaryGap: false, axisLabel: { show: false }, axisLine: { lineStyle: { color: '#dcdfe6' } } },
-      { type: 'category', gridIndex: 1, data: session, boundaryGap: false, axisLabel: { show: false } }
+      { type: 'category', gridIndex: 1, data: session, boundaryGap: false, axisLabel: { show: false } },
+      { type: 'category', gridIndex: 2, data: session, boundaryGap: false, axisLabel: { show: false } }
     ],
     yAxis: [
       { type: 'value', min: leftMin, max: leftMax, scale: true, splitLine: { lineStyle: { color: '#f2f2f2' } }, axisLabel: { color: '#909399', fontSize: fz(9) } },
       { gridIndex: 1, type: 'value', scale: true, splitLine: { show: false }, axisLabel: { show: false } },
       { gridIndex: 0, position: 'right', type: 'value', min: ampMin, max: ampMax, scale: true, splitLine: { show: false }, name: '幅度%', nameLocation: 'end', nameGap: 2, nameTextStyle: { fontSize: fz(9), color: '#909399' },
         axisLabel: { color: function(v){ return v > 0 ? '#e74c3c' : (v < 0 ? '#27ae60' : '#909399'); }, fontSize: fz(9), formatter: function(v){ return fmtPct(v, 2, true); } } },
-      { gridIndex: 0, type: 'value', min: vwapMin, max: vwapMax, scale: true, show: false, axisLabel: { show: false }, splitLine: { show: false }, axisPointer: { show: false } }
+      { gridIndex: 0, type: 'value', min: vwapMin, max: vwapMax, scale: true, show: false, axisLabel: { show: false }, splitLine: { show: false }, axisPointer: { show: false } },
+      { gridIndex: 2, type: 'value', min: -zmax, max: zmax, scale: true, splitLine: { lineStyle: { color: '#f2f2f2' } }, axisLabel: { color: '#909399', fontSize: fz(9) }, name: 'dev_z', nameLocation: 'end', nameGap: 2, nameTextStyle: { fontSize: fz(9), color: '#909399' } }
     ],
     series: [
       ...(showBands ? [
@@ -342,6 +365,15 @@ function buildRtOption(data, prevClose, kind, avgVolPerMin, delta, showBands){
       { name: '均', type: 'line', data: avgs, showSymbol: false, smooth: false, connectNulls: true, z: 4, lineStyle: { width: fz(1), color: '#f5a623' } },
       { name: 'VWAP偏离', type: 'bar', xAxisIndex: 0, yAxisIndex: 3, data: vwapDev, connectNulls: true, barWidth: '50%', z: 3,
         itemStyle: { color: function(p){ const v = p.data; return (v > 0) ? 'rgba(231,76,60,0.35)' : (v < 0 ? 'rgba(39,174,96,0.35)' : 'rgba(192,196,204,0.3)'); } } },
+      { name: 'dev_z', type: 'line', xAxisIndex: 2, yAxisIndex: 4, data: devZs, showSymbol: false, smooth: false, connectNulls: true, z: 3,
+        lineStyle: { width: fz(1), color: '#409EFF', opacity: 0.9 },
+        markLine: { silent: true, symbol: 'none', data: [
+          { yAxis: kLong, lineStyle: { color: '#e74c3c', type: 'dashed', width: fz(1) },
+            label: { show: true, position: 'insideEndTop', formatter: '做多 +' + fmtNum(kLong, 1), fontSize: fz(9), color: '#e74c3c' } },
+          { yAxis: kShort, lineStyle: { color: '#27ae60', type: 'dashed', width: fz(1) },
+            label: { show: true, position: 'insideEndBottom', formatter: '做空 −' + fmtNum(Math.abs(kShort), 1), fontSize: fz(9), color: '#27ae60' } },
+          { yAxis: 0, lineStyle: { color: '#c0c4cc', width: fz(1) }, label: { show: false } }
+        ] } },
       { name: '量', type: 'bar', xAxisIndex: 1, yAxisIndex: 1, data: vols,
         itemStyle: { color: function(p){ return volColors[p.dataIndex] || upColor; } } }
     ]
@@ -528,7 +560,7 @@ Vue.component('fut-compact-rt', {
       kind: { type: String, default: 'futures' },
       showBands: { type: Boolean, default: true },
     },
-  data(){ return { src: '', _rt: [], avgVolPerMin: 0, _chart: null, _timer: null, _visible: false, _io: null, _ro: null }; },
+  data(){ return { src: '', _rt: [], avgVolPerMin: 0, vwapParams: null, _chart: null, _timer: null, _visible: false, _io: null, _ro: null }; },
   watch: {
     showBands(){ this._redraw(); }
   },
@@ -585,6 +617,7 @@ Vue.component('fut-compact-rt', {
         this.src = (js && js.src) || (js && js.ok ? 'ok' : '');
         if(!data.length){ if(this._chart){ try{ this._chart.clear(); }catch(_){} } return; }
         this._rt = data;
+        this.vwapParams = (js && js.vwap_params) || null;
         let total = 0;
         data.forEach(function(d){ const v = Number(d.vol); if(isFinite(v)) total += v; });
         let mins = 0;
@@ -598,14 +631,14 @@ Vue.component('fut-compact-rt', {
           try{ this._chart.resize(); }catch(e){}
         }
         const pc = this._calcPrevClose();
-        this._chart.setOption(buildRtOption(this._rt, pc, this.kind, this.avgVolPerMin, 0, this.showBands), true);
+        this._chart.setOption(buildRtOption(this._rt, pc, this.kind, this.avgVolPerMin, 0, this.showBands, this.vwapParams), true);
         this._chart.resize();
       }catch(e){ this.src = 'err'; }
     },
     _redraw(){
       if(!this._chart || !this._rt || !this._rt.length) return;
       const pc = this._calcPrevClose();
-      this._chart.setOption(buildRtOption(this._rt, pc, this.kind, this.avgVolPerMin, 0, this.showBands), true);
+      this._chart.setOption(buildRtOption(this._rt, pc, this.kind, this.avgVolPerMin, 0, this.showBands, this.vwapParams), true);
       this._chart.resize();
     },
     async copyCode(){

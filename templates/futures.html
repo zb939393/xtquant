@@ -46,6 +46,10 @@
   .board-rt-book, .board-rt-ticks{ min-width:0; border:1px solid #eef0f3; border-radius:6px; padding:1px 3px; overflow:hidden; }
   .board-rt-book{ flex:0 0 auto; }
   .board-rt-ticks{ flex:1 1 auto; }
+  .vw-err-overlay{ position:absolute; left:0; top:0; right:0; bottom:0; z-index:30; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; padding:16px 20px; background:linear-gradient(135deg,#fff5f5,#fff); border:2px solid #f5c6c6; border-radius:8px; margin:4px; box-sizing:border-box; color:#c0392b; font-size:14px; line-height:1.6; font-weight:700; }
+  .vw-err-overlay .vw-err-icon{ font-size:32px; margin-bottom:8px; line-height:1; }
+  .vw-err-overlay .vw-err-title{ font-size:16px; margin-bottom:4px; }
+  .vw-err-overlay .vw-err-detail{ font-size:12px; color:#e74c3c; font-weight:400; margin-top:2px; }
   .book-head, .tick-head{ font-size:9px; color:#909399; font-weight:600; line-height:12px; border-bottom:1px solid #f2f4f7; margin-bottom:1px; }
   .book-row{ display:flex; align-items:center; gap:1px; font-size:9px; line-height:11px; font-variant-numeric:tabular-nums; }
   .book-tag{ flex:0 0 16px; color:#909399; }
@@ -112,11 +116,11 @@
   </div>
 
   <div class="kpis">
-    <div class="kpi"><div class="label">合约数</div><div class="val">[# rows.length #]</div></div>
-    <div class="kpi warn"><div class="label">数据更新</div><div class="val">[# updatedAt #]</div></div>
+    <div class="kpi"><div class="label">合约数</div><div class="val">${rows.length}</div></div>
+    <div class="kpi warn"><div class="label">数据更新</div><div class="val">${updatedAt}</div></div>
     <div class="kpi" v-for="r in rows" :key="'kpi-'+r.code" :class="updownCls(r.change_pct)">
-      <div class="label">[# r.code #] · [# r.name #]</div>
-      <div class="val">[# fmtNum(r.price, 2) #] <span style="font-size:13px;">[# fmtPct(r.change_pct, 2, true) #]</span></div>
+      <div class="label">${r.code} · ${r.name}</div>
+      <div class="val">${fmtNum(r.price, 2)} <span style="font-size:13px;">${fmtPct(r.change_pct, 2, true)}</span></div>
     </div>
   </div>
 
@@ -125,7 +129,7 @@
   </div>
   <div v-if="statusMsg" class="banner banner-error">
     <i class="el-icon-warning"></i>
-    <span>[# statusMsg #]</span>
+    <span>${statusMsg}</span>
     <el-button size="mini" type="danger" plain icon="el-icon-refresh" @click="fetchSnapshot(true)" style="margin-left:10px;">重试</el-button>
   </div>
 
@@ -134,11 +138,37 @@
       <div class="board-view">
         <div class="board-toolbar">
           <span class="board-title">📈 期指看盘</span>
-          <span class="muted" v-if="!showKline">分时图（实时）· 五档盘口 · 逐笔成交（数据来自扩展行情 pytdx · 中金所 CFFEX）</span>
-          <span class="muted" v-else>K线（[# periodLabel(klinePeriod) #]）· 蜡烛图 + BOLL · 成交量 · [# indicator === 'mfi' ? 'MFI' : (indicator === 'adx' ? 'ADX' : 'ATR') #] 指标</span>
+          <span class="muted" v-if="rtMode==='rt'">分时图（实时）· 五档盘口 · 逐笔成交（数据来自扩展行情 pytdx · 中金所 CFFEX）</span>
+          <span class="muted" v-else-if="rtMode==='vwap'">VWAP 偏离度策略 · 报告口径：dev_z≥+${fmtNum(vwapKLong,1)} 做多 / ≤−${fmtNum(Math.abs(vwapKShort),1)} 做空 · 仅 13:00–14:55 开仓 · 1.5ATR 止损 / ${fmtNum(vwapRR,1)}R 止盈 · 14:55 强平</span>
+          <span class="muted" v-else>K线（${periodLabel(klinePeriod)}）· 蜡烛图 + BOLL · 成交量 · ${indicator === 'mfi' ? 'MFI' : (indicator === 'adx' ? 'ADX' : 'ATR')} 指标</span>
           <span class="board-toolbar-right">
-            <el-switch v-model="showKline" size="mini" active-text="K线" inactive-text="分时" active-color="#409EFF"></el-switch>
-            <template v-if="showKline">
+            <el-radio-group v-model="rtMode" size="mini">
+              <el-radio-button label="rt">分时</el-radio-button>
+              <el-radio-button label="vwap">VWAP</el-radio-button>
+              <el-radio-button label="kline">K线</el-radio-button>
+            </el-radio-group>
+            <template v-if="rtMode==='vwap'">
+              <el-select v-model="vwapKLong" size="mini" style="width:88px;margin-left:10px;" placeholder="做多阈值">
+                <el-option label="多 z≥0.5" :value="0.5"></el-option>
+                <el-option label="多 z≥1.0" :value="1.0"></el-option>
+                <el-option label="多 z≥1.5" :value="1.5"></el-option>
+                <el-option label="多 z≥2.0" :value="2.0"></el-option>
+              </el-select>
+              <el-select v-model="vwapKShort" size="mini" style="width:88px;margin-left:6px;" placeholder="做空阈值">
+                <el-option label="空 z≤−1.0" :value="-1.0"></el-option>
+                <el-option label="空 z≤−1.5" :value="-1.5"></el-option>
+                <el-option label="空 z≤−2.0" :value="-2.0"></el-option>
+                <el-option label="空 z≤−2.5" :value="-2.5"></el-option>
+              </el-select>
+              <el-select v-model="vwapRR" size="mini" style="width:80px;margin-left:6px;" placeholder="盈亏比">
+                <el-option label="1.0R" :value="1.0"></el-option>
+                <el-option label="1.5R" :value="1.5"></el-option>
+                <el-option label="2.0R" :value="2.0"></el-option>
+                <el-option label="3.0R" :value="3.0"></el-option>
+              </el-select>
+              <span class="muted" style="margin-left:6px;">基线 ${vwapDays} 日</span>
+            </template>
+            <template v-if="rtMode==='kline'">
               <el-select v-model="klinePeriod" size="mini" style="width:96px;margin-left:10px;" placeholder="周期">
                 <el-option label="1 分钟" value="1min"></el-option>
                 <el-option label="5 分钟" value="5min"></el-option>
@@ -167,8 +197,8 @@
                 <el-option label="ATR" value="atr"></el-option>
               </el-select>
             </template>
-            <el-switch v-else v-model="showBands" size="mini" active-text="±σ通道" style="margin-left:12px;"></el-switch>
-            <span class="muted" style="margin-left:12px;">实时刷新：[# refreshInterval ? (refreshInterval/1000) + ' 秒' : '手动' #]</span>
+            <el-switch v-if="rtMode==='rt'" v-model="showBands" size="mini" active-text="±σ通道" style="margin-left:12px;"></el-switch>
+            <span class="muted" style="margin-left:12px;">实时刷新：${refreshInterval ? (refreshInterval/1000) + ' 秒' : '手动'}</span>
           </span>
         </div>
         <div class="board-rows" ref="boardRows">
@@ -177,14 +207,29 @@
               <div class="board-row-head">
                 <span class="board-badge" :class="updownCls(row.change_pct)" v-text="row.code"></span>
                 <span class="board-name" v-text="row.name"></span>
+                <span class="cell-ind" v-if="rtMode==='kline' && ci(row.code, klinePeriod)">
+                  <span class="ci atr"><b>ATR</b>${fmt2(ci(row.code, klinePeriod).atr)}</span>
+                  <span class="ci adx"><b>ADX</b>${fmt2(ci(row.code, klinePeriod).adx)}</span>
+                  <span class="ci pdi"><b>+DI</b>${fmt2(ci(row.code, klinePeriod).pdi)}</span>
+                  <span class="ci mdi"><b>-DI</b>${fmt2(ci(row.code, klinePeriod).mdi)}</span>
+                  <span class="ci mfi"><b>MFI</b>${fmt2(ci(row.code, klinePeriod).mfi)}</span>
+                </span>
+                <span class="cell-ind" v-if="rtMode==='vwap' && vw(row.code)">
+                  <span class="ci atr"><b>ATR5</b>${fmt2(vw(row.code).atr5)}</span>
+                  <span class="ci" :class="vwZcls(vw(row.code).dev_z)"><b>dev_z</b>${fmt2(vw(row.code).dev_z)}</span>
+                  <span class="ci" :class="vwStateCls(vw(row.code).state)"><b>仓</b>${vwStateText(vw(row.code).state)}</span>
+                  <span class="ci" :class="vwPnlCls(vw(row.code).pnl_r)"><b>当日</b>${fmtPct(num(vw(row.code).pnl_r), 2, true)}R</span>
+                  <span class="ci"><b>信号</b>${vw(row.code).n_sig}</span>
+                </span>
                 <span class="board-chart-spacer"></span>
-                <span class="board-chg" :class="updownCls(row.change_pct)">[# fmtNum(num(row.price) - num(row.prev_close), 2) #]</span>
-                <span class="board-chg-pct" :class="updownCls(row.change_pct)">[# fmtPct(row.change_pct, 2, true) #]</span>
+                <span class="board-chg" :class="updownCls(row.change_pct)">${fmtNum(num(row.price) - num(row.prev_close), 2)}</span>
+                <span class="board-chg-pct" :class="updownCls(row.change_pct)">${fmtPct(row.change_pct, 2, true)}</span>
               </div>
               <div class="board-panel board-panel-chart">
-                <fut-board-rt v-if="!showKline" :code="row.code" :prev-close="num(row.prev_close)" :price="num(row.price)" :chg-pct="num(row.change_pct)" kind="futures" :show-book="showBook" :show-ticks="showTicks" :show-bands="showBands"></fut-board-rt>
+                <fut-board-rt v-if="rtMode==='rt'" :key="'rt-'+row.code" :code="row.code" :prev-close="num(row.prev_close)" :price="num(row.price)" :chg-pct="num(row.change_pct)" kind="futures" :show-book="showBook" :show-ticks="showTicks" :show-bands="showBands"></fut-board-rt>
+                <fut-board-rt v-else-if="rtMode==='vwap'" :key="'vwap-'+row.code" mode="vwap" :code="row.code" :prev-close="num(row.prev_close)" :price="num(row.price)" :chg-pct="num(row.change_pct)" kind="futures" :show-book="showBook" :show-ticks="showTicks" :k-long="vwapKLong" :k-short="vwapKShort" :rr="vwapRR" :days="vwapDays" @vwap="onVwap"></fut-board-rt>
                 <div v-else class="board-kline-cell">
-                  <fut-kline :code="row.code" :period="klinePeriod" :count="klineCount" :indicator="indicator" kind="futures"></fut-kline>
+                  <fut-kline :code="row.code" :period="klinePeriod" :count="klineCount" :indicator="indicator" kind="futures" @indicators="onIndicators"></fut-kline>
                 </div>
               </div>
             </div>
@@ -224,22 +269,22 @@
         </div>
         <div class="comp-rows">
           <div class="comp-row" v-for="tf in compTimeframes" :key="tf.key">
-            <div class="comp-row-label">[# tf.label #]</div>
+            <div class="comp-row-label">${tf.label}</div>
             <div class="comp-row-cells">
               <div v-for="row in rows" :key="row.code" class="comp-cell">
                 <div class="comp-cell-head">
                   <span class="board-badge" :class="updownCls(row.change_pct)" v-text="row.code"></span>
                   <span class="board-name" v-text="row.name"></span>
                   <span class="cell-ind" v-if="ci(row.code, tf.key)">
-                    <span class="ci atr"><b>ATR</b>[# fmt2(ci(row.code, tf.key).atr) #]</span>
-                    <span class="ci adx"><b>ADX</b>[# fmt2(ci(row.code, tf.key).adx) #]</span>
-                    <span class="ci pdi"><b>+DI</b>[# fmt2(ci(row.code, tf.key).pdi) #]</span>
-                    <span class="ci mdi"><b>-DI</b>[# fmt2(ci(row.code, tf.key).mdi) #]</span>
-                    <span class="ci mfi"><b>MFI</b>[# fmt2(ci(row.code, tf.key).mfi) #]</span>
+                    <span class="ci atr"><b>ATR</b>${fmt2(ci(row.code, tf.key).atr)}</span>
+                    <span class="ci adx"><b>ADX</b>${fmt2(ci(row.code, tf.key).adx)}</span>
+                    <span class="ci pdi"><b>+DI</b>${fmt2(ci(row.code, tf.key).pdi)}</span>
+                    <span class="ci mdi"><b>-DI</b>${fmt2(ci(row.code, tf.key).mdi)}</span>
+                    <span class="ci mfi"><b>MFI</b>${fmt2(ci(row.code, tf.key).mfi)}</span>
                   </span>
                   <span class="board-chart-spacer" v-if="tf.key==='rt'"></span>
-                  <span class="board-chg" v-if="tf.key==='rt'" :class="updownCls(row.change_pct)">[# fmtNum(num(row.price) - num(row.prev_close), 2) #]</span>
-                  <span class="board-chg-pct" v-if="tf.key==='rt'" :class="updownCls(row.change_pct)">[# fmtPct(row.change_pct, 2, true) #]</span>
+                  <span class="board-chg" v-if="tf.key==='rt'" :class="updownCls(row.change_pct)">${fmtNum(num(row.price) - num(row.prev_close), 2)}</span>
+                  <span class="board-chg-pct" v-if="tf.key==='rt'" :class="updownCls(row.change_pct)">${fmtPct(row.change_pct, 2, true)}</span>
                 </div>
                 <div class="comp-cell-chart">
                   <fut-compact-rt v-if="tf.key==='rt'" :code="row.code" :prev-close="num(row.prev_close)" :price="num(row.price)" :chg-pct="num(row.change_pct)" kind="futures" :show-bands="showBands"></fut-compact-rt>
@@ -342,19 +387,39 @@ function rtMapToSession(session, data){
   const prices = new Array(session.length).fill(null);
   const avgs = new Array(session.length).fill(null);
   const vols = new Array(session.length).fill(null);
+  const atr5s = new Array(session.length).fill(null);
+  const devAtrs = new Array(session.length).fill(null);
+  const devZs = new Array(session.length).fill(null);
   (data || []).forEach(function(d){
     const i = idxOf[d.time];
     if(i === undefined) return;
     prices[i] = Number(d.price);
     avgs[i] = Number(d.avg_price);
     vols[i] = Number(d.vol);
+    if(d.atr5 != null) atr5s[i] = Number(d.atr5);
+    if(d.dev_atr != null) devAtrs[i] = Number(d.dev_atr);
+    if(d.dev_z != null) devZs[i] = Number(d.dev_z);
   });
-  return { prices: prices, avgs: avgs, vols: vols };
+  return { prices: prices, avgs: avgs, vols: vols, atr5s: atr5s, devAtrs: devAtrs, devZs: devZs };
 }
-function buildRtOption(data, prevClose, kind, avgVolPerMin, delta, showBands){
+function buildRtOption(data, prevClose, kind, avgVolPerMin, delta, showBands, vwapParams){
   const session = rtSessionAxis();
   const mapped = rtMapToSession(session, data);
   const prices = mapped.prices, avgs = mapped.avgs, vols = mapped.vols;
+  const atr5s = mapped.atr5s, devAtrs = mapped.devAtrs, devZs = mapped.devZs;
+  let lastAtr5 = null, lastDevAtr = null, lastDevZ = null;
+  for(let i = devZs.length - 1; i >= 0; i--){
+    if(atr5s[i] != null && lastAtr5 == null) lastAtr5 = atr5s[i];
+    if(devAtrs[i] != null && lastDevAtr == null) lastDevAtr = devAtrs[i];
+    if(devZs[i] != null && lastDevZ == null) lastDevZ = devZs[i];
+    if(lastAtr5 != null && lastDevAtr != null && lastDevZ != null) break;
+  }
+  // ---- dev_z 轴范围与阈值：与 VWAP 图对齐（k_long/k_short + 数据极值 + 留边）----
+  const kLong = Number(vwapParams && vwapParams.k_long) || 1.0;
+  const kShort = Number(vwapParams && vwapParams.k_short) || -1.5;
+  let zmax = Math.max(Math.abs(kLong), Math.abs(kShort)) + 0.6;
+  devZs.forEach(function(z){ if(z != null && isFinite(z)){ const a = Math.abs(z); if(a > zmax) zmax = a; } });
+  zmax = zmax * 1.08;
   let last = 0;
   for(let i = prices.length - 1; i >= 0; i--){ if(prices[i] != null && isFinite(prices[i])){ last = prices[i]; break; } }
   // VWAP 偏离度：累计加权均价偏离 = (价 - VWAP) / VWAP * 100%
@@ -417,10 +482,11 @@ function buildRtOption(data, prevClose, kind, avgVolPerMin, delta, showBands){
   return {
     backgroundColor: '#fff',
     animation: false,
-    title: { show: avgVolPerMin > 0 || (lastDev != null && isFinite(lastDev)) || (isFinite(num(delta)) && num(delta) !== 0), text: '均量/分 ' + fmtAvgVol(num(avgVolPerMin)) + (isFinite(num(delta)) && num(delta) !== 0 ? '　Δ ' + fmtNum(num(delta), 2) : '') + (lastDev != null && isFinite(lastDev) ? '　VWAP偏离 ' + fmtPct(num(lastDev), 2, true) : ''), left: 4, top: 3, textStyle: { fontSize: 11, color: '#909399', fontWeight: 'normal' } },
+    title: { show: (lastDev != null && isFinite(lastDev)) || (lastDevZ != null && isFinite(lastDevZ)) || (isFinite(num(delta)) && num(delta) !== 0), text: (isFinite(num(delta)) && num(delta) !== 0 ? '　Δ ' + fmtNum(num(delta), 2) : '') + (lastDev != null && isFinite(lastDev) ? '　VWAP偏离 ' + fmtPct(num(lastDev), 2, true) : '') + (lastAtr5 != null && isFinite(lastAtr5) ? '　ATR5 ' + fmtNum(lastAtr5, 2) : '') + (lastDevAtr != null && isFinite(lastDevAtr) ? '　dev_atr ' + fmtNum(lastDevAtr, 3) : '') + (lastDevZ != null && isFinite(lastDevZ) ? '　dev_z ' + fmtNum(lastDevZ, 2) : ''), left: 4, top: 3, textStyle: { fontSize: 11, color: '#909399', fontWeight: 'normal' } },
     grid: [
-      { left: 46, right: 46, top: '7%', height: '66%' },
-      { left: 46, right: 46, top: '73%', height: '26%' }
+      { left: 46, right: 46, top: '7%', height: '46%' },
+      { left: 46, right: 46, top: '54%', height: '26%' },
+      { left: 46, right: 46, top: '82%', height: '14%' }
     ],
     tooltip: { trigger: 'axis', axisPointer: { type: 'line' }, formatter: function(params){
         if(!params || !params.length) return '';
@@ -432,19 +498,22 @@ function buildRtOption(data, prevClose, kind, avgVolPerMin, delta, showBands){
         let s = '<div style="font-size:11px;margin-bottom:2px;">' + (t || '') + '</div>';
         s += '价 ' + (p != null ? fmtNum(p, 2) : '--') + '　均 ' + (a != null ? fmtNum(a, 2) : '--') + '<br/>';
         s += 'VWAP偏离 ' + (vwapDev[idx] != null ? fmtPct(vwapDev[idx], 2, true) : '--') + '<br/>';
+        s += 'ATR5 ' + (atr5s[idx] != null ? fmtNum(atr5s[idx], 2) : '--') + '　dev_atr ' + (devAtrs[idx] != null ? fmtNum(devAtrs[idx], 3) : '--') + '　dev_z ' + (devZs[idx] != null ? fmtNum(devZs[idx], 2) : '--') + '<br/>';
         s += '量(累计) ' + (v != null ? fmtWan(v) : '--') + '　均量/分 ' + (avg != null ? fmtAvgVol(avg) : '--');
         return s;
       } },
     xAxis: [
       { type: 'category', data: session, boundaryGap: false, axisLabel: { show: false }, axisLine: { lineStyle: { color: '#dcdfe6' } } },
-      { type: 'category', gridIndex: 1, data: session, boundaryGap: false, axisLabel: { show: false } }
+      { type: 'category', gridIndex: 1, data: session, boundaryGap: false, axisLabel: { show: false } },
+      { type: 'category', gridIndex: 2, data: session, boundaryGap: false, axisLabel: { show: false } }
     ],
     yAxis: [
       { type: 'value', min: leftMin, max: leftMax, scale: true, splitLine: { lineStyle: { color: '#f2f2f2' } }, axisLabel: { color: '#909399', fontSize: 9 } },
       { gridIndex: 1, type: 'value', scale: true, splitLine: { show: false }, axisLabel: { show: false } },
       { gridIndex: 0, position: 'right', type: 'value', min: ampMin, max: ampMax, scale: true, splitLine: { show: false }, name: '幅度%', nameLocation: 'end', nameGap: 2, nameTextStyle: { fontSize: 9, color: '#909399' },
         axisLabel: { color: function(v){ return v > 0 ? '#e74c3c' : (v < 0 ? '#27ae60' : '#909399'); }, fontSize: 9, formatter: function(v){ return fmtPct(v, 2, true); } } },
-      { gridIndex: 0, type: 'value', min: vwapMin, max: vwapMax, scale: true, show: false, axisLabel: { show: false }, splitLine: { show: false }, axisPointer: { show: false } }
+      { gridIndex: 0, type: 'value', min: vwapMin, max: vwapMax, scale: true, show: false, axisLabel: { show: false }, splitLine: { show: false }, axisPointer: { show: false } },
+      { gridIndex: 2, type: 'value', min: -zmax, max: zmax, scale: true, splitLine: { lineStyle: { color: '#f2f2f2' } }, axisLabel: { color: '#909399', fontSize: 9 }, name: 'dev_z', nameLocation: 'end', nameGap: 2, nameTextStyle: { fontSize: 9, color: '#909399' } }
     ],
     series: [
       ...(showBands ? [
@@ -466,9 +535,222 @@ function buildRtOption(data, prevClose, kind, avgVolPerMin, delta, showBands){
         markLine: { silent: true, symbol: 'none', lineStyle: { color: '#c0c4cc', type: 'dashed', width: 1 },
           data: [{ yAxis: prevClose }], label: { formatter: hasPrev ? ('昨收 ' + fmtNum(prevClose, 2)) : '', fontSize: 9, color: '#909399' } } },
       { name: '均', type: 'line', data: avgs, showSymbol: false, smooth: false, connectNulls: true, z: 4, lineStyle: { width: 1, color: '#f5a623' } },
+      { name: 'dev_z', type: 'line', xAxisIndex: 2, yAxisIndex: 4, data: devZs, showSymbol: false, smooth: false, connectNulls: true, z: 3,
+        lineStyle: { width: 1, color: '#409EFF', opacity: 0.9 },
+        markLine: { silent: true, symbol: 'none', data: [
+          { yAxis: kLong, lineStyle: { color: '#e74c3c', type: 'dashed', width: 1 },
+            label: { show: true, position: 'insideEndTop', formatter: '做多 +' + fmtNum(kLong, 1), fontSize: 9, color: '#e74c3c' } },
+          { yAxis: kShort, lineStyle: { color: '#27ae60', type: 'dashed', width: 1 },
+            label: { show: true, position: 'insideEndBottom', formatter: '做空 −' + fmtNum(Math.abs(kShort), 1), fontSize: 9, color: '#27ae60' } },
+          { yAxis: 0, lineStyle: { color: '#c0c4cc', width: 1 }, label: { show: false } }
+        ] } },
       { name: 'VWAP偏离', type: 'bar', xAxisIndex: 0, yAxisIndex: 3, data: vwapDev, connectNulls: true, barWidth: '50%', z: 3,
         itemStyle: { color: function(p){ const v = p.data; return (v > 0) ? 'rgba(231,76,60,0.35)' : (v < 0 ? 'rgba(39,174,96,0.35)' : 'rgba(192,196,204,0.3)'); } } },
       { name: '量', type: 'bar', xAxisIndex: 1, yAxisIndex: 1, data: vols,
+        itemStyle: { color: function(p){ return volColors[p.dataIndex] || upColor; } } }
+    ]
+  };
+}
+
+// ======================= VWAP 偏离度策略模式（报告口径） =======================
+// 主图：价格 + VWAP + 开仓时段底纹 + 信号标注 + 止损/止盈线
+// 副图1：dev_z 曲线 + 做多/做空阈值线    副图2：成交量
+function buildVwapOption(payload, prevClose, kind){
+  const series = (payload && payload.series) || [];
+  const P = (payload && payload.params) || {};
+  const signals = (payload && payload.signals) || [];
+  const last = (payload && payload.last) || {};
+  const upColor = '#e74c3c', downColor = '#27ae60', vwapColor = '#f5a623';
+
+  const times = series.map(function(s){ return s.t; });
+  const prices = series.map(function(s){ return s.p; });
+  const vwaps = series.map(function(s){ return (s.vw == null ? null : s.vw); });
+  const devs = series.map(function(s){ return (s.d == null ? null : s.d); });
+  const zs = series.map(function(s){ return (s.z == null ? null : s.z); });
+  const vols = series.map(function(s){ return s.v; });
+
+  let lastP = 0;
+  for(let i = prices.length - 1; i >= 0; i--){ if(prices[i] != null && isFinite(prices[i])){ lastP = prices[i]; break; } }
+  let lastZ = null;
+  for(let i = zs.length - 1; i >= 0; i--){ if(zs[i] != null && isFinite(zs[i])){ lastZ = zs[i]; break; } }
+  const up = prevClose > 0 ? (lastP >= prevClose) : true;
+  const color = kind === 'stock' ? '#409EFF' : (up ? upColor : downColor);
+  const hasPrev = prevClose && isFinite(prevClose) && prevClose > 0;
+
+  // ---- Y 轴范围：以昨收为中心对称展开（与分时图一致）----
+  let ext = 0;
+  if(hasPrev){
+    let dmax = 0;
+    prices.forEach(function(p){ if(p != null && isFinite(p)){ const d = Math.abs(p - prevClose) / prevClose; if(d > dmax) dmax = d; } });
+    if(dmax < 0.005) dmax = 0.005;
+    ext = dmax * 1.10;
+  }
+  const leftMin = hasPrev ? prevClose * (1 - ext) : undefined;
+  const leftMax = hasPrev ? prevClose * (1 + ext) : undefined;
+  const ampMin = hasPrev ? -ext * 100 : undefined;
+  const ampMax = hasPrev ? ext * 100 : undefined;
+
+  // ---- dev_z 轴范围：覆盖全部阈值并留边 ----
+  let zmax = Math.max(Math.abs(Number(P.k_long) || 1.0), Math.abs(Number(P.k_short) || 1.5)) + 0.6;
+  zs.forEach(function(z){ if(z != null && isFinite(z)){ const a = Math.abs(z); if(a > zmax) zmax = a; } });
+  zmax = zmax * 1.08;
+
+  // ---- 开仓时段：下午第一根 ~ 14:55（报告：仅 13:00-14:55 允许开新仓）----
+  let sessFrom = null;
+  for(let i = 0; i < series.length; i++){ if(series[i].pos >= 120){ sessFrom = series[i].t; break; } }
+  const sessTo = '14:55';
+
+  // ---- 信号点 ----
+  const entryPts = [], exitPts = [];
+  const slLines = [];   // 止损/止盈水平线
+  const whyText = { stop: '止损', target: '止盈', time: '时间止损', eod: '尾盘强平', hold: '持有中' };
+  signals.forEach(function(s){
+    const isLong = s.side === 'long';
+    const c = isLong ? upColor : downColor;
+    if(s.price != null){
+      entryPts.push({
+        value: [s.t, s.price],
+        symbol: isLong ? 'triangle' : 'triangle',
+        symbolRotate: isLong ? 0 : 180,
+        symbolSize: 10,
+        itemStyle: { color: c, borderColor: '#fff', borderWidth: 1 },
+        label: { show: true, position: isLong ? 'bottom' : 'top', formatter: (isLong ? '多 ' : '空 ') + fmtNum(s.price, 1),
+                 fontSize: 9, color: c, fontWeight: '600' },
+        _sig: s,
+      });
+    }
+    if(s.exit_t && s.exit_price != null){
+      const win = (s.pnl_r != null && Number(s.pnl_r) > 0);
+      exitPts.push({
+        value: [s.exit_t, s.exit_price],
+        symbol: 'triangle', symbolRotate: 180, symbolSize: 10,
+        itemStyle: { color: '#e74c3c', borderColor: '#fff', borderWidth: 1 },
+        label: { show: true, position: 'bottom', formatter: '(' + (whyText[s.exit_why] || s.exit_why || '') + ' ' + fmtPct(num(s.pnl_r), 1, true) + 'R)',
+                 fontSize: 8.5, color: win ? upColor : downColor },
+        _sig: s,
+      });
+    }
+    if(s.stop != null){
+      slLines.push({ yAxis: s.stop, lineStyle: { color: c, type: 'dashed', width: 1, opacity: 0.5 },
+        label: { show: false } });
+    }
+    if(s.target != null){
+      slLines.push({ yAxis: s.target, lineStyle: { color: c, type: 'dotted', width: 1, opacity: 0.5 },
+        label: { show: false } });
+    }
+  });
+  // 当前持仓：止损/止盈线加粗并标注
+  if(last.state && last.state !== 'flat' && last.entry != null){
+    const c = last.state === 'long' ? upColor : downColor;
+    const live = [];
+    if(last.stop != null) live.push({ yAxis: last.stop, lineStyle: { color: c, type: 'dashed', width: 1.6 },
+      label: { show: true, position: 'insideEndTop', formatter: '现仓止损 ' + fmtNum(last.stop, 1), fontSize: 9, color: c, fontWeight: '600' } });
+    if(last.target != null) live.push({ yAxis: last.target, lineStyle: { color: c, type: 'dotted', width: 1.6 },
+      label: { show: true, position: 'insideEndBottom', formatter: '现仓止盈 ' + fmtNum(last.target, 1), fontSize: 9, color: c, fontWeight: '600' } });
+    slLines.unshift.apply(slLines, live);
+  }
+
+  // ---- 成交量配色：较前一根涨跌 ----
+  const volColors = prices.map(function(p, i){
+    const base = i === 0 ? prevClose : (prices[i - 1] != null ? prices[i - 1] : prevClose);
+    return (p >= base) ? upColor : downColor;
+  });
+
+  // ---- 标题：策略关键状态 ----
+  const stText = last.state === 'long' ? '持多' : (last.state === 'short' ? '持空' : '空仓');
+  const stColor = last.state === 'long' ? upColor : (last.state === 'short' ? downColor : '#909399');
+  const nWin = signals.filter(function(s){ return s.exit_why === 'target'; }).length;
+  const sumR = signals.reduce(function(a, s){ return a + (Number(s.pnl_r) || 0); }, 0);
+  const titleParts = [
+    (payload && payload.date) ? payload.date : '',
+    '基线 ' + (((payload && payload.baseline) || {}).days || '-') + '日',
+    'ATR5 ' + fmtNum(num(payload && payload.atr5), 2),
+    'dev_z ' + (lastZ == null ? '--' : fmtNum(lastZ, 2)),
+    '信号 ' + signals.length + '（止盈 ' + nWin + '）',
+    '合计 ' + fmtPct(sumR, 2, true) + 'R',
+  ];
+
+  return {
+    backgroundColor: '#fff',
+    animation: false,
+    title: { show: true, left: 4, top: 2,
+      text: titleParts.join('　') + '　',
+      subtext: stText,
+      subtextStyle: { fontSize: 11, color: stColor, fontWeight: '700' },
+      textStyle: { fontSize: 10.5, color: '#909399', fontWeight: 'normal' },
+      itemGap: 2,
+      subtextVerticalAlign: 'middle',
+    },
+    grid: [
+      { left: 46, right: 46, top: '11%', height: '50%' },
+      { left: 46, right: 46, top: '65%', height: '16%' },
+      { left: 46, right: 46, top: '83%', height: '14%' }
+    ],
+    tooltip: { trigger: 'axis', axisPointer: { type: 'line' }, formatter: function(params){
+        if(!params || !params.length) return '';
+        const idx = params[0].dataIndex;
+        const s = series[idx];
+        if(!s) return '';
+        let h = '<div style="font-size:11px;margin-bottom:2px;">' + (s.t || '') + '</div>';
+        h += '价 ' + fmtNum(s.p, 2) + '　VWAP ' + (s.vw == null ? '--' : fmtNum(s.vw, 2)) + '<br/>';
+        h += '偏离 ' + (s.d == null ? '--' : fmtNum(s.d, 2)) + ' 点';
+        h += '　<b style="color:' + ((s.z == null || s.z >= 0) ? upColor : downColor) + '">dev_z ' + (s.z == null ? '--' : fmtNum(s.z, 3)) + '</b><br/>';
+        h += 'ATR5 ' + (s.a == null ? '--' : fmtNum(s.a, 2)) + '　量 ' + fmtWan(s.v);
+        for(let k = 0; k < signals.length; k++){
+          const g = signals[k];
+          if(g.t === s.t){
+            h += '<div style="margin-top:3px;padding-top:3px;border-top:1px solid #eee;color:' + (g.side === 'long' ? upColor : downColor) + '">'
+               + '开' + (g.side === 'long' ? '多' : '空') + ' ' + fmtNum(g.price, 2)
+               + '　损 ' + fmtNum(g.stop, 2) + '　盈 ' + fmtNum(g.target, 2) + '</div>';
+          }
+          if(g.exit_t === s.t){
+            h += '<div style="margin-top:3px;padding-top:3px;border-top:1px solid #eee;">'
+               + '平仓 ' + fmtNum(g.exit_price, 2) + '（' + (whyText[g.exit_why] || g.exit_why || '') + '）'
+               + '　<b style="color:' + ((g.pnl_r > 0) ? upColor : downColor) + '">' + fmtPct(num(g.pnl_r), 2, true) + 'R</b></div>';
+          }
+        }
+        return h;
+      } },
+    xAxis: [
+      { type: 'category', data: times, boundaryGap: false, axisLabel: { show: false }, axisLine: { lineStyle: { color: '#dcdfe6' } } },
+      { type: 'category', gridIndex: 1, data: times, boundaryGap: false, axisLabel: { show: false } },
+      { type: 'category', gridIndex: 2, data: times, boundaryGap: false, axisLabel: { show: false } }
+    ],
+    yAxis: [
+      { type: 'value', min: leftMin, max: leftMax, scale: true, splitLine: { lineStyle: { color: '#f2f2f2' } }, axisLabel: { color: '#909399', fontSize: 9 } },
+      { gridIndex: 0, position: 'right', type: 'value', min: ampMin, max: ampMax, scale: true, splitLine: { show: false }, name: '幅度%', nameLocation: 'end', nameGap: 2, nameTextStyle: { fontSize: 9, color: '#909399' },
+        axisLabel: { color: function(v){ return v > 0 ? upColor : (v < 0 ? downColor : '#909399'); }, fontSize: 9, formatter: function(v){ return fmtPct(v, 2, true); } } },
+      { gridIndex: 1, type: 'value', min: -zmax, max: zmax, splitLine: { lineStyle: { color: '#f2f2f2' } }, axisLabel: { color: '#909399', fontSize: 9 },
+        name: 'dev_z', nameLocation: 'end', nameGap: 2, nameTextStyle: { fontSize: 9, color: '#909399' } },
+      { gridIndex: 2, type: 'value', scale: true, splitLine: { show: false }, axisLabel: { show: false } }
+    ],
+    series: [
+      { name: '价', type: 'line', data: prices, showSymbol: false, smooth: false, connectNulls: true, z: 6,
+        lineStyle: { width: 1.2, color: color },
+        areaStyle: { color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+          { offset: 0, color: up ? 'rgba(231,76,60,0.22)' : 'rgba(39,174,96,0.22)' },
+          { offset: 1, color: 'rgba(255,255,255,0)' } ]) },
+        markLine: { silent: true, symbol: 'none', lineStyle: { color: '#c0c4cc', type: 'dashed', width: 1 },
+          data: [{ yAxis: prevClose }], label: { formatter: hasPrev ? ('昨收 ' + fmtNum(prevClose, 2)) : '', fontSize: 9, color: '#909399' } },
+        markArea: (sessFrom ? { silent: true, itemStyle: { color: 'rgba(245,166,35,0.07)' },
+          label: { show: true, position: 'insideTop', formatter: '开仓时段', fontSize: 9, color: '#c8901f' },
+          data: [[{ xAxis: sessFrom }, { xAxis: sessTo }]] } : undefined) },
+      { name: 'VWAP', type: 'line', data: vwaps, showSymbol: false, smooth: false, connectNulls: true, z: 5,
+        lineStyle: { width: 1.3, color: vwapColor } },
+      { name: '开仓', type: 'scatter', data: entryPts, z: 12, zlevel: 1,
+        markLine: { silent: true, symbol: 'none', data: slLines } },
+      { name: '平仓', type: 'scatter', data: exitPts, z: 11, zlevel: 1 },
+      { name: 'dev_z', type: 'line', xAxisIndex: 1, yAxisIndex: 2, data: zs, showSymbol: false, connectNulls: true,
+        lineStyle: { width: 1.1, color: '#409EFF' }, z: 4,
+        markLine: { silent: true, symbol: 'none',
+          data: [
+            { yAxis: Number(P.k_long) || 1.0, lineStyle: { color: upColor, type: 'dashed', width: 1 },
+              label: { show: true, position: 'insideEndTop', formatter: '做多 +' + fmtNum(num(P.k_long), 1), fontSize: 9, color: upColor } },
+            { yAxis: Number(P.k_short) || -1.5, lineStyle: { color: downColor, type: 'dashed', width: 1 },
+              label: { show: true, position: 'insideEndBottom', formatter: '做空 −' + fmtNum(Math.abs(num(P.k_short)), 1), fontSize: 9, color: downColor } },
+            { yAxis: 0, lineStyle: { color: '#c0c4cc', width: 1 }, label: { show: false } }
+          ] } },
+      { name: '量', type: 'bar', xAxisIndex: 2, yAxisIndex: 3, data: vols,
         itemStyle: { color: function(p){ return volColors[p.dataIndex] || upColor; } } }
     ]
   };
@@ -654,7 +936,7 @@ Vue.component('fut-compact-rt', {
       kind: { type: String, default: 'futures' },
       showBands: { type: Boolean, default: true },
     },
-  data(){ return { src: '', _rt: [], avgVolPerMin: 0, _chart: null, _timer: null, _visible: false, _io: null, _ro: null }; },
+  data(){ return { src: '', _rt: [], avgVolPerMin: 0, vwapParams: null, _chart: null, _timer: null, _visible: false, _io: null, _ro: null }; },
   watch: {
     showBands(){ this._redraw(); }
   },
@@ -708,6 +990,7 @@ Vue.component('fut-compact-rt', {
         this.src = (js && js.src) || (js && js.ok ? 'ok' : '');
         if(!data.length){ if(this._chart){ try{ this._chart.clear(); }catch(_){} } return; }
         this._rt = data;
+        this.vwapParams = (js && js.vwap_params) || null;
         let total = 0;
         data.forEach(function(d){ const v = Number(d.vol); if(isFinite(v)) total += v; });
         let mins = 0;
@@ -721,14 +1004,14 @@ Vue.component('fut-compact-rt', {
           try{ this._chart.resize(); }catch(e){}
         }
         const pc = this._calcPrevClose();
-        this._chart.setOption(buildRtOption(this._rt, pc, this.kind, this.avgVolPerMin, 0, this.showBands), true);
+        this._chart.setOption(buildRtOption(this._rt, pc, this.kind, this.avgVolPerMin, 0, this.showBands, this.vwapParams), true);
         this._chart.resize();
       }catch(e){ this.src = 'err'; }
     },
     _redraw(){
       if(!this._chart || !this._rt || !this._rt.length) return;
       const pc = this._calcPrevClose();
-      this._chart.setOption(buildRtOption(this._rt, pc, this.kind, this.avgVolPerMin, 0, this.showBands), true);
+      this._chart.setOption(buildRtOption(this._rt, pc, this.kind, this.avgVolPerMin, 0, this.showBands, this.vwapParams), true);
       this._chart.resize();
     },
     async copyCode(){
@@ -866,6 +1149,7 @@ Vue.component('fut-kline', {
 });
 
 Vue.component('fut-board-rt', {
+  delimiters: ['${', '}'],
   props: {
       code: { type: String, default: '' },
       prevClose: { type: Number, default: 0 },
@@ -875,9 +1159,16 @@ Vue.component('fut-board-rt', {
       showBook: { type: Boolean, default: true },
       showTicks: { type: Boolean, default: true },
       showBands: { type: Boolean, default: true },
+      // 'rt' = 普通分时；'vwap' = VWAP 偏离度策略视图
+      mode: { type: String, default: 'rt' },
+      kLong: { type: Number, default: 1.0 },
+      kShort: { type: Number, default: -1.5 },
+      rr: { type: Number, default: 1.5 },
+      days: { type: Number, default: 30 },
     },
-  data(){ return { src: '', quote: {}, ticks: [], avgVolPerMin: 0, _timer: null, _rt: null, _visible: false, _io: null }; },
+  data(){ return { src: '', quote: {}, ticks: [], avgVolPerMin: 0, vwapParams: null, _timer: null, _rt: null, _visible: false, _io: null, _vw: null, _vwTs: 0, vwErr: '' }; },
   computed: {
+    isVwap(){ return this.mode === 'vwap'; },
     asksRev(){
       const a = (this.quote && this.quote.asks) || [];
       return a.slice().reverse();
@@ -893,7 +1184,12 @@ Vue.component('fut-board-rt', {
     showBook(){ this._resizeChart(); },
     showTicks(){ this._resizeChart(); },
     showSide(){ this._resizeChart(); },
-    showBands(){ this._redraw(); }
+    showBands(){ this._redraw(); },
+    mode(){ this._resetChart(); },
+    kLong(){ this._resetChart(); },
+    kShort(){ this._resetChart(); },
+    rr(){ this._resetChart(); },
+    days(){ this._resetChart(); }
   },
   mounted(){
     this._setupIO();
@@ -943,7 +1239,15 @@ Vue.component('fut-board-rt', {
     _tickCls(t){ return t === 0 ? 'buy' : (t === 1 ? 'sell' : 'neutral'); },
     _refresh(){
       if(!this.code) return;
-      this._drawChart();
+      // VWAP 模式后端有 TTL 缓存且计算较重，图表侧按 10s 节流（盘口/逐笔仍实时）
+      if(this.isVwap){
+        const now = Date.now();
+        // Vue2 不代理 data 中 _ 前缀属性，_vwTs 初始取不到（undefined），这里兜底为 0 使首次必然放行
+        const vwTs = Number(this._vwTs) || 0;
+        if(now - vwTs >= 10000){ this._vwTs = now; this._drawChart(); }
+      } else {
+        this._drawChart();
+      }
       this._refreshLive();
     },
     _refreshLive(){
@@ -951,13 +1255,23 @@ Vue.component('fut-board-rt', {
       this._loadQuote();
       this._loadTicks();
     },
+    // 模式/参数切换：丢弃旧数据与旧实例，立即按新口径重拉
+    _resetChart(){
+      this._rt = null; this._vw = null; this._vwTs = 0;
+      if(this._chart){ try{ this._chart.clear(); }catch(e){} }
+      // dispose 后再 init，避免旧 grid/series 残留导致坐标轴错乱
+      if(this._chart){ try{ this._chart.dispose(); }catch(e){} this._chart = null; }
+      this.$nextTick(() => { this._drawChart(); });
+    },
     async _drawChart(){
+      if(this.isVwap) return this._drawVwapChart();
       try{
         const js = await reqJSON('/futures/exquote/minute/' + encodeURIComponent(this.code) + '?ttl=10&_=' + Date.now(), { cache: 'no-store' });
         const data = (js && js.data) || [];
         this.src = (js && js.src) || (js && js.ok ? 'ok' : '');
         if(!data.length){ if(this._chart){ try{ this._chart.clear(); }catch(_){} } return; }
         this._rt = data;
+        this.vwapParams = (js && js.vwap_params) || null;
         let avg = 0;
         let total = 0;
         data.forEach(function(d){ const v = Number(d.vol); if(isFinite(v)) total += v; });
@@ -989,10 +1303,82 @@ Vue.component('fut-board-rt', {
       return pc;
     },
     _redraw(){
+      if(this.isVwap) return this._redrawVwap();
       if(!this._chart || !this._rt) return;
       const pc = this._calcPrevClose();
-      this._chart.setOption(buildRtOption(this._rt, pc, this.kind, this.avgVolPerMin, 0, this.showBands), true);
+      this._chart.setOption(buildRtOption(this._rt, pc, this.kind, this.avgVolPerMin, 0, this.showBands, this.vwapParams), true);
       this._chart.resize();
+    },
+    // ===== VWAP 偏离度策略视图 =====
+    async _drawVwapChart(){
+      try{
+        const q = '?days=' + encodeURIComponent(this.days)
+                + '&k_long=' + encodeURIComponent(this.kLong)
+                + '&k_short=' + encodeURIComponent(this.kShort)
+                + '&rr=' + encodeURIComponent(this.rr)
+                + '&_=' + Date.now();
+        const js = await reqJSON('/futures/vwap/' + encodeURIComponent(this.code) + q, { cache: 'no-store' });
+        if(!js || !js.ok || !js.series || !js.series.length){
+          this.vwErr = (js && js.error) ? ('后端:' + js.error) : '后端返回空数据';
+          this.src = (js && js.error) ? 'err' : '';
+          this._vw = null;
+          if(this._chart){ try{ this._chart.clear(); }catch(_){} }
+          return;
+        }
+        this.src = 'ok';
+        this.vwErr = '';
+        this._vw = js;
+        // 包在 nextTick 里，确保 ref 与布局就绪（避免 init 时容器尺寸为 0 的竞态）
+        this.$nextTick(() => { this._initAndDrawVwap(); });
+        this._emitVwap(js);
+      }catch(e){
+        this.vwErr = '请求/解析失败: ' + (e && e.message ? e.message : String(e));
+        this.src = 'err';
+        if(window.console) console.error('[fut-board-rt vwap]', e);
+      }
+    },
+    _initAndDrawVwap(){
+      if(!this._vw) return;
+      if(!this._chart){
+        const el = this.$refs.chart;
+        if(!el){ this.vwErr = '图表容器未就绪'; return; }
+        try{ this._chart = echarts.init(el); }
+        catch(e){ this.vwErr = 'echarts.init 失败: ' + (e && e.message ? e.message : String(e)); return; }
+        try{ this._chart.resize(); }catch(_){}
+      }
+      try{
+        this._redrawVwap();
+      }catch(e){
+        this.vwErr = '绘图失败: ' + (e && e.message ? e.message : String(e));
+        if(window.console) console.error('[fut-board-rt vwap redraw]', e);
+      }
+    },
+    _redrawVwap(){
+      if(!this._chart || !this._vw) return;
+      const pc = this._calcPrevClose();
+      this._chart.setOption(buildVwapOption(this._vw, pc, this.kind), true);
+      this._chart.resize();
+    },
+    // 向父组件上报策略状态（用于行头指标条）
+    _emitVwap(js){
+      const s = (js.series || []);
+      let devZ = null;
+      for(let i = s.length - 1; i >= 0; i--){ if(s[i].z != null){ devZ = s[i].z; break; } }
+      let sumR = 0, nWin = 0;
+      (js.signals || []).forEach(function(g){ sumR += (Number(g.pnl_r) || 0); if(g.exit_why === 'target') nWin++; });
+      this.$emit('vwap', {
+        code: this.code,
+        atr5: js.atr5,
+        dev_z: devZ,
+        state: (js.last && js.last.state) || 'flat',
+        entry: (js.last && js.last.entry) != null ? js.last.entry : null,
+        stop: (js.last && js.last.stop) != null ? js.last.stop : null,
+        target: (js.last && js.last.target) != null ? js.last.target : null,
+        pnl_r: Math.round(sumR * 1000) / 1000,
+        n_sig: (js.signals || []).length,
+        n_win: nWin,
+        date: js.date,
+      });
     },
     async _loadQuote(){
       try{
@@ -1051,6 +1437,11 @@ Vue.component('fut-board-rt', {
   template:
     '<div class="board-rt">' +
       '<div class="board-rt-chart" ref="chart" title="点击复制期指代码" @click="copyCode"></div>' +
+      '<div v-if="vwErr" class="vw-err-overlay">' +
+        '<div class="vw-err-icon">⚠️</div>' +
+        '<div class="vw-err-title">VWAP 图表加载失败</div>' +
+        '<div class="vw-err-detail">${vwErr}</div>' +
+      '</div>' +
       '<div class="board-rt-side" v-show="showSide">' +
         '<div class="board-rt-book" v-show="showBook">' +
           '<div class="book-head">五档买卖盘</div>' +
@@ -1083,7 +1474,7 @@ Vue.component('fut-board-rt', {
 
 new Vue({
   el: '#app',
-  delimiters: ['[#', '#]'],
+  delimiters: ['${', '}'],
   data() {
     return {
       loading: false,
@@ -1096,7 +1487,14 @@ new Vue({
       showBook: true,
       showTicks: true,
       showBands: true,
-      showKline: false,
+      // 分时看盘三态：rt=分时 / vwap=VWAP 偏离度策略 / kline=K线
+      rtMode: 'rt',
+      // VWAP 策略参数（默认取回测报告 §5 的默认参数）
+      vwapKLong: 1.0,
+      vwapKShort: -1.5,
+      vwapRR: 1.5,
+      vwapDays: 30,
+      vwapInfo: {},
       klinePeriod: 'day',
       activeTab: 'rt',
       indicator: 'mfi',
@@ -1112,7 +1510,38 @@ new Vue({
       ],
     };
   },
+  computed: {
+    // 兼容旧引用：K线模式等价于 rtMode === 'kline'
+    showKline() { return this.rtMode === 'kline'; },
+  },
+  watch: {
+    // 策略参数变更 -> 丢弃旧指标，等子组件按新口径重新上报
+    vwapKLong() { this.vwapInfo = {}; },
+    vwapKShort() { this.vwapInfo = {}; },
+    vwapRR() { this.vwapInfo = {}; },
+    vwapDays() { this.vwapInfo = {}; },
+  },
   methods: {
+    // ---- VWAP 模式：子组件上报的策略状态 ----
+    onVwap(e) {
+      if (!e || !e.code) return;
+      // 用新对象替换，确保 Vue 2 能侦测到变化
+      this.vwapInfo = Object.assign({}, this.vwapInfo, { [e.code]: e });
+    },
+    vw(code) { return this.vwapInfo && this.vwapInfo[code] ? this.vwapInfo[code] : null; },
+    vwZcls(z) {
+      const n = Number(z);
+      if (!isFinite(n)) return '';
+      // dev_z 越高（价格越高于 VWAP）越偏多 -> 红；越低 -> 绿
+      return n >= 1.0 ? 'pdi' : (n <= -1.5 ? 'mdi' : 'adx');
+    },
+    vwStateCls(s) { return s === 'long' ? 'pdi' : (s === 'short' ? 'mdi' : 'adx'); },
+    vwStateText(s) { return s === 'long' ? '多' : (s === 'short' ? '空' : '空仓'); },
+    vwPnlCls(r) {
+      const n = Number(r);
+      if (!isFinite(n) || n === 0) return 'adx';
+      return n > 0 ? 'pdi' : 'mdi';
+    },
     fetchSnapshot(force) {
       if (force) { this.loading = true; this.statusMsg = ''; }
       return fetch('/futures/snapshot', {cache:'no-store'})
