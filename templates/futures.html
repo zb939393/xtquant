@@ -1231,7 +1231,7 @@ Vue.component('fut-board-rt', {
   },
   methods: {
     _setupIO(){
-      const start = () => { if(!this._timer){ this._timer = setInterval(() => this._refresh(), 3000); this._refresh(); } };
+      const start = () => { if(!this._timer){ this._timer = setInterval(() => this._refresh(), 15000); this._refresh(); } };
       const stop = () => { if(this._timer){ clearInterval(this._timer); this._timer = null; } };
       if(typeof IntersectionObserver === 'undefined'){ start(); return; }
       this._io = new IntersectionObserver((entries) => {
@@ -1259,12 +1259,12 @@ Vue.component('fut-board-rt', {
     _tickCls(t){ return t === 0 ? 'buy' : (t === 1 ? 'sell' : 'neutral'); },
     _refresh(){
       if(!this.code) return;
-      // VWAP 模式后端有 TTL 缓存且计算较重，图表侧按 10s 节流（盘口/逐笔仍实时）
+      // VWAP 模式后端有 TTL 缓存且计算较重，图表侧按 15s 节流（与分时模式对齐，盘口/逐笔仍实时）
       if(this.isVwap){
         const now = Date.now();
         // Vue2 不代理 data 中 _ 前缀属性，_vwTs 初始取不到（undefined），这里兜底为 0 使首次必然放行
         const vwTs = Number(this._vwTs) || 0;
-        if(now - vwTs >= 10000){ this._vwTs = now; this._drawChart(); }
+        if(now - vwTs >= 15000){ this._vwTs = now; this._drawChart(); }
       } else {
         this._drawChart();
       }
