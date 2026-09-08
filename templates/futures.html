@@ -139,7 +139,7 @@
         <div class="board-toolbar">
           <span class="board-title">📈 期指看盘</span>
           <span class="muted" v-if="rtMode==='rt'">分时图（实时）· 五档盘口 · 逐笔成交（数据来自扩展行情 pytdx · 中金所 CFFEX）</span>
-          <span class="muted" v-else-if="rtMode==='vwap'">VWAP 偏离度策略 · 报告口径：dev_z≥+${fmtNum(vwapKLong,1)} 做多 / ≤−${fmtNum(Math.abs(vwapKShort),1)} 做空 · 仅 13:00–14:55 开仓 · 1.5ATR 止损 / ${fmtNum(vwapRR,1)}R 止盈 · 14:55 强平</span>
+          <span class="muted" v-else-if="rtMode==='vwap'">VWAP 偏离度策略 · 报告口径：dev_z≥+${fmtNum(getVwapParams(vwapActiveCode).k_long,1)} 做多 / ≤−${fmtNum(Math.abs(getVwapParams(vwapActiveCode).k_short),1)} 做空 · 仅 13:00–14:55 开仓 · 1.5ATR 止损 / ${fmtNum(getVwapParams(vwapActiveCode).rr,1)}R 止盈 · 14:55 强平</span>
           <span class="muted" v-else>K线（${periodLabel(klinePeriod)}）· 蜡烛图 + BOLL · 成交量 · ${indicator === 'mfi' ? 'MFI' : (indicator === 'adx' ? 'ADX' : 'ATR')} 指标</span>
           <span class="board-toolbar-right">
             <el-radio-group v-model="rtMode" size="mini">
@@ -148,25 +148,30 @@
               <el-radio-button label="kline">K线</el-radio-button>
             </el-radio-group>
             <template v-if="rtMode==='vwap'">
-              <el-select v-model="vwapKLong" size="mini" style="width:88px;margin-left:10px;" placeholder="做多阈值">
-                <el-option label="多 z≥0.5" :value="0.5"></el-option>
-                <el-option label="多 z≥1.0" :value="1.0"></el-option>
-                <el-option label="多 z≥1.5" :value="1.5"></el-option>
-                <el-option label="多 z≥2.0" :value="2.0"></el-option>
+              <el-select v-model="vwapActiveCode" size="mini" style="width:110px;margin-left:10px;" placeholder="选择品种" @change="onVwapActiveCodeChange">
+                <el-option v-for="r in rows" :key="r.code" :label="r.code" :value="r.code"></el-option>
               </el-select>
-              <el-select v-model="vwapKShort" size="mini" style="width:88px;margin-left:6px;" placeholder="做空阈值">
-                <el-option label="空 z≤−1.0" :value="-1.0"></el-option>
-                <el-option label="空 z≤−1.5" :value="-1.5"></el-option>
-                <el-option label="空 z≤−2.0" :value="-2.0"></el-option>
-                <el-option label="空 z≤−2.5" :value="-2.5"></el-option>
-              </el-select>
-              <el-select v-model="vwapRR" size="mini" style="width:80px;margin-left:6px;" placeholder="盈亏比">
-                <el-option label="1.0R" :value="1.0"></el-option>
-                <el-option label="1.5R" :value="1.5"></el-option>
-                <el-option label="2.0R" :value="2.0"></el-option>
-                <el-option label="3.0R" :value="3.0"></el-option>
-              </el-select>
-              <span class="muted" style="margin-left:6px;">基线 ${vwapDays} 日</span>
+              <template v-if="vwapActiveCode">
+                <el-select v-model="vwapParams[vwapActiveCode].k_long" size="mini" style="width:88px;margin-left:10px;" placeholder="做多阈值">
+                  <el-option label="多 z≥0.5" :value="0.5"></el-option>
+                  <el-option label="多 z≥1.0" :value="1.0"></el-option>
+                  <el-option label="多 z≥1.5" :value="1.5"></el-option>
+                  <el-option label="多 z≥2.0" :value="2.0"></el-option>
+                </el-select>
+                <el-select v-model="vwapParams[vwapActiveCode].k_short" size="mini" style="width:88px;margin-left:6px;" placeholder="做空阈值">
+                  <el-option label="空 z≤−1.0" :value="-1.0"></el-option>
+                  <el-option label="空 z≤−1.5" :value="-1.5"></el-option>
+                  <el-option label="空 z≤−2.0" :value="-2.0"></el-option>
+                  <el-option label="空 z≤−2.5" :value="-2.5"></el-option>
+                </el-select>
+                <el-select v-model="vwapParams[vwapActiveCode].rr" size="mini" style="width:80px;margin-left:6px;" placeholder="盈亏比">
+                  <el-option label="1.0R" :value="1.0"></el-option>
+                  <el-option label="1.5R" :value="1.5"></el-option>
+                  <el-option label="2.0R" :value="2.0"></el-option>
+                  <el-option label="3.0R" :value="3.0"></el-option>
+                </el-select>
+                <span class="muted" style="margin-left:6px;">基线 ${(vwapParams[vwapActiveCode] && vwapParams[vwapActiveCode].days) || 30} 日</span>
+              </template>
             </template>
             <template v-if="rtMode==='kline'">
               <el-select v-model="klinePeriod" size="mini" style="width:96px;margin-left:10px;" placeholder="周期">
@@ -227,7 +232,7 @@
               </div>
               <div class="board-panel board-panel-chart">
                 <fut-board-rt v-if="rtMode==='rt'" :key="'rt-'+row.code" :code="row.code" :prev-close="num(row.prev_close)" :price="num(row.price)" :chg-pct="num(row.change_pct)" kind="futures" :show-book="showBook" :show-ticks="showTicks" :show-bands="showBands"></fut-board-rt>
-                <fut-board-rt v-else-if="rtMode==='vwap'" :key="'vwap-'+row.code" mode="vwap" :code="row.code" :prev-close="num(row.prev_close)" :price="num(row.price)" :chg-pct="num(row.change_pct)" kind="futures" :show-book="showBook" :show-ticks="showTicks" :k-long="vwapKLong" :k-short="vwapKShort" :rr="vwapRR" :days="vwapDays" @vwap="onVwap"></fut-board-rt>
+                <fut-board-rt v-else-if="rtMode==='vwap'" :key="'vwap-'+row.code" mode="vwap" :code="row.code" :prev-close="num(row.prev_close)" :price="num(row.price)" :chg-pct="num(row.change_pct)" kind="futures" :show-book="showBook" :show-ticks="showTicks" :params="getVwapParams(row.code)" @vwap="onVwap" @params-change="onParamsChange"></fut-board-rt>
                 <div v-else class="board-kline-cell">
                   <fut-kline :code="row.code" :period="klinePeriod" :count="klineCount" :indicator="indicator" kind="futures" @indicators="onIndicators"></fut-kline>
                 </div>
@@ -1206,10 +1211,25 @@ Vue.component('fut-board-rt', {
     showSide(){ this._resizeChart(); },
     showBands(){ this._redraw(); },
     mode(){ this._resetChart(); },
-    kLong(){ this._resetChart(); },
-    kShort(){ this._resetChart(); },
-    rr(){ this._resetChart(); },
-    days(){ this._resetChart(); }
+    _effKLong(){ this._resetChart(); },
+    _effKShort(){ this._resetChart(); },
+    _effRR(){ this._resetChart(); },
+    _effDays(){ this._resetChart(); },
+    // 监听 per-symbol params 变化，向父组件上报（供父组件存 localStorage）
+    _pParams: {
+      handler(v, ov){
+        if(!v || !this.isVwap) return;
+        // 跳过首次挂载时的 silent 初始化
+        if(this._pSilent && this._pSilent === true && this._lastPEmitted !== v) {
+          this._lastPEmitted = v;
+          this.$nextTick(() => { this._pSilent = false; });
+          return;
+        }
+        this._pSilent = false;
+        this.$emit('params-change', { code: this.code, k_long: v.k_long, k_short: v.k_short, rr: v.rr, days: v.days });
+      },
+      deep: true,
+    },
   },
   mounted(){
     this._setupIO();
@@ -1332,10 +1352,10 @@ Vue.component('fut-board-rt', {
     // ===== VWAP 偏离度策略视图 =====
     async _drawVwapChart(){
       try{
-        const q = '?days=' + encodeURIComponent(this.days)
-                + '&k_long=' + encodeURIComponent(this.kLong)
-                + '&k_short=' + encodeURIComponent(this.kShort)
-                + '&rr=' + encodeURIComponent(this.rr)
+        const q = '?days=' + encodeURIComponent(this._effDays)
+                + '&k_long=' + encodeURIComponent(this._effKLong)
+                + '&k_short=' + encodeURIComponent(this._effKShort)
+                + '&rr=' + encodeURIComponent(this._effRR)
                 + '&_=' + Date.now();
         const js = await reqJSON('/futures/vwap/' + encodeURIComponent(this.code) + q, { cache: 'no-store' });
         if(!js || !js.ok || !js.series || !js.series.length){
@@ -1509,11 +1529,9 @@ new Vue({
       showBands: true,
       // 分时看盘三态：rt=分时 / vwap=VWAP 偏离度策略 / kline=K线
       rtMode: 'rt',
-      // VWAP 策略参数（默认取回测报告 §5 的默认参数）
-      vwapKLong: 1.0,
-      vwapKShort: -1.5,
-      vwapRR: 1.5,
-      vwapDays: 30,
+      // VWAP 策略参数：各品种独立存储，key 为 code
+      vwapParams: {},
+      vwapActiveCode: '',
       vwapInfo: {},
       klinePeriod: 'day',
       activeTab: 'rt',
@@ -1535,13 +1553,28 @@ new Vue({
     showKline() { return this.rtMode === 'kline'; },
   },
   watch: {
-    // 策略参数变更 -> 丢弃旧指标，等子组件按新口径重新上报
-    vwapKLong() { this.vwapInfo = {}; },
-    vwapKShort() { this.vwapInfo = {}; },
-    vwapRR() { this.vwapInfo = {}; },
-    vwapDays() { this.vwapInfo = {}; },
+    // 策略参数变更（任意品种）-> 丢弃旧指标，等子组件按新口径重新上报
+    vwapParams: { handler() { this.vwapInfo = {}; }, deep: true },
   },
   methods: {
+    _saveVwapParams() {
+      try { localStorage.setItem('fut_vwap_params', JSON.stringify(this.vwapParams || {})); } catch(e) {}
+    },
+    _loadVwapParams() {
+      try {
+        const raw = localStorage.getItem('fut_vwap_params');
+        if (raw) { const p = JSON.parse(raw); if (p && typeof p === 'object') this.vwapParams = p; }
+      } catch(e) {}
+    },
+    onVwapActiveCodeChange() { this.vwapInfo = {}; },
+    onParamsChange(e) {
+      if (!e || !e.code) return;
+      const cp = Object.assign({}, (this.vwapParams && this.vwapParams[e.code]) || { k_long: 1.0, k_short: -1.5, rr: 1.5, days: 30 });
+      Object.assign(cp, e);
+      this.$set(this.vwapParams || (this.vwapParams = {}), e.code, cp);
+      this._saveVwapParams();
+      this.vwapInfo = {};
+    },
     // ---- VWAP 模式：子组件上报的策略状态 ----
     onVwap(e) {
       if (!e || !e.code) return;
@@ -1549,6 +1582,11 @@ new Vue({
       this.vwapInfo = Object.assign({}, this.vwapInfo, { [e.code]: e });
     },
     vw(code) { return this.vwapInfo && this.vwapInfo[code] ? this.vwapInfo[code] : null; },
+    getVwapParams(code) {
+      const p = this.vwapParams && this.vwapParams[code];
+      if (!p) return { k_long: 1.0, k_short: -1.5, rr: 1.5, days: 30 };
+      return { k_long: p.k_long || 1.0, k_short: p.k_short || -1.5, rr: p.rr || 1.5, days: p.days || 30 };
+    },
     vwZcls(z) {
       const n = Number(z);
       if (!isFinite(n)) return '';
@@ -1649,6 +1687,7 @@ new Vue({
     },
   },
   mounted() {
+    this._loadVwapParams();
     this.fetchSnapshot(true).then(() => this.applyRefreshInterval());
   },
   beforeDestroy() { if (this.timer) clearInterval(this.timer); },
