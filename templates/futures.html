@@ -1264,7 +1264,7 @@ Vue.component('fut-board-rt', {
         const now = Date.now();
         // Vue2 不代理 data 中 _ 前缀属性，_vwTs 初始取不到（undefined），这里兜底为 0 使首次必然放行
         const vwTs = Number(this._vwTs) || 0;
-        if(now - vwTs >= 15000){ this._vwTs = now; this._drawChart(); }
+        if(now - vwTs >= 3000){ this._vwTs = now; this._drawChart(); }
       } else {
         this._drawChart();
       }

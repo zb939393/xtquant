@@ -698,7 +698,7 @@ Vue.component('fut-kline', {
   methods: {
     _onZoom(){ this._redraw(); },
     _setupIO(){
-      const start = () => { if(!this._timer){ this._timer = setInterval(() => this._draw(), 15000); this._draw(); } };
+      const start = () => { if(!this._timer){ this._timer = setInterval(() => this._draw(), 3000); this._draw(); } };
       const stop = () => { if(this._timer){ clearInterval(this._timer); this._timer = null; } };
       if(typeof IntersectionObserver === 'undefined'){ start(); return; }
       this._io = new IntersectionObserver((entries) => {

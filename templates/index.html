@@ -677,7 +677,7 @@ Vue.component('board-kline', {
       // 仅进入视口的行才绘制/轮询 K线：看盘页 300+ 行若全部同时轮询，单线程 Tornado 后端会被
       // 大量阻塞型 pytdx 请求打满，导致切换周/月/分钟 K 时请求超时（src=err）。可见性门控把并发
       // 请求收敛到可见行数（个位数），配合后端 120s 缓存即可稳定切换周期。
-      const start = () => { if(!this._timer){ this._timer = setInterval(() => this._draw(), 10000); this._draw(); } };
+      const start = () => { if(!this._timer){ this._timer = setInterval(() => this._draw(), 3000); this._draw(); } };
       const stop = () => { if(this._timer){ clearInterval(this._timer); this._timer = null; } };
       if(typeof IntersectionObserver === 'undefined'){ start(); return; }
       this._io = new IntersectionObserver((entries) => {
