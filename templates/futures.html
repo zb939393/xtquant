@@ -139,7 +139,7 @@
         <div class="board-toolbar">
           <span class="board-title">📈 期指看盘</span>
           <span class="muted" v-if="rtMode==='rt'">分时图（实时）· 五档盘口 · 逐笔成交（数据来自扩展行情 pytdx · 中金所 CFFEX）</span>
-          <span class="muted" v-else-if="rtMode==='vwap'">VWAP 偏离度策略 · 报告口径：dev_z≥+${fmtNum(getVwapParams(vwapActiveCode).k_long,1)} 做多 / ≤−${fmtNum(Math.abs(getVwapParams(vwapActiveCode).k_short),1)} 做空 · 仅 13:00–14:55 开仓 · 1.5ATR 止损 / ${fmtNum(getVwapParams(vwapActiveCode).rr,1)}R 止盈 · 14:55 强平</span>
+          <span class="muted" v-else-if="rtMode==='vwap'">VWAP 偏离度策略 · 报告口径：dev_z≥+${fmtNum(getVwapParams(vwapActiveCode).k_long,2)} 做多 / ≤−${fmtNum(Math.abs(getVwapParams(vwapActiveCode).k_short),2)} 做空 · 仅 13:00–14:55 开仓 · 1.5ATR 止损 / ${fmtNum(getVwapParams(vwapActiveCode).rr,1)}R 止盈 · 14:55 强平</span>
           <span class="muted" v-else>K线（${periodLabel(klinePeriod)}）· 蜡烛图 + BOLL · 成交量 · ${indicator === 'mfi' ? 'MFI' : (indicator === 'adx' ? 'ADX' : 'ATR')} 指标</span>
           <span class="board-toolbar-right">
             <el-radio-group v-model="rtMode" size="mini">
@@ -152,25 +152,21 @@
                 <el-option v-for="r in rows" :key="r.code" :label="r.code" :value="r.code"></el-option>
               </el-select>
               <template v-if="vwapActiveCode">
-                <el-select v-model="vwapParams[vwapActiveCode].k_long" size="mini" style="width:88px;margin-left:10px;" placeholder="做多阈值">
-                  <el-option label="多 z≥0.5" :value="0.5"></el-option>
-                  <el-option label="多 z≥1.0" :value="1.0"></el-option>
-                  <el-option label="多 z≥1.5" :value="1.5"></el-option>
-                  <el-option label="多 z≥2.0" :value="2.0"></el-option>
-                </el-select>
-                <el-select v-model="vwapParams[vwapActiveCode].k_short" size="mini" style="width:88px;margin-left:6px;" placeholder="做空阈值">
-                  <el-option label="空 z≤−1.0" :value="-1.0"></el-option>
-                  <el-option label="空 z≤−1.5" :value="-1.5"></el-option>
-                  <el-option label="空 z≤−2.0" :value="-2.0"></el-option>
-                  <el-option label="空 z≤−2.5" :value="-2.5"></el-option>
-                </el-select>
-                <el-select v-model="vwapParams[vwapActiveCode].rr" size="mini" style="width:80px;margin-left:6px;" placeholder="盈亏比">
+                <span class="muted" style="margin-left:10px;">多 z≥</span>
+                <el-input-number :value="getVwapParams(vwapActiveCode).k_long" size="mini" style="width:116px;margin-left:4px;"
+                  :precision="2" :step="0.05" step-strictly :min="0.05" :max="5"
+                  @change="setVwapParam('k_long', $event)"></el-input-number>
+                <span class="muted" style="margin-left:8px;">空 z≤</span>
+                <el-input-number :value="getVwapParams(vwapActiveCode).k_short" size="mini" style="width:116px;margin-left:4px;"
+                  :precision="2" :step="0.05" step-strictly :min="-5" :max="-0.05"
+                  @change="setVwapParam('k_short', $event)"></el-input-number>
+                <el-select :value="getVwapParams(vwapActiveCode).rr" size="mini" style="width:80px;margin-left:6px;" placeholder="盈亏比" @change="setVwapParam('rr', $event)">
                   <el-option label="1.0R" :value="1.0"></el-option>
                   <el-option label="1.5R" :value="1.5"></el-option>
                   <el-option label="2.0R" :value="2.0"></el-option>
                   <el-option label="3.0R" :value="3.0"></el-option>
                 </el-select>
-                <span class="muted" style="margin-left:6px;">基线 ${(vwapParams[vwapActiveCode] && vwapParams[vwapActiveCode].days) || 30} 日</span>
+                <span class="muted" style="margin-left:6px;">基线 ${getVwapParams(vwapActiveCode).days || 30} 日</span>
               </template>
             </template>
             <template v-if="rtMode==='kline'">
@@ -231,7 +227,7 @@
                 <span class="board-chg-pct" :class="updownCls(row.change_pct)">${fmtPct(row.change_pct, 2, true)}</span>
               </div>
               <div class="board-panel board-panel-chart">
-                <fut-board-rt v-if="rtMode==='rt'" :key="'rt-'+row.code" :code="row.code" :prev-close="num(row.prev_close)" :price="num(row.price)" :chg-pct="num(row.change_pct)" kind="futures" :show-book="showBook" :show-ticks="showTicks" :show-bands="showBands"></fut-board-rt>
+                <fut-board-rt v-if="rtMode==='rt'" :key="'rt-'+row.code" :code="row.code" :prev-close="num(row.prev_close)" :price="num(row.price)" :chg-pct="num(row.change_pct)" kind="futures" :show-book="showBook" :show-ticks="showTicks" :show-bands="showBands" :params="getVwapParams(row.code)"></fut-board-rt>
                 <fut-board-rt v-else-if="rtMode==='vwap'" :key="'vwap-'+row.code" mode="vwap" :code="row.code" :prev-close="num(row.prev_close)" :price="num(row.price)" :chg-pct="num(row.change_pct)" kind="futures" :show-book="showBook" :show-ticks="showTicks" :params="getVwapParams(row.code)" @vwap="onVwap" @params-change="onParamsChange"></fut-board-rt>
                 <div v-else class="board-kline-cell">
                   <fut-kline :code="row.code" :period="klinePeriod" :count="klineCount" :indicator="indicator" kind="futures" @indicators="onIndicators"></fut-kline>
@@ -420,8 +416,10 @@ function buildRtOption(data, prevClose, kind, avgVolPerMin, delta, showBands, vw
     if(lastAtr5 != null && lastDevAtr != null && lastDevZ != null) break;
   }
   // ---- dev_z 轴范围与阈值：与 VWAP 图对齐（k_long/k_short + 数据极值 + 留边）----
-  const kLong = Number(vwapParams && vwapParams.k_long) || 1.0;
-  const kShort = Number(vwapParams && vwapParams.k_short) || -1.5;
+  // 用 isFinite 判空，避免阈值取 0（合法值）被 || 吞成默认值
+  const nv = function(v, d){ const n = Number(v); return isFinite(n) ? n : d; };
+  const kLong = nv(vwapParams && vwapParams.k_long, 1.0);
+  const kShort = nv(vwapParams && vwapParams.k_short, -1.5);
   let zmax = Math.max(Math.abs(kLong), Math.abs(kShort)) + 0.6;
   devZs.forEach(function(z){ if(z != null && isFinite(z)){ const a = Math.abs(z); if(a > zmax) zmax = a; } });
   zmax = zmax * 1.08;
@@ -545,9 +543,9 @@ function buildRtOption(data, prevClose, kind, avgVolPerMin, delta, showBands, vw
         lineStyle: { width: 1, color: '#409EFF', opacity: 0.9 },
         markLine: { silent: true, symbol: 'none', data: [
           { yAxis: kLong, lineStyle: { color: '#e74c3c', type: 'dashed', width: 1 },
-            label: { show: true, position: 'insideEndTop', formatter: '做多 +' + fmtNum(kLong, 1), fontSize: 9, color: '#e74c3c' } },
+            label: { show: true, position: 'insideEndTop', formatter: '做多 +' + fmtNum(kLong, 2), fontSize: 9, color: '#e74c3c' } },
           { yAxis: kShort, lineStyle: { color: '#27ae60', type: 'dashed', width: 1 },
-            label: { show: true, position: 'insideEndBottom', formatter: '做空 −' + fmtNum(Math.abs(kShort), 1), fontSize: 9, color: '#27ae60' } },
+            label: { show: true, position: 'insideEndBottom', formatter: '做空 −' + fmtNum(Math.abs(kShort), 2), fontSize: 9, color: '#27ae60' } },
           { yAxis: 0, lineStyle: { color: '#c0c4cc', width: 1 }, label: { show: false } }
         ] } },
       { name: 'VWAP偏离', type: 'bar', xAxisIndex: 0, yAxisIndex: 3, data: vwapDev, connectNulls: true, barWidth: '50%', z: 3,
@@ -768,10 +766,10 @@ function buildVwapOption(payload, prevClose, kind){
         lineStyle: { width: 1.1, color: '#409EFF' }, z: 4,
         markLine: { silent: true, symbol: 'none',
           data: [
-            { yAxis: Number(P.k_long) || 1.0, lineStyle: { color: upColor, type: 'dashed', width: 1 },
-              label: { show: true, position: 'insideEndTop', formatter: '做多 +' + fmtNum(num(P.k_long), 1), fontSize: 9, color: upColor } },
-            { yAxis: Number(P.k_short) || -1.5, lineStyle: { color: downColor, type: 'dashed', width: 1 },
-              label: { show: true, position: 'insideEndBottom', formatter: '做空 −' + fmtNum(Math.abs(num(P.k_short)), 1), fontSize: 9, color: downColor } },
+      { yAxis: Number(P.k_long) || 1.0, lineStyle: { color: upColor, type: 'dashed', width: 1 },
+        label: { show: true, position: 'insideEndTop', formatter: '做多 +' + fmtNum(num(P.k_long), 2), fontSize: 9, color: upColor } },
+      { yAxis: Number(P.k_short) || -1.5, lineStyle: { color: downColor, type: 'dashed', width: 1 },
+        label: { show: true, position: 'insideEndBottom', formatter: '做空 −' + fmtNum(Math.abs(num(P.k_short)), 2), fontSize: 9, color: downColor } },
             { yAxis: 0, lineStyle: { color: '#c0c4cc', width: 1 }, label: { show: false } }
           ] } },
       { name: '量', type: 'bar', xAxisIndex: 2, yAxisIndex: 3, data: vols,
@@ -1186,15 +1184,44 @@ Vue.component('fut-board-rt', {
       showBands: { type: Boolean, default: true },
       // 'rt' = 普通分时；'vwap' = VWAP 偏离度策略视图
       mode: { type: String, default: 'rt' },
+      // 逐品种策略参数对象 {k_long, k_short, rr, days}（父组件按品种下发，优先于下面的标量 prop）
+      params: { type: Object, default: null },
       kLong: { type: Number, default: 1.0 },
       kShort: { type: Number, default: -1.5 },
       rr: { type: Number, default: 1.5 },
       days: { type: Number, default: 30 },
-      params: { type: Object, default: null },
     },
   data(){ return { src: '', quote: {}, ticks: [], avgVolPerMin: 0, vwapParams: null, _timer: null, _rt: null, _visible: false, _io: null, _vw: null, _vwTs: 0, vwErr: '' }; },
   computed: {
     isVwap(){ return this.mode === 'vwap'; },
+    // 生效策略参数：优先取父组件下发的 params 对象，回退到标量 prop，再回退到默认值。
+    // 缺了这一层时 _effKLong/_effKShort 为 undefined，请求里会带 k_long=undefined，
+    // 后端解析失败后回落到默认 1.0 / -1.5，界面上改「多 z / 空 z」就看不到任何变化。
+    _pParams(){
+      const p = this.params || {};
+      const num = function(v, d){ const n = Number(v); return isFinite(n) ? n : d; };
+      return {
+        k_long:  num(p.k_long  != null ? p.k_long  : this.kLong,  1.0),
+        k_short: num(p.k_short != null ? p.k_short : this.kShort, -1.5),
+        rr:      num(p.rr      != null ? p.rr      : this.rr,     1.5),
+        days:    Math.round(num(p.days != null ? p.days : this.days, 30)),
+      };
+    },
+    _effKLong(){ return this._pParams.k_long; },
+    _effKShort(){ return this._pParams.k_short; },
+    _effRR(){ return this._pParams.rr; },
+    _effDays(){ return this._pParams.days; },
+    // 分时图 dev_z 副图的做多/做空阈值线：与 VWAP 模式共用同一份参数
+    // （优先父组件下发的 params，回退后端响应里的 vwap_params，再回退默认）。
+    _rtThresholds(){
+      const num = function(v, d){ const n = Number(v); return isFinite(n) ? n : d; };
+      const p = this._pParams || {};
+      const old = this.vwapParams || {};
+      return {
+        k_long:  num(p.k_long  != null ? p.k_long  : old.k_long,  1.0),
+        k_short: num(p.k_short != null ? p.k_short : old.k_short, -1.5),
+      };
+    },
     asksRev(){
       const a = (this.quote && this.quote.asks) || [];
       return a.slice().reverse();
@@ -1204,12 +1231,7 @@ Vue.component('fut-board-rt', {
     },
     showSide(){
       return (this.showBook || this.showTicks) && this.quote && this.quote.bids && this.quote.bids.length;
-    },
-    _effKLong(){ return (this.params && this.params.k_long != null) ? this.params.k_long : this.kLong; },
-    _effKShort(){ return (this.params && this.params.k_short != null) ? this.params.k_short : this.kShort; },
-    _effRR(){ return (this.params && this.params.rr != null) ? this.params.rr : this.rr; },
-    _effDays(){ return (this.params && this.params.days != null) ? this.params.days : this.days; },
-    _pParams(){ return this.params || { k_long: this.kLong, k_short: this.kShort, rr: this.rr, days: this.days }; },
+    }
   },
   watch: {
     showBook(){ this._resizeChart(); },
@@ -1225,16 +1247,30 @@ Vue.component('fut-board-rt', {
     _pParams: {
       handler(v, ov){
         if(!v || !this.isVwap) return;
+        // 只在「数值真的变了」时回写父组件。父组件每次渲染都会 new 一个 params 对象，
+        // 若按引用比较会形成 父重渲染 -> 子 watch -> 回写 -> 父重渲染 的死循环。
+        const prev = this._lastPEmitted;
+        if(prev && prev.k_long === v.k_long && prev.k_short === v.k_short
+                && prev.rr === v.rr && prev.days === v.days){
+          return;
+        }
         // 跳过首次挂载时的 silent 初始化
-        if(this._pSilent && this._pSilent === true){
+        if(this._pSilent === true){
+          this._lastPEmitted = { k_long: v.k_long, k_short: v.k_short, rr: v.rr, days: v.days };
           this.$nextTick(() => { this._pSilent = false; });
           return;
         }
         this._pSilent = false;
+        this._lastPEmitted = { k_long: v.k_long, k_short: v.k_short, rr: v.rr, days: v.days };
         this.$emit('params-change', { code: this.code, k_long: v.k_long, k_short: v.k_short, rr: v.rr, days: v.days });
       },
       deep: true,
     },
+  },
+  created(){
+    // 首次挂载时 _pParams 的初始值不必回写父组件（避免无谓的清空指标 + 落盘）
+    this._pSilent = true;
+    this._lastPEmitted = null;
   },
   mounted(){
     this._setupIO();
@@ -1351,7 +1387,7 @@ Vue.component('fut-board-rt', {
       if(this.isVwap) return this._redrawVwap();
       if(!this._chart || !this._rt) return;
       const pc = this._calcPrevClose();
-      this._chart.setOption(buildRtOption(this._rt, pc, this.kind, this.avgVolPerMin, 0, this.showBands, this.vwapParams), true);
+      this._chart.setOption(buildRtOption(this._rt, pc, this.kind, this.avgVolPerMin, 0, this.showBands, this._rtThresholds), true);
       this._chart.resize();
     },
     // ===== VWAP 偏离度策略视图 =====
@@ -1561,10 +1597,50 @@ new Vue({
   watch: {
     // 策略参数变更（任意品种）-> 丢弃旧指标，等子组件按新口径重新上报
     vwapParams: { handler() { this.vwapInfo = {}; }, deep: true },
+    // 切到 VWAP 模式时补齐各品种参数条目（数据可能刚加载完）
+    rtMode(v) { if (v === 'vwap') this.ensureVwapParams(); },
   },
   methods: {
     _saveVwapParams() {
       try { localStorage.setItem('fut_vwap_params', JSON.stringify(this.vwapParams || {})); } catch(e) {}
+    },
+    // 同步到服务端：独立弹窗 / 综合窗口的 iframe 未必与主页面共享 localStorage，
+    // 参数落到 data/vwap_params.json 后，任何窗口从后端取到的都是同一套阈值。
+    _pushVwapParams(code) {
+      if (!code) return;
+      try {
+        fetch('/futures/vwap/params', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(Object.assign({ code: code }, this.getVwapParams(code))),
+        }).catch(function(){});
+      } catch(e) {}
+    },
+    // 启动时把服务端已存的参数拉回来：服务端是跨窗口的唯一权威，
+    // 本地 localStorage 只作离线兜底（pywebview 独立窗口与主页面并不共享它）。
+    // 若改成「本地优先」，本地总有 ensureVwapParams 写下的默认值，服务端值将永远同步不回来。
+    _syncVwapParamsFromServer() {
+      return fetch('/futures/vwap/params', { cache: 'no-store' })
+        .then(function(r){ return r.json(); })
+        .then((resp) => {
+          if (!resp || !resp.ok) return;
+          const d = resp.data || {};
+          if (!this.vwapParams) this.vwapParams = {};
+          Object.keys(d).forEach((code) => {
+            const s = d[code] || {};
+            const num = function(v, def){ const n = Number(v); return isFinite(n) ? n : def; };
+            this.$set(this.vwapParams, code, {
+              k_long: num(s.k_long, 1.0), k_short: num(s.k_short, -1.5),
+              rr: num(s.rr, 1.5), days: num(s.days, 30),
+            });
+          });
+        })
+        .catch(function(){});
+    },
+    // 把全部品种的当前参数推到服务端，保证服务端那份是完整的（弹窗只从服务端取）
+    _pushAllVwapParams() {
+      const codes = Object.keys(this.vwapParams || {});
+      for (let i = 0; i < codes.length; i++) this._pushVwapParams(codes[i]);
     },
     _loadVwapParams() {
       try {
@@ -1573,12 +1649,48 @@ new Vue({
       } catch(e) {}
     },
     onVwapActiveCodeChange() { this.vwapInfo = {}; },
+    // 按品种补齐默认参数条目：缺失 key 时模板读 vwapParams[code].k_long 会抛
+    // "Cannot read properties of undefined"，导致 Vue 渲染中断、下拉点了没反应。
+    ensureVwapParams(codes) {
+      const list = codes || (this.rows || []).map(function(r){ return r.code; });
+      if (!list || !list.length) return;
+      if (!this.vwapParams) this.vwapParams = {};
+      let added = false;
+      for (let i = 0; i < list.length; i++) {
+        const c = list[i];
+        if (!c || this.vwapParams[c]) continue;
+        this.$set(this.vwapParams, c, { k_long: 1.0, k_short: -1.5, rr: 1.5, days: 30 });
+        added = true;
+      }
+      if (added) this._saveVwapParams();
+      // 默认选中第一个品种，避免用户进来时参数面板不展开
+      if (!this.vwapActiveCode || list.indexOf(this.vwapActiveCode) < 0) {
+        this.vwapActiveCode = list[0];
+      }
+    },
+    // 参数下拉：不用 v-model 直接写 vwapParams[code].xxx（key 可能不存在 -> 崩溃）
+    setVwapParam(key, val) {
+      const code = this.vwapActiveCode;
+      if (!code || !key) return;
+      const cp = Object.assign({ k_long: 1.0, k_short: -1.5, rr: 1.5, days: 30 }, this.vwapParams[code] || {});
+      cp[key] = val;
+      this.$set(this.vwapParams, code, cp);
+      this._saveVwapParams();
+      this._pushVwapParams(code);
+    },
     onParamsChange(e) {
       if (!e || !e.code) return;
-      const cp = Object.assign({}, (this.vwapParams && this.vwapParams[e.code]) || { k_long: 1.0, k_short: -1.5, rr: 1.5, days: 30 });
-      Object.assign(cp, e);
+      const old = this.vwapParams && this.vwapParams[e.code];
+      const kLong = e.k_long != null ? e.k_long : 1.0;
+      const kShort = e.k_short != null ? e.k_short : -1.5;
+      const rr = e.rr != null ? e.rr : 1.5;
+      const days = e.days != null ? e.days : 30;
+      // 数值未变则不写回：避免与子组件的 params 回写形成渲染死循环
+      if (old && old.k_long === kLong && old.k_short === kShort && old.rr === rr && old.days === days) return;
+      const cp = { k_long: kLong, k_short: kShort, rr: rr, days: days };
       this.$set(this.vwapParams || (this.vwapParams = {}), e.code, cp);
       this._saveVwapParams();
+      this._pushVwapParams(e.code);
       this.vwapInfo = {};
     },
     // ---- VWAP 模式：子组件上报的策略状态 ----
@@ -1591,7 +1703,9 @@ new Vue({
     getVwapParams(code) {
       const p = this.vwapParams && this.vwapParams[code];
       if (!p) return { k_long: 1.0, k_short: -1.5, rr: 1.5, days: 30 };
-      return { k_long: p.k_long || 1.0, k_short: p.k_short || -1.5, rr: p.rr || 1.5, days: p.days || 30 };
+      // 用 isFinite 而非 ||，避免阈值取 0 这类合法值被吞成默认值
+      const num = function(v, d){ const n = Number(v); return isFinite(n) ? n : d; };
+      return { k_long: num(p.k_long, 1.0), k_short: num(p.k_short, -1.5), rr: num(p.rr, 1.5), days: num(p.days, 30) };
     },
     vwZcls(z) {
       const n = Number(z);
@@ -1613,6 +1727,7 @@ new Vue({
         .then(resp => {
           if (!resp.ok) throw new Error(resp.error || 'backend error');
           this.rows = resp.data || [];
+          this.ensureVwapParams();
           this.firstLoaded = true;
           this.statusMsg = '';
           this.updatedAt = new Date().toLocaleTimeString('zh-CN', {hour12:false});
@@ -1694,7 +1809,16 @@ new Vue({
   },
   mounted() {
     this._loadVwapParams();
-    this.fetchSnapshot(true).then(() => this.applyRefreshInterval());
+    // 先拉服务端持久化的阈值（独立窗口可能在那里改过），再补品种、拉行情
+    this._syncVwapParamsFromServer().then(() => {
+      this.ensureVwapParams();
+      // 把完整参数集回推服务端：确保服务端那份始终齐全，独立窗口只从服务端取
+      this._pushAllVwapParams();
+      return this.fetchSnapshot(true);
+    }).then(() => {
+      this.ensureVwapParams();
+      this.applyRefreshInterval();
+    });
   },
   beforeDestroy() { if (this.timer) clearInterval(this.timer); },
 });

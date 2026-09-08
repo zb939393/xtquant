@@ -244,8 +244,10 @@ function buildRtOption(data, prevClose, kind, avgVolPerMin, delta, showBands, vw
     if(lastAtr5 != null && lastDevAtr != null && lastDevZ != null) break;
   }
   // ---- dev_z 轴范围与阈值：与综合看盘（futures.html）对齐 ----
-  const kLong = Number(vwapParams && vwapParams.k_long) || 1.0;
-  const kShort = Number(vwapParams && vwapParams.k_short) || -1.5;
+  // 用 isFinite 判空，避免阈值取 0（合法值）被 || 吞成默认值
+  const nv = function(v, d){ const n = Number(v); return isFinite(n) ? n : d; };
+  const kLong = nv(vwapParams && vwapParams.k_long, 1.0);
+  const kShort = nv(vwapParams && vwapParams.k_short, -1.5);
   let zmax = Math.max(Math.abs(kLong), Math.abs(kShort)) + 0.6;
   devZs.forEach(function(z){ if(z != null && isFinite(z)){ const a = Math.abs(z); if(a > zmax) zmax = a; } });
   zmax = zmax * 1.08;
@@ -370,9 +372,9 @@ function buildRtOption(data, prevClose, kind, avgVolPerMin, delta, showBands, vw
         lineStyle: { width: fz(1), color: '#409EFF', opacity: 0.9 },
         markLine: { silent: true, symbol: 'none', data: [
           { yAxis: kLong, lineStyle: { color: '#e74c3c', type: 'dashed', width: fz(1) },
-            label: { show: true, position: 'insideEndTop', formatter: '做多 +' + fmtNum(kLong, 1), fontSize: fz(9), color: '#e74c3c' } },
+            label: { show: true, position: 'insideEndTop', formatter: '做多 +' + fmtNum(kLong, 2), fontSize: fz(9), color: '#e74c3c' } },
           { yAxis: kShort, lineStyle: { color: '#27ae60', type: 'dashed', width: fz(1) },
-            label: { show: true, position: 'insideEndBottom', formatter: '做空 −' + fmtNum(Math.abs(kShort), 1), fontSize: fz(9), color: '#27ae60' } },
+            label: { show: true, position: 'insideEndBottom', formatter: '做空 −' + fmtNum(Math.abs(kShort), 2), fontSize: fz(9), color: '#27ae60' } },
           { yAxis: 0, lineStyle: { color: '#c0c4cc', width: fz(1) }, label: { show: false } }
         ] } },
       { name: '量', type: 'bar', xAxisIndex: 1, yAxisIndex: 1, data: vols,
@@ -553,6 +555,33 @@ function _calcADX(data, period){
 }
 
 // 综合看盘·分时（不带盘口）：仅拉取分时，复用 buildRtOption；prevClose 由快照传入，避免请求盘口
+// 服务端持久化的 VWAP 阈值（core/vwap_params_store.py -> data/vwap_params.json）。
+// 全窗口共享同一口径：独立窗口、综合窗口的 iframe 都从这里取。
+// 带 TTL 的轻量轮询（默认 15s）：看板改完阈值后，已打开的窗口也能自动跟上，
+// 不会像一次性缓存那样把新值永久挡住。
+let _SRV_VWAP_PARAMS = null;
+let _SRV_VWAP_TS = 0;
+let _SRV_VWAP_PROMISE = null;
+const _SRV_VWAP_TTL = 15000;
+function loadSrvVwapParams(force){
+  const now = Date.now();
+  if(!force && _SRV_VWAP_PARAMS && (now - _SRV_VWAP_TS) < _SRV_VWAP_TTL){
+    return Promise.resolve(_SRV_VWAP_PARAMS);
+  }
+  if(_SRV_VWAP_PROMISE) return _SRV_VWAP_PROMISE;
+  const done = function(v){ _SRV_VWAP_PROMISE = null; return v; };
+  _SRV_VWAP_PROMISE = fetch('/futures/vwap/params', { cache: 'no-store' })
+    .then(function(r){ return r.json(); })
+    .then(function(resp){
+      _SRV_VWAP_PARAMS = (resp && resp.ok && resp.data) || {};
+      _SRV_VWAP_TS = Date.now();
+      return _SRV_VWAP_PARAMS;
+    })
+    .catch(function(){ _SRV_VWAP_PARAMS = {}; _SRV_VWAP_TS = Date.now(); return _SRV_VWAP_PARAMS; })
+    .then(done, done);
+  return _SRV_VWAP_PROMISE;
+}
+
 Vue.component('fut-compact-rt', {
   props: {
       code: { type: String, default: '' },
@@ -562,12 +591,39 @@ Vue.component('fut-compact-rt', {
       kind: { type: String, default: 'futures' },
       showBands: { type: Boolean, default: true },
     },
-  data(){ return { src: '', _rt: [], avgVolPerMin: 0, vwapParams: null, _chart: null, _timer: null, _visible: false, _io: null, _ro: null }; },
+  data(){ return { src: '', _rt: [], avgVolPerMin: 0, vwapParams: null, srvParams: {}, _chart: null, _timer: null, _visible: false, _io: null, _ro: null }; },
+  computed: {
+    // dev_z 副图的做多/做空阈值：与期指看板（futures.html）的分时 / VWAP 保持同一口径。
+    // 优先级（从权威到兜底）：
+    //   1) 后端 /futures/exquote/minute 每次返回的 vwap_params —— 它由
+    //      _vwap_eff_params() 合并了服务端持久化的阈值，每 3s 刷新一次，是最新值；
+    //   2) 服务端 /futures/vwap/params 轮询值（TTL 15s，1) 缺失时兜底）；
+    //   3) 本窗口 localStorage（同源时可用，可能陈旧）；
+    //   4) 默认 1.0 / -1.5
+    _rtThresholds(){
+      const num = function(v, d){ const n = Number(v); return isFinite(n) ? n : d; };
+      let lp = null;
+      try {
+        const raw = localStorage.getItem('fut_vwap_params');
+        const o = raw ? JSON.parse(raw) : null;
+        if (o && this.code && o[this.code]) lp = o[this.code];
+      } catch(e) { lp = null; }
+      const sv = (this.srvParams && this.code) ? this.srvParams[this.code] : null;
+      const p = this.vwapParams || sv || lp || {};
+      return { k_long: num(p.k_long, 1.0), k_short: num(p.k_short, -1.5) };
+    }
+  },
   watch: {
     showBands(){ this._redraw(); }
   },
   mounted(){
     this._setupIO();
+    // 拉一次服务端持久化的 dev_z 阈值（看板调完会写回 data/vwap_params.json），
+    // 拿不到也不阻塞绘图——这样独立窗口与主页面口径一定一致。
+    loadSrvVwapParams().then((d) => {
+      this.srvParams = d || {};
+      if (this._rt && this._rt.length) this._redraw();
+    });
     window.addEventListener('__zoomchange', this._onZoom);
     if(typeof ResizeObserver !== 'undefined'){
       const el = this.$refs.chart;
@@ -633,14 +689,30 @@ Vue.component('fut-compact-rt', {
           try{ this._chart.resize(); }catch(e){}
         }
         const pc = this._calcPrevClose();
-        this._chart.setOption(buildRtOption(this._rt, pc, this.kind, this.avgVolPerMin, 0, this.showBands, this.vwapParams), true);
+        this._chart.setOption(buildRtOption(this._rt, pc, this.kind, this.avgVolPerMin, 0, this.showBands, this._rtThresholds), true);
         this._chart.resize();
+        // 顺带刷新服务端阈值（TTL 15s，命中缓存时几乎零开销）；
+        // 看板改了阈值而本窗口的 minute 响应暂缺 vwap_params 时，这里兜底。
+        this._syncSrvParams();
       }catch(e){ this.src = 'err'; }
+    },
+    _syncSrvParams(){
+      const self = this;
+      loadSrvVwapParams().then(function(d){
+        const next = d || {};
+        const cur = self.srvParams || {};
+        const a = (cur[self.code] || {}), b = (next[self.code] || {});
+        const same = (a.k_long === b.k_long) && (a.k_short === b.k_short) &&
+                     (a.rr === b.rr) && (a.days === b.days);
+        if(same) return;
+        self.srvParams = next;
+        self._redraw();
+      });
     },
     _redraw(){
       if(!this._chart || !this._rt || !this._rt.length) return;
       const pc = this._calcPrevClose();
-      this._chart.setOption(buildRtOption(this._rt, pc, this.kind, this.avgVolPerMin, 0, this.showBands, this.vwapParams), true);
+      this._chart.setOption(buildRtOption(this._rt, pc, this.kind, this.avgVolPerMin, 0, this.showBands, this._rtThresholds), true);
       this._chart.resize();
     },
     async copyCode(){

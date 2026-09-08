@@ -19,6 +19,10 @@ try:
     from core import vwap_service as vws
 except Exception:  # 计算模块不可用时看板 VWAP 模式优雅降级
     vws = None
+try:
+    from core import vwap_params_store as vstore
+except Exception:  # 参数存储不可用时退化为「仅用 URL 参数」
+    vstore = None
 
 from config import Config
 from .popup_helper import popup_launch
@@ -32,6 +36,40 @@ _EXQ_CACHE = {}
 
 def _exq_unavailable():
     return (fut is None) or (not getattr(fut, "_EXHQ_OK", False))
+
+
+# ---- VWAP 策略参数：URL 参数优先，缺失则回退服务端保存的 per-code 参数 ----
+# 这样独立弹窗 / iframe 即使不传参、也不与主页面共享 localStorage，仍能拿到同一套阈值。
+_VWAP_FIELDS = ("k_long", "k_short", "rr", "days")
+
+
+def _vwap_eff_params(code, args):
+    """合并 URL 参数与服务端持久化的参数，返回 dict（含 days，默认 30）。"""
+    saved = vstore.get(code) if vstore else {}
+    out = {}
+    for k in _VWAP_FIELDS:
+        v = args.get(k)
+        if v is not None and v != "":
+            try:
+                out[k] = float(v)
+                continue
+            except Exception:
+                pass
+        if k in saved:
+            out[k] = saved[k]
+    out.setdefault("days", 30.0)
+    try:
+        out["days"] = int(float(out["days"]))
+    except Exception:
+        out["days"] = 30
+    if out["days"] < 1:
+        out["days"] = 30
+    return out
+
+
+def _vwap_cache_key(prefix, code, p):
+    tail = "_".join("%s%s" % (k, p[k]) for k in _VWAP_FIELDS if k in p)
+    return "%s%s_%s" % (prefix, code, tail)
 
 
 @futures_bp.route("/exquote/minute/<path:code>")
@@ -56,12 +94,13 @@ def futures_exquote_minute(code):
         vwap_params = None
         if data and vws is not None:
             try:
-                vk = "fut_vwap_%s_30_" % code
+                p = _vwap_eff_params(code, request.args)
+                vk = _vwap_cache_key("fut_vwap_", code, p)
                 vc = _EXQ_CACHE.get(vk)
                 if vc and (time.time() - vc[1]) < 15:
                     vw = vc[0]
                 else:
-                    vw = vws.build_vwap_view(code, days=30)
+                    vw = vws.build_vwap_view(code, params=p, days=int(p["days"]))
                     _EXQ_CACHE[vk] = (vw, time.time())
                 if vw and vw.get("ok") and vw.get("series"):
                     vwap_params = vw.get("params")
@@ -168,13 +207,18 @@ def futures_vwap(code):
                     params[k] = float(v)
                 except Exception:
                     pass
+        # URL 未显式指定的，用服务端保存的 per-code 参数补齐（days 也走同一套）
+        p = _vwap_eff_params(code, request.args)
+        for k in ("k_long", "k_short", "rr"):
+            if k not in params and k in p:
+                params[k] = p[k]
         try:
-            days = int(float(request.args.get("days", "30")))
+            days = int(float(request.args.get("days", "") or p.get("days", 30)))
         except Exception:
             days = 30
         if days < 1:
             days = 30
-        key = "fut_vwap_%s_%s_%s" % (code, days, "_".join("%s%s" % kv for kv in sorted(params.items())))
+        key = _vwap_cache_key("fut_vwap_", code, dict(params, days=days))
         cached = _EXQ_CACHE.get(key)
         if cached and (time.time() - cached[1]) < ttl:
             body = cached[0]
@@ -189,6 +233,38 @@ def futures_vwap(code):
         return jsonify(data)
     except Exception as e:
         return jsonify({"ok": False, "data": None, "error": str(e)})
+
+
+@futures_bp.route("/vwap/params", methods=["GET", "POST"])
+def futures_vwap_params():
+    """VWAP 策略阈值的读写（服务端持久化，供各窗口共享同一口径）。
+
+    GET  ?code=IFL9   -> 该品种参数；不带 code 返回全部
+    POST json {code, k_long, k_short, rr, days} -> 保存并返回合并后的参数
+    """
+    try:
+        if vstore is None:
+            return jsonify({"ok": False, "error": "params store unavailable"})
+        if request.method == "GET":
+            code = (request.args.get("code") or "").strip()
+            if code:
+                return jsonify({"ok": True, "code": code, "data": vstore.get(code)})
+            return jsonify({"ok": True, "data": vstore.get_all()})
+        body = request.get_json(silent=True) or {}
+        code = str(body.get("code") or "").strip()
+        if not code:
+            return jsonify({"ok": False, "error": "缺少 code"}), 400
+        saved = vstore.set_params(code, body)
+        # 参数变了，立即作废该品种的所有 VWAP / minute 内存缓存，避免旧阈值继续命中
+        try:
+            for k in list(_EXQ_CACHE.keys()):
+                if isinstance(k, str) and code in k and (k.startswith("fut_vwap_") or k.startswith("fut_exq_minute_")):
+                    _EXQ_CACHE.pop(k, None)
+        except Exception:
+            pass
+        return jsonify({"ok": True, "code": code, "data": saved})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)})
 
 
 @futures_bp.route("/snapshot")
