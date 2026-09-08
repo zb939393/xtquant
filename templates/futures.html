@@ -1190,10 +1190,30 @@ Vue.component('fut-board-rt', {
       kShort: { type: Number, default: -1.5 },
       rr: { type: Number, default: 1.5 },
       days: { type: Number, default: 30 },
+      params: { type: Object, default: null },
     },
-  data(){ return { src: '', quote: {}, ticks: [], avgVolPerMin: 0, vwapParams: null, _timer: null, _rt: null, _visible: false, _io: null, _vw: null, _vwTs: 0, vwErr: '' }; },
+  data(){ return { src: '', quote: {}, ticks: [], avgVolPerMin: 0, vwapParams: null, _timer: null, _rt: null, _visible: false, _io: null, _vw: null, _vwTs: 0, vwErr: '', _pSilent: true, _lastPEmitted: null }; },
   computed: {
     isVwap(){ return this.mode === 'vwap'; },
+    _effKLong(){
+      const p = this.params;
+      return p && Number(p.k_long) > 0 ? Number(p.k_long) : (Number(this.kLong) || 1.0);
+    },
+    _effKShort(){
+      const p = this.params;
+      return p && Number(p.k_short) < 0 ? Number(p.k_short) : (Number(this.kShort) || -1.5);
+    },
+    _effRR(){
+      const p = this.params;
+      return p && Number(p.rr) > 0 ? Number(p.rr) : (Number(this.rr) || 1.5);
+    },
+    _effDays(){
+      const p = this.params;
+      return p && Number(p.days) > 0 ? Number(p.days) : (Number(this.days) || 30);
+    },
+    _pParams(){
+      return { k_long: this._effKLong, k_short: this._effKShort, rr: this._effRR, days: this._effDays };
+    },
     asksRev(){
       const a = (this.quote && this.quote.asks) || [];
       return a.slice().reverse();
@@ -1564,13 +1584,26 @@ new Vue({
     _loadVwapParams() {
       try {
         const raw = localStorage.getItem('fut_vwap_params');
-        if (raw) { const p = JSON.parse(raw); if (p && typeof p === 'object') this.vwapParams = p; }
+        if (raw) {
+          const p = JSON.parse(raw);
+          if (p && typeof p === 'object') Object.assign(this.vwapParams || (this.vwapParams = {}), p);
+        }
       } catch(e) {}
     },
-    onVwapActiveCodeChange() { this.vwapInfo = {}; },
+    onVwapActiveCodeChange() {
+      this.vwapInfo = {};
+      const code = this.vwapActiveCode;
+      if (!code) return;
+      if (!this.vwapParams) this.vwapParams = {};
+      if (!this.vwapParams[code]) {
+        this.$set(this.vwapParams, code, { k_long: 1.0, k_short: -1.5, rr: 1.5, days: 30 });
+        this._saveVwapParams();
+      }
+    },
     onParamsChange(e) {
       if (!e || !e.code) return;
-      const cp = Object.assign({}, (this.vwapParams && this.vwapParams[e.code]) || { k_long: 1.0, k_short: -1.5, rr: 1.5, days: 30 });
+      if (!this.vwapParams) this.vwapParams = {};
+      const cp = Object.assign({}, (this.vwapParams[e.code]) || { k_long: 1.0, k_short: -1.5, rr: 1.5, days: 30 });
       Object.assign(cp, e);
       this.$set(this.vwapParams || (this.vwapParams = {}), e.code, cp);
       this._saveVwapParams();
