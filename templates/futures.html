@@ -1231,7 +1231,7 @@ Vue.component('fut-board-rt', {
   },
   methods: {
     _setupIO(){
-      const start = () => { if(!this._timer){ this._timer = setInterval(() => this._refresh(), 15000); this._refresh(); } };
+      const start = () => { if(!this._timer){ this._timer = setInterval(() => this._refresh(), 3000); this._refresh(); } };
       const stop = () => { if(this._timer){ clearInterval(this._timer); this._timer = null; } };
       if(typeof IntersectionObserver === 'undefined'){ start(); return; }
       this._io = new IntersectionObserver((entries) => {
