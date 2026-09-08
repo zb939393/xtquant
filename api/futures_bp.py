@@ -164,8 +164,16 @@ def futures_vwap(code):
         for k in ("k_long", "k_short", "rr", "atr_mult", "atr_period", "time_stop"):
             v = request.args.get(k)
             if v is not None and v != "":
-                params[k] = v
-        days = request.args.get("days", "30")
+                try:
+                    params[k] = float(v)
+                except Exception:
+                    pass
+        try:
+            days = int(float(request.args.get("days", "30")))
+        except Exception:
+            days = 30
+        if days < 1:
+            days = 30
         key = "fut_vwap_%s_%s_%s" % (code, days, "_".join("%s%s" % kv for kv in sorted(params.items())))
         cached = _EXQ_CACHE.get(key)
         if cached and (time.time() - cached[1]) < ttl:
@@ -173,7 +181,7 @@ def futures_vwap(code):
             body["cached"] = True
             return jsonify(body)
         try:
-            data = vws.build_vwap_view(code, params=params or None, days=int(days))
+            data = vws.build_vwap_view(code, params=params or None, days=days)
         except Exception as e:
             return jsonify({"ok": False, "data": None, "error": "calc failed: %s" % e})
         data["cached"] = False

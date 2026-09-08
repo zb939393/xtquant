@@ -1352,6 +1352,7 @@ Vue.component('fut-board-rt', {
     // ===== VWAP 偏离度策略视图 =====
     async _drawVwapChart(){
       try{
+        if(!this.code) return;
         const q = '?days=' + encodeURIComponent(this._effDays)
                 + '&k_long=' + encodeURIComponent(this._effKLong)
                 + '&k_short=' + encodeURIComponent(this._effKShort)
