@@ -614,7 +614,7 @@ Vue.component('fut-compact-rt', {
     async _drawChart(){
       if(!this.code) return;
       try{
-        const js = await reqJSON('/futures/exquote/minute/' + encodeURIComponent(this.code) + '?ttl=10&_=' + Date.now(), { cache: 'no-store' });
+        const js = await reqJSON('/futures/exquote/minute/' + encodeURIComponent(this.code) + '?ttl=3&_=' + Date.now(), { cache: 'no-store' });
         const data = (js && js.data) || [];
         this.src = (js && js.src) || (js && js.ok ? 'ok' : '');
         if(!data.length){ if(this._chart){ try{ this._chart.clear(); }catch(_){} } return; }

@@ -43,7 +43,7 @@ def futures_exquote_minute(code):
     try:
         if _exq_unavailable():
             return jsonify({"ok": False, "src": "exhq", "data": [], "error": "exhq unavailable"})
-        ttl = int(request.args.get("ttl", "10"))
+        ttl = int(request.args.get("ttl", "3"))
         key = "fut_exq_minute_%s" % code
         cached = _EXQ_CACHE.get(key)
         if cached and (time.time() - cached[1]) < ttl:
@@ -157,7 +157,7 @@ def futures_vwap(code):
         if _exq_unavailable():
             return jsonify({"ok": False, "data": None, "error": "exhq unavailable"})
         try:
-            ttl = int(request.args.get("ttl", "15"))
+            ttl = int(request.args.get("ttl", "3"))
         except Exception:
             ttl = 15
         params = {}
