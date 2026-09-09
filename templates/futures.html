@@ -139,7 +139,7 @@
         <div class="board-toolbar">
           <span class="board-title">📈 期指看盘</span>
           <span class="muted" v-if="rtMode==='rt'">分时图（实时）· 五档盘口 · 逐笔成交（数据来自扩展行情 pytdx · 中金所 CFFEX）</span>
-          <span class="muted" v-else-if="rtMode==='vwap'">VWAP 偏离度策略 · 报告口径：dev_z≥+${fmtNum(getVwapParams(vwapActiveCode).k_long,2)} 做多 / ≤−${fmtNum(Math.abs(getVwapParams(vwapActiveCode).k_short),2)} 做空 · 仅 13:00–14:55 开仓 · 1.5ATR 止损 / ${fmtNum(getVwapParams(vwapActiveCode).rr,1)}R 止盈 · 14:55 强平</span>
+          <span class="muted" v-else-if="rtMode==='vwap'">VWAP 偏离度策略 · 突破口径：dev_z 向上突破 +${fmtNum(getVwapParams(vwapActiveCode).k_long,2)} 做多 / 向下跌破 −${fmtNum(Math.abs(getVwapParams(vwapActiveCode).k_short),2)} 做空 · 仅 13:00–14:55 开仓 · 1.5ATR 止损 / ${fmtNum(getVwapParams(vwapActiveCode).rr,1)}R 止盈 · 14:55 强平</span>
           <span class="muted" v-else>K线（${periodLabel(klinePeriod)}）· 蜡烛图 + BOLL · 成交量 · ${indicator === 'mfi' ? 'MFI' : (indicator === 'adx' ? 'ADX' : 'ATR')} 指标</span>
           <span class="board-toolbar-right">
             <el-radio-group v-model="rtMode" size="mini">
@@ -556,7 +556,7 @@ function buildRtOption(data, prevClose, kind, avgVolPerMin, delta, showBands, vw
   };
 }
 
-// ======================= VWAP 偏离度策略模式（报告口径） =======================
+// ======================= VWAP 偏离度策略模式（突破口径） =======================
 // 主图：价格 + VWAP + 开仓时段底纹 + 信号标注 + 止损/止盈线
 // 副图1：dev_z 曲线 + 做多/做空阈值线    副图2：成交量
 function buildVwapOption(payload, prevClose, kind){

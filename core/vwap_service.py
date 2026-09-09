@@ -6,7 +6,9 @@
     dev      = close - VWAP
     dev_atr  = dev / ATR(5min, 14, Wilder)          # 抹平波动率，跨品种可比
     dev_z    = (dev_atr - mu[pos]) / sd[pos]        # pos = 当日第几根 1 分钟（0..239）
-  做多触发   dev_z >= +1.0    做空触发 dev_z <= -1.5
+  做多触发   dev_z 向上突破 +k_long（上一根有效值在阈值下方、本根穿到上方）
+  做空触发   dev_z 向下跌破 k_short（上一根有效值在阈值上方、本根穿到下方）
+  （突破口径：仅在穿阈那一根触发，而非持续超阈期间每根都挂单）
   成交      信号在 t 根收盘确认 -> t+1 根开盘成交（无未来函数）
   交易时段  仅下午 13:00-14:55（上午 10-11 点几乎无预测力）
   止损      1.5 x ATR(5min)   止盈 1.5R   时间止损 60 根   14:55 强平
@@ -411,6 +413,7 @@ def _simulate_day(day_bars, feats, params):
     entry_i = -1
     pending = None       # 待下一根开盘成交的方向
     warmup = int(params.get("warmup", WARMUP_BARS))
+    last_z = None        # 上一根有效 dev_z（突破判定基准）
 
     def close(i, price, why):
         nonlocal state, entry, stop, target, entry_i
@@ -428,6 +431,9 @@ def _simulate_day(day_bars, feats, params):
 
     for i, f in enumerate(feats):
         t = _minute_of(f["t"])
+        z = f["dev_z"]
+        prev_z = last_z    # 突破判定的「前一根」基准（None = 尚无有效值）
+
         # 1) 上一根确认的信号，在本根开盘成交
         if pending is not None and state == 0:
             atr_now = f.get("atr") or 0.0
@@ -469,13 +475,18 @@ def _simulate_day(day_bars, feats, params):
                 close(i, f["close"], "eod")
 
         # 3) 本根收盘确认信号 -> 下一根开盘成交
+        #    触发口径：突破阈值。仅当上一根有效 dev_z 在阈值内侧、本根穿到外侧时触发，
+        #    而非每根都超过阈值即触发（避免持续超阈期间反复挂单）。
         if state == 0 and pending is None and i >= warmup and s_start <= t < s_end:
-            z = f["dev_z"]
-            if z is not None:
-                if z >= k_long:
+            if z is not None and prev_z is not None:
+                if prev_z < k_long <= z:           # 向上突破做多阈值
                     pending = 1
-                elif z <= k_short:
+                elif prev_z > k_short >= z:         # 向下突破做空阈值
                     pending = -1
+
+        # 更新 last_z（仅有效值参与突破判定）
+        if z is not None:
+            last_z = z
 
     last_state = {
         "state": "long" if state > 0 else ("short" if state < 0 else "flat"),
