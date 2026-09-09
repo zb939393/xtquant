@@ -228,11 +228,15 @@ def get_history_1min(code, days=30, force=False):
     bars = cache.get("bars") or []
     built_ts = cache.get("ts") or 0
 
-    # 1) 增量：每次只拉最新一页（覆盖当日新增），与缓存合并
-    if bars and (time.time() - built_ts) > 20:
+    pulled = False
+    # 1) 增量：每次只拉最新一页（覆盖当日新增），与缓存合并。
+    #    ts 只在真正拉到数据时才刷新——之前无条件刷新 ts 导致增量条件永不成立，
+    #    当日 1 分钟 bar 永远停留在首次构建缓存时的位置。
+    if bars and (time.time() - built_ts) > 3:
         head = _fetch_bars_page(code, 0, _PAGE)
         if head:
             bars = _merge_bars(bars, head)
+            pulled = True
 
     # 2) 不足则分页补历史（服务端每页上限 700 根）
     if len(bars) < need:
@@ -257,8 +261,10 @@ def get_history_1min(code, days=30, force=False):
             for p in pages:
                 merged = _merge_bars(merged, p)
             bars = merged
+            pulled = True
 
-    meta = {"ts": time.time(), "days": days, "n": len(bars)}
+    # 未拉到新数据时保留原 ts，下次调用仍会触发增量
+    meta = {"ts": time.time() if pulled else built_ts, "days": days, "n": len(bars)}
     if len(bars) >= min(need, _PAGE) or not cache:
         _save_cache(code, {"bars": bars, "ts": meta["ts"]})
     return bars, meta
