@@ -1,8 +1,12 @@
 # -*- coding: utf-8 -*-
 """期权扩展行情(ExHq)盘口 / 分时 / 逐笔服务。
 
-数据源（pip 包，已在环境中安装，无需拷贝源码）：
-  - tdx_exhq      ：封装 TdxExHq_API 连接与期权合约枚举（EXHQ_SERVERS 含国信7721 / 国元7721 / 通用7727）。
+数据源（统一扩展行情池，端口 7721）：
+  - core/tdx_ext_servers._TDX_EXT_SERVERS：与 futures_service 共用的同一份服务器池
+    （长城 4 台 + 国元 5 台 + 国信 3 台，均经 connect.cfg [DSHOST] + 真实盘口实测）。
+    经 tdx_exhq.connect_exhq(servers=...) 建连，保留其 heartbeat/auto_retry 语义。
+  - tdx_exhq：仅用于扩展行情连接封装与期权合约枚举（get_option_codes），
+    其内置 EXHQ_SERVERS 默认服务器列表**已被本池取代**。
 
 对外归一化为与「可转债看盘板」board-rt 完全一致的数据契约：
   - 分时  exquote_minute(code)  -> [{"time":"HH:MM","price":元,"avg_price":元,"vol":张}, ...]
@@ -30,11 +34,92 @@ except Exception:
     get_option_codes = None
     _EXHQ_OK = False
 
+# 统一扩展行情服务器池（与 futures_service 同源）：长城 + 国元 + 国信，端口 7721。
+# 取代 tdx_exhq 内置的 EXHQ_SERVERS 默认列表，使期权扩展行情也走这台已验证的池。
+try:
+    from core.tdx_ext_servers import (
+        _TDX_EXT_SERVERS,
+        _TDX_EXT_SERVERS_FOR_TDX_EXHQ,
+    )
+    _EXT_SRC_OK = True
+except Exception:
+    try:
+        from tdx_ext_servers import (
+            _TDX_EXT_SERVERS,
+            _TDX_EXT_SERVERS_FOR_TDX_EXHQ,
+        )
+        _EXT_SRC_OK = True
+    except Exception:
+        _TDX_EXT_SERVERS = []
+        _TDX_EXT_SERVERS_FOR_TDX_EXHQ = []
+        _EXT_SRC_OK = False
+
+
+def ext_available():
+    """期权扩展行情数据源是否可用（HTTP 层判据统一以此为准）。
+
+    判据 = tdx_exhq 可导入（连接封装 / 合约枚举）+ 统一扩展行情池非空。
+    与 futures_service.ext_available() 语义一致：都不依赖「某台特定服务器」，只看池与 API。
+    """
+    return bool(_EXHQ_OK and _EXT_SRC_OK and connect_exhq is not None
+                and len(_TDX_EXT_SERVERS_FOR_TDX_EXHQ) > 0)
+
 
 # =========================================================
 # 每次查询新建连接（避免长连接被服务端丢弃后 recv 挂死）
 # =========================================================
 _EXHQ_TIMEOUT = 6.0
+
+# =========================================================
+# 并发控制：singleflight 合并 + 全局连接信号量限流
+# =========================================================
+# 对外并发取数连接数上限：防止突发把 12 台券商 7721 单台连接打爆（雪崩）。
+# 每次查询仍「新建连接」以规避长连接被服务端丢弃后 recv 挂死，仅在此封顶总数。
+_EXHQ_MAX_CONCURRENT = 20
+_EXHQ_SEM = threading.Semaphore(_EXHQ_MAX_CONCURRENT)
+
+# singleflight：同 key 并发只放行一个真正取数，其余等待复用其结果；
+# 取数完成后 _SF_COALESCE 秒内再来同一 key 直接复用，避免微错峰的突发重复打网络。
+_SF = {}
+_SF_LOCK = threading.Lock()
+_SF_COALESCE = 0.25
+
+
+def _fetch_coalesced(key, query_fn):
+    """同 key 并发取数合并（singleflight）。
+
+    - key 相同且正在取数：等待复用，不重复建连。
+    - key 已完成且在 _SF_COALESCE 合并窗口内：直接复用，不重复取数。
+    - 否则成为本轮唯一取数者，执行 query_fn（内部已受 _EXHQ_SEM 限流）。
+    """
+    now = time.time()
+    with _SF_LOCK:
+        slot = _SF.get(key)
+        if slot is None or (slot["event"].is_set() and now - slot["ts"] > _SF_COALESCE):
+            ev = threading.Event()
+            _SF[key] = {"event": ev, "result": None, "ts": 0.0}
+            producer = True
+            wait_slot = None
+        elif not slot["event"].is_set():
+            producer = False
+            ev = slot["event"]
+            wait_slot = slot
+        else:
+            return slot["result"]  # 合并窗口内直接复用
+    if not producer:
+        ev.wait()
+        return wait_slot.get("result")
+    try:
+        result = query_fn()
+    finally:
+        with _SF_LOCK:
+            s = _SF.get(key)
+            if s is not None:
+                s["result"] = result
+                s["ts"] = time.time()
+                s["event"].set()
+                _SF.pop(key, None)
+    return result
 
 
 def _f(v):
@@ -45,11 +130,12 @@ def _f(v):
 
 
 def _get_api():
-    """新建一个扩展行情连接；失败返回 None。每次查询都新建，避免长连接被服务端丢弃后 recv 挂死。"""
-    if not _EXHQ_OK or connect_exhq is None:
+    """新建一个扩展行情连接（统一池 _TDX_EXT_SERVERS，由 connect_exhq 依次试连）；
+    失败返回 None。每次查询都新建，避免长连接被服务端丢弃后 recv 挂死。"""
+    if not ext_available():
         return None
     try:
-        api = connect_exhq(time_out=_EXHQ_TIMEOUT)
+        api = connect_exhq(servers=_TDX_EXT_SERVERS_FOR_TDX_EXHQ, time_out=_EXHQ_TIMEOUT)
         if api is not None:
             # 收紧 socket 超时，避免服务端丢弃空闲连接后 recv 长时间阻塞。
             try:
@@ -62,35 +148,42 @@ def _get_api():
 
 
 def _safe_query(fn):
-    """执行一次 ExHq 查询；连接异常时直接换新连接重试一次，结束后释放 socket。"""
-    api = _get_api()
-    if api is None:
+    """执行一次 ExHq 查询（受全局连接信号量 _EXHQ_SEM 限流，防止并发打爆券商 7721）；
+    连接异常时换新连接重试一次，结束后释放 socket。"""
+    if not ext_available():
         return None
-    result = None
-    try:
-        result = fn(api)
-    except Exception:
+
+    def _work():
+        api = _get_api()
+        if api is None:
+            return None
         try:
-            api.disconnect()
+            return fn(api)
         except Exception:
-            pass
-        api2 = _get_api()
-        if api2 is not None:
             try:
-                result = fn(api2)
+                api.disconnect()
             except Exception:
-                result = None
-            finally:
+                pass
+            api2 = _get_api()
+            if api2 is not None:
                 try:
-                    api2.disconnect()
+                    return fn(api2)
                 except Exception:
-                    pass
-    finally:
-        try:
-            api.disconnect()
-        except Exception:
-            pass
-    return result
+                    return None
+                finally:
+                    try:
+                        api2.disconnect()
+                    except Exception:
+                        pass
+        finally:
+            try:
+                api.disconnect()
+            except Exception:
+                pass
+        return None
+
+    with _EXHQ_SEM:
+        return _work()
 
 
 # =========================================================
@@ -109,7 +202,8 @@ def _refresh_code_map():
     if not _EXHQ_OK or get_option_codes is None:
         return
     try:
-        rows = get_option_codes(markets={8, 9}, chinese=True)
+        rows = get_option_codes(markets={8, 9}, chinese=True,
+                                servers=_TDX_EXT_SERVERS_FOR_TDX_EXHQ or None)
     except Exception:
         return
     if not rows:
@@ -186,14 +280,14 @@ def exquote_minute(code):
                 out.append({
                     "time": "%02d:%02d" % (int(d["hour"]), int(d["minute"])),
                     "price": float(d["price"]),
-                    "avg_price": float(d.get("avg_price") or d.get("price") or 0),
-                    "vol": int(d.get("volume") or 0),
-                })
+                "avg_price": float(d.get("avg_price") or d.get("price") or 0),
+                "vol": int(d.get("volume") or 0),
+            })
             except Exception:
                 continue
         return out
 
-    return _safe_query(fn) or []
+    return _fetch_coalesced("exq_minute:%s" % code, lambda: _safe_query(fn)) or []
 
 
 def exquote_quote(code):
@@ -222,7 +316,7 @@ def exquote_quote(code):
             "asks": asks,
         }
 
-    return _safe_query(fn) or {}
+    return _fetch_coalesced("exq_quote:%s" % code, lambda: _safe_query(fn)) or {}
 
 
 def exquote_tick(code, count=40):
@@ -255,4 +349,4 @@ def exquote_tick(code, count=40):
                 continue
         return out
 
-    return _safe_query(fn) or []
+    return _fetch_coalesced("exq_tick:%s" % code, lambda: _safe_query(fn)) or []

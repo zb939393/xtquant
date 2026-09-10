@@ -376,7 +376,20 @@ _EXQ_CACHE = {}
 
 
 def _exq_unavailable():
-    return (exquote is None) or (not getattr(exquote, "_EXHQ_OK", False))
+    """期权扩展行情数据源是否不可用。
+
+    判据以 core/option_exquote_service.ext_available()（= tdx_exhq 封装 + 统一扩展行情池
+    _TDX_EXT_SERVERS：长城/国元/国信 7721）为准；无该属性时才回退旧的 _EXHQ_OK 导入标记。
+    """
+    if exquote is None:
+        return True
+    checker = getattr(exquote, "ext_available", None)
+    if callable(checker):
+        try:
+            return not checker()
+        except Exception:
+            return True
+    return not getattr(exquote, "_EXHQ_OK", False)
 
 
 @option_bp.route("/exquote/minute/<path:code>")

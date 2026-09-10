@@ -1,16 +1,16 @@
 # -*- coding: utf-8 -*-
 """core/futures_service 单元测试。
 
-通过 monkeypatch 把 connect_exhq 替换为内存假对象，避免依赖外部通达信扩展行情
+通过 monkeypatch 把 _get_api 替换为返回内存假对象，避免依赖外部通达信扩展行情
 服务器网络；重点验证：
   - 分时 / 盘口 / 逐笔 的字段归一化；
   - 期指逐笔价格 1/1000 还原口径（与参考源 E:\\github\\tdx_flask 的 1/10000 不同）；
   - direction -> buyorsell 映射；
-  - 连接/查询异常时的重试与兜底（返回空容器而非抛错）。
+  - 连接/查询异常时的重试与兜底（返回空容器而非抛错）；
+  - 数据源判据 ext_available() 只看 _TDX_EXT_SERVERS 池 + TdxExHq_API（与旧 tdx_exhq 包解耦）。
 """
 import unittest
 from types import SimpleNamespace
-from unittest import mock
 
 import core.futures_service as fut
 
@@ -102,21 +102,26 @@ def _make_bars():
 class FuturesServiceTest(unittest.TestCase):
 
     def setUp(self):
+        # 服务器源已切换为 _TDX_EXT_SERVERS 池：直接替换 _get_api 返回内存假对象，
+        # 不再走 connect_exhq（旧 tdx_exhq 包已不参与取数）。
+        self._orig_get_api = fut._get_api
         self._orig_exhq_ok = fut._EXHQ_OK
-        self._orig_connect = fut.connect_exhq
+        self._orig_src_ok = fut._EXT_SRC_OK
+        self._orig_api_ok = fut._EXT_API_OK
         fut._EXHQ_OK = True
-        self.patcher = mock.patch.object(fut, "connect_exhq", autospec=False)
-        self.mock_connect = self.patcher.start()
+        fut._EXT_SRC_OK = True
+        fut._EXT_API_OK = True
         self.api = None
+        fut._get_api = lambda: self.api
 
     def tearDown(self):
-        self.patcher.stop()
+        fut._get_api = self._orig_get_api
         fut._EXHQ_OK = self._orig_exhq_ok
-        fut.connect_exhq = self._orig_connect
+        fut._EXT_SRC_OK = self._orig_src_ok
+        fut._EXT_API_OK = self._orig_api_ok
 
     def _install(self, **kwargs):
         self.api = FakeExHqApi(**kwargs)
-        self.mock_connect.return_value = self.api
         return self.api
 
     # ---- 分时 ----
@@ -205,11 +210,35 @@ class FuturesServiceTest(unittest.TestCase):
         self.assertEqual(rows[0]["time"], "09:31")
 
     def test_connection_failure_returns_empty(self):
-        # connect_exhq 返回 None 视为连接失败
-        self.mock_connect.return_value = None
+        # 池内所有节点都连不上 -> _get_api 返回 None -> 三个查询都返回空容器
+        self._install(minute_rows=_make_minute_rows())
+        fut._get_api = lambda: None
         self.assertEqual(fut.fut_minute("IFL9"), [])
         self.assertEqual(fut.fut_quote("IFL9"), {})
         self.assertEqual(fut.fut_tick("IFL9"), [])
+
+    # ---- 数据源判据 ext_available()（隐患回归）----
+    def test_ext_available_ignores_legacy_tdx_exhq(self):
+        """旧 tdx_exhq 包不可用（_EXHQ_OK=False）不应影响新数据源判据。"""
+        fut._EXHQ_OK = False
+        fut._EXT_SRC_OK = True
+        fut._EXT_API_OK = True
+        self.assertTrue(fut.ext_available())
+
+    def test_ext_available_requires_pool_and_api(self):
+        fut._EXHQ_OK = True
+        fut._EXT_SRC_OK = False
+        fut._EXT_API_OK = True
+        self.assertFalse(fut.ext_available())
+        fut._EXT_SRC_OK = True
+        fut._EXT_API_OK = False
+        self.assertFalse(fut.ext_available())
+
+    def test_get_api_returns_none_when_pool_unavailable(self):
+        """数据源不可用时 _get_api 不建连直接返回 None（不抛错）。"""
+        fut._EXT_SRC_OK = False
+        self.assertIsNone(self._orig_get_api())
+        self.assertEqual(fut.fut_quote("IFL9"), {})
 
     # ---- K线（历史 get_instrument_bars）----
     def test_fut_bars_normalizes(self):

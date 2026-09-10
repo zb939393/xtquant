@@ -50,8 +50,11 @@ class FuturesBlueprintTest(unittest.TestCase):
         self.app.register_blueprint(futures_bp, url_prefix="/futures")
         self.client = self.app.test_client()
 
-        self._orig_exhq_ok = fut._EXHQ_OK
-        fut._EXHQ_OK = True
+        # 数据源判据 = futures_service.ext_available()（_TDX_EXT_SERVERS 池 + TdxExHq_API），
+        # 测试中直接放行，避免触达外部扩展行情服务器。
+        # 注：故意不再用旧 tdx_exhq 的 _EXHQ_OK 作为放行开关——那正是本次修复的隐患点。
+        self._orig_ext_available = fut.ext_available
+        fut.ext_available = lambda: True
         futures_bp_mod._EXQ_CACHE.clear()
 
         self.p_minute = mock.patch.object(fut, "fut_minute", return_value=[
@@ -66,7 +69,7 @@ class FuturesBlueprintTest(unittest.TestCase):
     def tearDown(self):
         mock.patch.stopall()
         futures_bp_mod._EXQ_CACHE.clear()
-        fut._EXHQ_OK = self._orig_exhq_ok
+        fut.ext_available = self._orig_ext_available
 
     # ---- snapshot ----
     def test_snapshot_returns_four_contracts(self):
@@ -151,7 +154,7 @@ class FuturesBlueprintTest(unittest.TestCase):
 
     # ---- 不可用兜底 ----
     def test_routes_return_unavailable_when_exhq_down(self):
-        fut._EXHQ_OK = False
+        fut.ext_available = lambda: False
         for path in (
             "/futures/snapshot",
             "/futures/exquote/minute/IFL9",
@@ -163,6 +166,20 @@ class FuturesBlueprintTest(unittest.TestCase):
             self.assertEqual(resp.status_code, 200)
             body = json.loads(resp.get_data(as_text=True))
             self.assertFalse(body.get("ok", True))
+
+    def test_unavailable_gate_ignores_legacy_tdx_exhq(self):
+        """隐患回归：旧 tdx_exhq 包不可用（_EXHQ_OK=False）不应让期指接口判为不可用。
+
+        服务器源已切换为 core/tdx_ext_servers 池，旧包只是历史依赖；
+        门禁必须以 futures_service.ext_available() 为准。
+        """
+        fut._EXHQ_OK = False
+        fut.ext_available = lambda: True
+        for path in ("/futures/exquote/quote/IFL9", "/futures/exquote/minute/IFL9"):
+            resp = self.client.get(path)
+            body = json.loads(resp.get_data(as_text=True))
+            self.assertEqual(resp.status_code, 200)
+            self.assertTrue(body["ok"], "%s 不应因 tdx_exhq 缺失被判为不可用" % path)
 
 
 if __name__ == "__main__":

@@ -74,18 +74,21 @@ def _listeners(port: int):
 
 
 def _port_open(port: int, timeout: float = 1.0) -> bool:
-    """端口是否有进程在应答（比 bind 判断更可靠，不受 SO_REUSEADDR 影响）。"""
-    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    """端口是否有进程在 LISTEN（用 psutil 判断，规避本机 socket.connect_ex 缺失的异常）。"""
     try:
-        s.settimeout(timeout)
-        return s.connect_ex(("127.0.0.1", port)) == 0
+        import psutil
     except Exception:
         return False
-    finally:
-        try:
-            s.close()
-        except Exception:
-            pass
+    try:
+        for c in psutil.net_connections(kind="tcp"):
+            try:
+                if c.laddr and c.laddr.port == port and c.status == psutil.CONN_LISTEN:
+                    return True
+            except Exception:
+                continue
+    except Exception:
+        return False
+    return False
 
 
 def show_status(port: int):
@@ -149,12 +152,34 @@ def start_one(port: int):
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     log_path = os.path.join(LOG_DIR, "restart_%s.log" % stamp)
     env = dict(os.environ)
+    # 自管 Python 上 site.getusersitepackages() 常返回错误路径（缺 AppData\Roaming），
+    # 而沙箱可能剥离 APPDATA 等环境变量。因此多路径候选 + 逐项校验「该目录真有 akshare」
+    # 才纳入 PYTHONPATH，避免启动后 import akshare 失败。
+    _candidates = []
+    home = os.path.expanduser("~")
+    if home and home != "~":
+        _candidates.append(os.path.join(home, "AppData", "Roaming", "Python", "Python313", "site-packages"))
+    _appdata = os.environ.get("APPDATA", "")
+    if _appdata:
+        _candidates.append(os.path.join(_appdata, "Python", "Python313", "site-packages"))
+    # 已知本机 akshare 实际目录（硬编码兜底，确保在剥离环境变量的沙箱里也能启动）
+    _candidates.append(r"C:\Users\zb\AppData\Roaming\Python\Python313\site-packages")
     try:
-        user_sp = site.getusersitepackages()
-        if user_sp and user_sp not in env.get("PYTHONPATH", ""):
-            env["PYTHONPATH"] = user_sp + os.pathsep + env.get("PYTHONPATH", "")
+        _usp = site.getusersitepackages()
+        if _usp:
+            _candidates.append(_usp)
     except Exception:
         pass
+    existing = env.get("PYTHONPATH", "")
+    for _sp in _candidates:
+        if not _sp or _sp in existing:
+            continue
+        # 归一化分隔符，且必须确实包含 akshare 包才采用
+        _norm = _sp.replace("/", "\\")
+        if os.path.isdir(_norm) and os.path.isdir(os.path.join(_norm, "akshare")):
+            existing = _norm + os.pathsep + existing
+    if existing:
+        env["PYTHONPATH"] = existing.rstrip(os.pathsep)
     fh = open(log_path, "w", encoding="utf-8")
     proc = subprocess.Popen(
         [sys.executable, "app.py"],

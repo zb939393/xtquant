@@ -35,7 +35,22 @@ _EXQ_CACHE = {}
 
 
 def _exq_unavailable():
-    return (fut is None) or (not getattr(fut, "_EXHQ_OK", False))
+    """扩展行情数据源是否不可用。
+
+    判据以 core/futures_service.ext_available()（= _TDX_EXT_SERVERS 池 + TdxExHq_API）为准，
+    不再依赖旧 pip 包 tdx_exhq 的 _EXHQ_OK —— 服务器源已切换到长城 7721 池，旧包未安装
+    也不影响取数，用它做门禁会导致期指接口被误判为不可用。
+    """
+    if fut is None:
+        return True
+    checker = getattr(fut, "ext_available", None)
+    if callable(checker):
+        try:
+            return not checker()
+        except Exception:
+            return True
+    # 兼容极老版本（无 ext_available）：退回旧的 tdx_exhq 标记
+    return not getattr(fut, "_EXHQ_OK", False)
 
 
 # ---- VWAP 策略参数：URL 参数优先，缺失则回退服务端保存的 per-code 参数 ----

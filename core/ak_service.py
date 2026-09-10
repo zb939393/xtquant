@@ -881,18 +881,154 @@ def cb_top_dual_low(n: int = 10) -> pd.DataFrame:
 #   转债/正股涨跌幅 = (close/price - pre_close) / pre_close * 100
 #   转债/正股振幅   = (high - low) / pre_close * 100
 # ============================================================================
-_PYTDX_SERVERS = [
-    ("60.12.136.250", 7709),
-    ("115.238.56.198", 7709),
-    ("218.75.126.9",   7709),
-    ("112.74.214.43",  7709),
-    ("180.153.18.170", 7709),
-    ("119.147.212.81", 7709),
-    ("119.147.212.81", 7711),
-    ("14.215.128.18",  7709),
-    ("59.173.18.140",  7709),
-    ("47.103.78.192",  7709),
+# ============================================================================
+# TDX 标准行情（TdxHq_API / 7709）服务器池 —— 全局唯一一份：券商自营「专服」
+# ----------------------------------------------------------------------------
+# 2026-09-10 全接口实测（个股快照 / 日K / 1分K / 5分K / 全市场 800 只分批 /
+# 除权 xdxr / 当日分时 / 逐笔）：
+#   · 券商自营站（华泰 / 国泰君安 / 安信）：**全部接口正常**，且指数成交额只有它们回；
+#   · 通达信「双线主站」公有云节点（项目原默认 10 台 + pytdx 内置 104 台）：
+#     现已对标准行情**一律返回空**（个股快照 0 条、K 线 0 根、分时/逐笔 0 条，
+#     仅 xdxr 仍有数据）。这也解释了历史上「指数空白」「成交分析无数据」等故障。
+# 故：**标准行情一律走专服**，其余非专服清单已全部删除。
+# （扩展行情 ExHq = 期货/期权，端口 7721/7727，见 core/futures_service.py 与
+#   core/option_exquote_service.py，与此处无关，独立保留。）
+# 84 台 / 券商自营专服（华泰 22 / 国泰君安 61 / 安信 1），含 9 个 gtjas/htsc 域名兜底。
+#   来源：原 31 台（国君/华泰/安信全部接口已验证）+ GitHub gotdx 的 guotaijunan.cfg /
+#   huatai.cfg 全量 + 28 个已验证子网 /24 内两阶段扫描（TCP 探活 + 指数回测）新增节点。
+#   全部经 get_security_quotes([(1,"000001"),(0,"399001")]) 实测可回指数，方可入池。
+#   （注：列表按券商分组，同券商不同子网已交错；延迟优选仍由下方 _PYTDX_SERVERS_RANKED
+#    按 TCP 实测升序重排后随机选取，分组不影响选优选。）
+# ============================================================================
+# 行情主站池：可回指数的券商自营站（含通达信官方 HFHost 活节点），共 109 台。
+# 构成：原84池 + 国元6 + 国信8 + 通达信HF(159.75.55.232) + 长城10（均 pytdx get_security_quotes 实测回指数）。
+# 券商家族：国君/华泰/安信/国元/国信/长城。
+_TDX_HQ_SERVERS = [
+    ("华泰华为云1", "124.70.183.173", 7709),
+    ("华泰华为云2", "124.71.163.106", 7709),
+    ("华泰南京电信1", "180.101.48.170", 7709),
+    ("华泰南京电信2", "180.101.48.171", 7709),
+    ("华泰南京电信3", "180.101.48.172", 7709),
+    ("华泰南京电信4", "180.101.48.173", 7709),
+    ("华泰南京电信5", "180.101.48.174", 7709),
+    ("华泰南京电信6", "180.101.48.175", 7709),
+    ("华泰南京移动1", "120.195.71.155", 7709),
+    ("华泰南京移动2", "120.195.71.156", 7709),
+    ("华泰南京移动3", "120.195.71.157", 7709),
+    ("华泰南京移动4", "120.195.71.158", 7709),
+    ("华泰南京移动5", "120.195.71.159", 7709),
+    ("华泰南京移动6", "120.195.71.160", 7709),
+    ("华泰南京联通1", "122.96.107.241", 7709),
+    ("华泰南京联通2", "122.96.107.242", 7709),
+    ("华泰南京联通3", "122.96.107.243", 7709),
+    ("华泰南京联通4", "122.96.107.244", 7709),
+    ("华泰南京联通5", "122.96.107.245", 7709),
+    ("华泰南京联通6", "122.96.107.248", 7709),
+    ("华泰智选主站", "tdxhq.htsc.com", 7709),
+    ("华泰智选二主站", "tdxhq.htzq.com.cn", 7709),
+    ("安信1", "59.36.5.11", 7709),
+    ("国元合肥电信2", "61.191.48.15", 7709),
+    ("国元合肥移动2", "221.130.121.45", 7709),
+    ("国元合肥联通2", "218.106.80.15", 7709),
+    ("国元广州云电信", "58.63.252.107", 7709),
+    ("国元广州云移动", "120.232.150.204", 7709),
+    ("国元成都云电信", "61.188.177.227", 7709),
+    ("国信腾讯云华东信创", "109.244.35.28", 7709),
+    ("国信腾讯云华东信创2", "162.14.135.116", 7709),
+    ("国信腾讯云华南", "109.244.73.13", 7709),
+    ("国信腾讯云华南信创2", "109.244.73.23", 7709),
+    ("国信阿里云华东", "101.133.231.193", 7709),
+    ("国信阿里云华东2", "101.133.129.19", 7709),
+    ("国信阿里云华南", "120.79.210.76", 7709),
+    ("国信阿里云华南2", "120.24.231.30", 7709),
+    ("长城凤岗电信", "121.13.222.157", 7709),
+    ("长城凤岗电信2", "59.36.21.208", 7709),
+    ("长城凤岗联通", "218.104.185.71", 7709),
+    ("长城深圳电信1", "219.133.95.102", 7709),
+    ("长城深圳移动1", "221.179.18.108", 7709),
+    ("长城深圳联通2", "210.21.198.233", 7709),
+    ("长城苏州电信1", "58.210.106.10", 7709),
+    ("长城苏州移动1", "223.112.100.140", 7709),
+    ("长城重庆电信", "222.180.170.147", 7709),
+    ("长城重庆联通", "113.207.108.71", 7709),
+    ("通达信HF深圳双线9", "159.75.55.232", 7709),
+    ("国君上海BGP1", "103.251.85.87", 7709),
+    ("国君上海BGP2", "103.251.85.90", 7709),
+    ("国君上海BGP3", "103.251.85.91", 7709),
+    ("国君上海BGP4", "103.251.85.92", 7709),
+    ("国君上海BGP5", "103.251.85.93", 7709),
+    ("国君上海BGP6", "103.251.85.94", 7709),
+    ("国君上海BGP7", "103.251.85.148", 7709),
+    ("国君上海BGP8", "103.251.85.200", 7709),
+    ("国君上海BGP9", "103.251.85.201", 7709),
+    ("国君上海主站", "shtdx.gtjas.com", 7709),
+    ("国君北京网通主站", "bjwttdx.gtjas.com", 7709),
+    ("国君北京联通1", "123.125.108.187", 7709),
+    ("国君北京联通2", "123.125.108.213", 7709),
+    ("国君北京联通3", "123.125.108.214", 7709),
+    ("国君北方网通主站", "bfwttdx.gtjas.com", 7709),
+    ("国君南京电信1", "103.221.142.65", 7709),
+    ("国君南京电信10", "103.221.142.80", 7709),
+    ("国君南京电信11", "103.221.142.82", 7709),
+    ("国君南京电信12", "103.221.142.83", 7709),
+    ("国君南京电信2", "103.221.142.66", 7709),
+    ("国君南京电信3", "103.221.142.67", 7709),
+    ("国君南京电信4", "103.221.142.68", 7709),
+    ("国君南京电信5", "103.221.142.69", 7709),
+    ("国君南京电信6", "103.221.142.70", 7709),
+    ("国君南京电信7", "103.221.142.71", 7709),
+    ("国君南京电信8", "103.221.142.72", 7709),
+    ("国君南京电信9", "103.221.142.73", 7709),
+    ("国君广州BGP1", "139.9.43.31", 7709),
+    ("国君广州BGP10", "139.159.202.253", 7709),
+    ("国君广州BGP2", "139.9.43.104", 7709),
+    ("国君广州BGP3", "139.9.50.246", 7709),
+    ("国君广州BGP4", "139.9.52.158", 7709),
+    ("国君广州BGP5", "139.9.90.169", 7709),
+    ("国君广州BGP6", "139.159.143.228", 7709),
+    ("国君广州BGP7", "139.159.183.76", 7709),
+    ("国君广州BGP8", "139.159.193.118", 7709),
+    ("国君广州BGP9", "139.159.195.177", 7709),
+    ("国君成都BGP1", "148.70.31.16", 7709),
+    ("国君成都BGP2", "148.70.93.117", 7709),
+    ("国君成都BGP3", "148.70.110.41", 7709),
+    ("国君成都BGP4", "148.70.111.63", 7709),
+    ("国君成都主站", "cdtdx.gtjas.com", 7709),
+    ("国君新疆1", "202.100.166.117", 7709),
+    ("国君武汉1", "116.211.121.102", 7709),
+    ("国君武汉2", "116.211.121.108", 7709),
+    ("国君武汉3", "119.97.164.184", 7709),
+    ("国君武汉4", "119.97.164.189", 7709),
+    ("国君江苏主站", "jstdx.gtjas.com", 7709),
+    ("国君河北网通主站", "hbwttdx.gtjas.com", 7709),
+    ("国君深圳主站", "sztdx.gtjas.com", 7709),
+    ("国君西安1", "117.34.114.13", 7709),
+    ("国君西安2", "117.34.114.14", 7709),
+    ("国君西安3", "117.34.114.15", 7709),
+    ("国君西安4", "117.34.114.16", 7709),
+    ("国君西安5", "117.34.114.17", 7709),
+    ("国君西安6", "117.34.114.18", 7709),
+    ("国君西安7", "117.34.114.20", 7709),
+    ("国君西安8", "117.34.114.27", 7709),
+    ("国君郑州1", "182.118.47.141", 7709),
+    ("国君郑州2", "182.118.47.168", 7709),
+    ("国君郑州3", "182.118.47.169", 7709),
 ]
+
+# 兼容旧调用点：只需要 (host, port) 的地方（连接池 / 延迟排序 / 状态统计）
+_PYTDX_SERVERS = [(ip, port) for (_n, ip, port) in _TDX_HQ_SERVERS]
+
+
+# 扩展行情主站池（端口 7721，pytdx.exhq.TdxExHq_API）：期货/期权/港股/外汇/全球指数。
+# 单一数据源见 core/tdx_ext_servers.py（与 futures_service.py / option_exquote_service.py 共用，
+# 避免多份副本漂移）。来源：D:\zd_cczq 长城证券烽火版 connect.cfg [DSHOST] 段；TdxExHq_API
+#   .get_instrument_count() 实测可用（~52901 扩展品种）。用途：股指期货 IF/IH/IC/IM 等扩展品种
+#   实时行情，独立于 _TDX_HQ_SERVERS（7709 标准 A 股指数池）。注：7721 须用 TdxExHq_API，
+#   用 TdxHq_API 连会报 head_buf is not 0x10（协议不匹配）。
+try:
+    from core.tdx_ext_servers import _TDX_EXT_SERVERS, _PYTDX_EXT_SERVERS
+except ImportError:
+    from tdx_ext_servers import _TDX_EXT_SERVERS, _PYTDX_EXT_SERVERS
 
 
 # ============================================================================
@@ -923,9 +1059,20 @@ def _pytdx_rank_servers(force=False):
     with _PYTDX_RANK_LOCK:
         if _PYTDX_SERVERS_RANKED is not None and not force:
             return _PYTDX_SERVERS_RANKED
+        # 并发测速：池子已扩到 31 台，串行测量最坏要 2s×31≈62s（后台线程也会拖慢首屏）
         measured = []
-        for (h, p) in _PYTDX_SERVERS:
-            measured.append((_pytdx_measure_one(h, p, timeout=2.0), (h, p)))
+        try:
+            with _futures.ThreadPoolExecutor(max_workers=16) as ex:
+                fmap = {ex.submit(_pytdx_measure_one, h, p, 2.0): (h, p)
+                        for (h, p) in _PYTDX_SERVERS}
+                for fu in _futures.as_completed(fmap):
+                    try:
+                        measured.append((fu.result(), fmap[fu]))
+                    except Exception:
+                        measured.append((None, fmap[fu]))
+        except Exception:
+            measured = [(_pytdx_measure_one(h, p, timeout=2.0), (h, p))
+                        for (h, p) in _PYTDX_SERVERS]
         measured.sort(key=lambda x: (x[0] if x[0] is not None else 1e9))
         _PYTDX_SERVERS_RANKED = measured
         logging.getLogger(__name__).info(
@@ -978,6 +1125,53 @@ _PYTDX_POOL = threading.local()
 # get_minute_time_data / get_transaction_data 等网络调用收敛到固定上限，其余请求在此排队，
 # 避免看盘页多行同时轮询时把服务端打垮（ERR_CONNECTION_REFUSED）。缓存命中不占用配额。
 _PYTDX_SEM = threading.Semaphore(int(getattr(Config, "PYTDX_MAX_CONCURRENCY", 8) or 8))
+
+# ----------------------------------------------------------------------------
+# 标准行情 singleflight（与 core/futures_service.py 的 _fetch_coalesced 完全同源）
+# 同 key 的并发取数只放行 1 个真正打网络，其余等待复用其结果；与 _PYTDX_SEM
+# （并发连接上限）正交互补：singleflight 消灭「同 key 突发」（TTL 缓存过期瞬间的
+# 并发惊群），信号量封顶「跨 key 全局并发连接数」。取数完成即弹出 slot，不长期驻留。
+# ----------------------------------------------------------------------------
+_PYTDX_COALESCE = {}
+_PYTDX_COALESCE_LOCK = threading.Lock()
+_PYTDX_COALESCE_TTL = 0.25   # 取数完成后 250ms 内同 key 再来的直接复用，合并微错峰突发
+
+def _pytdx_coalesce(key, fetch_fn):
+    """同 key 并发取数合并（singleflight）。
+
+    - key 相同且正在取数：等待复用，不重复打网络。
+    - key 已完成且在 _PYTDX_COALESCE_TTL 合并窗口内：直接复用，不重复取数。
+    - 否则成为本轮唯一取数者，执行 fetch_fn（内部已受 _PYTDX_SEM 限流）。
+    fetch_fn 抛异常时本轮取数者失败返回 None，等待者同样拿到 None（不重复打网络）。
+    """
+    now = time.time()
+    with _PYTDX_COALESCE_LOCK:
+        slot = _PYTDX_COALESCE.get(key)
+        if slot is None or (slot["event"].is_set() and now - slot["ts"] > _PYTDX_COALESCE_TTL):
+            ev = threading.Event()
+            _PYTDX_COALESCE[key] = {"event": ev, "result": None, "ts": 0.0}
+            producer = True
+            wait_slot = None
+        elif not slot["event"].is_set():
+            producer = False
+            ev = slot["event"]
+            wait_slot = slot
+        else:
+            return slot["result"]  # 合并窗口内直接复用
+    if not producer:
+        ev.wait()
+        return wait_slot.get("result")
+    try:
+        result = fetch_fn()
+    finally:
+        with _PYTDX_COALESCE_LOCK:
+            s = _PYTDX_COALESCE.get(key)
+            if s is not None:
+                s["result"] = result
+                s["ts"] = time.time()
+                s["event"].set()
+                _PYTDX_COALESCE.pop(key, None)
+    return result
 
 
 def _pytdx_is_alive(api):
@@ -1045,6 +1239,36 @@ def _pytdx_get_api():
         except Exception:
             continue
     return None
+
+
+def _pytdx_force_reconnect():
+    """丢弃当前线程连接并重建（大概率换一台服务器）。
+
+    用于「连接仍存活、但取数返回空」的场景——`_pytdx_get_api()` 只在连接断了才重连，
+    遇到坏服务器（握手正常、回空 body）会一直复用它。指数/sparkline 取数失败时用它重试。
+    """
+    api = getattr(_PYTDX_POOL, "api", None)
+    if api is not None:
+        try:
+            api.disconnect()
+        except Exception:
+            pass
+    _PYTDX_POOL.api = None
+    return _pytdx_get_api()
+
+
+def _pytdx_server_name():
+    """当前线程连接所连服务器的名称（用于来源标注/日志）；未连接返回 \"\"。"""
+    host = getattr(_PYTDX_POOL, "host", None)
+    if not host:
+        return ""
+    try:
+        for (n, ip, port) in _TDX_HQ_SERVERS:
+            if (ip, port) == tuple(host):
+                return n
+    except Exception:
+        pass
+    return "%s:%s" % (host[0], host[1])
 
 
 # ============================================================================
@@ -1729,17 +1953,23 @@ def _cb_fetch_rt_pytdx_split(bond_codes, stock_codes, threads=None, max_age=3):
         return {}, {}, {"ok": False, "reason": "pytdx 未安装或 import 失败"}
     bonds = list(dict.fromkeys([str(c) for c in (bond_codes or []) if str(c).strip()]))
     stocks = list(dict.fromkeys([str(c) for c in (stock_codes or []) if str(c).strip()]))
-    cb_bonds = [c for c in bonds if _is_convertible_bond(c)]
-    non_cb_bonds = [c for c in bonds if not _is_convertible_bond(c)]
-    # 复用模块级常驻 split executor（3 个 worker 线程连接跨调用保持，避免每次 new+connect 握手）
-    _, split_ex = _pytdx_get_executors()
-    fb = split_ex.submit(_cb_fetch_rt_pytdx, non_cb_bonds, [], max_age) if non_cb_bonds else None
-    fq = split_ex.submit(_cb_fetch_rt_pytdx_quotes, stocks, None, max_age) if stocks else None
-    fcb = split_ex.submit(_cb_fetch_rt_pytdx_quotes_cb, cb_bonds, None, max_age) if cb_bonds else None
-    bars_rt = fb.result() if fb is not None else ({}, {}, {"ok": True})
-    quotes_rt = fq.result() if fq is not None else ({}, {"ok": True})
-    cb_rt = fcb.result() if fcb is not None else ({}, {"ok": True})
-    return _cb_rt_combine(bars_rt, quotes_rt, cb_rt)
+    # 单飞 key：相同代码全集的并发全板请求合并为一次取数（与蓝图层 stale-while-revalidate 互补）
+    _ck = "cb_rt_split_" + "|".join(sorted(set(bonds + stocks)))[:120]
+
+    def _fetch():
+        cb_bonds = [c for c in bonds if _is_convertible_bond(c)]
+        non_cb_bonds = [c for c in bonds if not _is_convertible_bond(c)]
+        # 复用模块级常驻 split executor（3 个 worker 线程连接跨调用保持，避免每次 new+connect 握手）
+        _, split_ex = _pytdx_get_executors()
+        fb = split_ex.submit(_cb_fetch_rt_pytdx, non_cb_bonds, [], max_age) if non_cb_bonds else None
+        fq = split_ex.submit(_cb_fetch_rt_pytdx_quotes, stocks, None, max_age) if stocks else None
+        fcb = split_ex.submit(_cb_fetch_rt_pytdx_quotes_cb, cb_bonds, None, max_age) if cb_bonds else None
+        bars_rt = fb.result() if fb is not None else ({}, {}, {"ok": True})
+        quotes_rt = fq.result() if fq is not None else ({}, {"ok": True})
+        cb_rt = fcb.result() if fcb is not None else ({}, {"ok": True})
+        return _cb_rt_combine(bars_rt, quotes_rt, cb_rt)
+
+    return _pytdx_coalesce(_ck, _fetch)
 
 
 
@@ -1902,71 +2132,74 @@ def get_kline_pytdx(code, count=120, ttl=120, batch=800, max_bars=5000, period="
     cached = _KL_CACHE.get(key)
     if cached and (time.time() - cached[1]) < ttl:
         return cached[0]
-    out = []
-    api = _pytdx_get_api()
-    for _round in range(2):
-        if api is None:
-            break
-        try:
-            if not _pytdx_is_alive(api):
-                api = _pytdx_get_api()
-                if api is None:
-                    break
-            # PyTDX 单次 get_security_bars 上限约 800 根；count 较大时循环 start 偏移分批拉全量
-            allbars = []
-            need = cnt
-            start = 0
-            while need > 0:
-                take = min(batch, need)
-                with _PYTDX_SEM:
-                    bars = api.get_security_bars(cat, mkt, c6, start, take)
-                if not bars:
-                    break
-                allbars.extend(bars)
-                got = len(bars)
-                start += got
-                need -= got
-                if got < take:
-                    break
-            if not allbars:
-                # 空结果可能因连接失效：重连后重试一次
+    def _fetch():
+        out = []
+        api = _pytdx_get_api()
+        for _round in range(2):
+            if api is None:
+                break
+            try:
+                if not _pytdx_is_alive(api):
+                    api = _pytdx_get_api()
+                    if api is None:
+                        break
+                # PyTDX 单次 get_security_bars 上限约 800 根；count 较大时循环 start 偏移分批拉全量
+                allbars = []
+                need = cnt
+                start = 0
+                while need > 0:
+                    take = min(batch, need)
+                    with _PYTDX_SEM:
+                        bars = api.get_security_bars(cat, mkt, c6, start, take)
+                    if not bars:
+                        break
+                    allbars.extend(bars)
+                    got = len(bars)
+                    start += got
+                    need -= got
+                    if got < take:
+                        break
+                if not allbars:
+                    # 空结果可能因连接失效：重连后重试一次
+                    try: api.disconnect()
+                    except: pass
+                    _PYTDX_POOL.api = None
+                    api = _pytdx_get_api()
+                    continue
+                for b in allbars:
+                    try:
+                        raw_dt = str(b.get("datetime") or b.get("date") or "")
+                        # 非分钟周期（日/周/月）只取日期；分钟周期（5/15/30/60分、1分）保留完整时间
+                        dt = raw_dt[:10] if cat not in (0, 1, 2, 3, 7) else raw_dt
+                        out.append({
+                            "date": dt,
+                            "open": float(b.get("open")),
+                            "high": float(b.get("high")),
+                            "low": float(b.get("low")),
+                            "close": float(b.get("close")),
+                            "vol": float(b.get("vol") or 0),
+                            "amount": float(b.get("amount") or 0),
+                        })
+                    except Exception:
+                        continue
+                break
+            except Exception:
                 try: api.disconnect()
-                except: pass
+                except Exception: pass
                 _PYTDX_POOL.api = None
                 api = _pytdx_get_api()
-                continue
-            for b in allbars:
+        if out:
+            out.sort(key=lambda x: x["date"])
+            if adjust in ("qfq", "hfq"):
                 try:
-                    raw_dt = str(b.get("datetime") or b.get("date") or "")
-                    # 非分钟周期（日/周/月）只取日期；分钟周期（5/15/30/60分、1分）保留完整时间
-                    dt = raw_dt[:10] if cat not in (0, 1, 2, 3, 7) else raw_dt
-                    out.append({
-                        "date": dt,
-                        "open": float(b.get("open")),
-                        "high": float(b.get("high")),
-                        "low": float(b.get("low")),
-                        "close": float(b.get("close")),
-                        "vol": float(b.get("vol") or 0),
-                        "amount": float(b.get("amount") or 0),
-                    })
+                    xdxr = _pytdx_get_xdxr(mkt, c6)
+                    out = _apply_adjust(out, xdxr, adjust)
                 except Exception:
-                    continue
-            break
-        except Exception:
-            try: api.disconnect()
-            except Exception: pass
-            _PYTDX_POOL.api = None
-            api = _pytdx_get_api()
-    if out:
-        out.sort(key=lambda x: x["date"])
-        if adjust in ("qfq", "hfq"):
-            try:
-                xdxr = _pytdx_get_xdxr(mkt, c6)
-                out = _apply_adjust(out, xdxr, adjust)
-            except Exception:
-                pass
-        _KL_CACHE[key] = (out, time.time())
-    return out
+                    pass
+            _KL_CACHE[key] = (out, time.time())
+        return out
+
+    return _pytdx_coalesce(key, _fetch)
 
 
 def get_minute_time_data_pytdx(code, ttl=10):
@@ -1993,71 +2226,74 @@ def get_minute_time_data_pytdx(code, ttl=10):
     cached = _MINUTE_CACHE.get(key)
     if cached and (time.time() - cached[1]) < ttl:
         return cached[0]
-    out = []
-    api = _pytdx_get_api()
-    for _round in range(2):
-        if api is None:
-            break
-        try:
-            if not _pytdx_is_alive(api):
-                api = _pytdx_get_api()
-                if api is None:
-                    break
-            # 当日分时（1分钟K线重构，with_time 提供 datetime）
-            with _PYTDX_SEM:
-                data = api.get_minute_time_data(mkt, c6, with_time=True)
-            if not data:
-                try:
-                    api.disconnect()
-                except Exception:
-                    pass
-                _PYTDX_POOL.api = None
-                api = _pytdx_get_api()
-                continue
-            # 适配 pip 输出：{price, avg(单分钟均价), vol(已//100), datetime}
-            # 还原为前端契约 {time, price, avg_price(累积VWAP), vol(原始K线量)}：
-            #   time     : datetime[11:16] -> "HH:MM"
-            #   avg_price: 累积 VWAP = Σ(avg_j*vol_j) / Σ(vol_j)
-            #   vol      : ×100 还原为原始成交量（前端按 /10000 显示"万"）
-            cum_avg_vol = 0.0
-            cum_vol = 0.0
-            for d in data:
-                try:
-                    price = float(d.get("price") or 0)
-                    avg = float(d.get("avg") or 0)
-                    vol = int(d.get("vol") or 0)
-                    dt = d.get("datetime") or ""
-                    time_str = dt[11:16] if len(dt) >= 16 else ""
-                    cum_avg_vol += avg * vol
-                    cum_vol += vol
-                    avg_price = (cum_avg_vol / cum_vol) if cum_vol else price
-                    out.append({
-                        "time": time_str,
-                        "price": price,
-                        "avg_price": avg_price,
-                        "vol": vol * 100,
-                    })
-                except Exception:
-                    continue
-            if not out:
-                try:
-                    api.disconnect()
-                except Exception:
-                    pass
-                _PYTDX_POOL.api = None
-                api = _pytdx_get_api()
-                continue
-            break
-        except Exception:
+    def _fetch():
+        out = []
+        api = _pytdx_get_api()
+        for _round in range(2):
+            if api is None:
+                break
             try:
-                api.disconnect()
+                if not _pytdx_is_alive(api):
+                    api = _pytdx_get_api()
+                    if api is None:
+                        break
+                # 当日分时（1分钟K线重构，with_time 提供 datetime）
+                with _PYTDX_SEM:
+                    data = api.get_minute_time_data(mkt, c6, with_time=True)
+                if not data:
+                    try:
+                        api.disconnect()
+                    except Exception:
+                        pass
+                    _PYTDX_POOL.api = None
+                    api = _pytdx_get_api()
+                    continue
+                # 适配 pip 输出：{price, avg(单分钟均价), vol(已//100), datetime}
+                # 还原为前端契约 {time, price, avg_price(累积VWAP), vol(原始K线量)}：
+                #   time     : datetime[11:16] -> "HH:MM"
+                #   avg_price: 累积 VWAP = Σ(avg_j*vol_j) / Σ(vol_j)
+                #   vol      : ×100 还原为原始成交量（前端按 /10000 显示"万"）
+                cum_avg_vol = 0.0
+                cum_vol = 0.0
+                for d in data:
+                    try:
+                        price = float(d.get("price") or 0)
+                        avg = float(d.get("avg") or 0)
+                        vol = int(d.get("vol") or 0)
+                        dt = d.get("datetime") or ""
+                        time_str = dt[11:16] if len(dt) >= 16 else ""
+                        cum_avg_vol += avg * vol
+                        cum_vol += vol
+                        avg_price = (cum_avg_vol / cum_vol) if cum_vol else price
+                        out.append({
+                            "time": time_str,
+                            "price": price,
+                            "avg_price": avg_price,
+                            "vol": vol * 100,
+                        })
+                    except Exception:
+                        continue
+                if not out:
+                    try:
+                        api.disconnect()
+                    except Exception:
+                        pass
+                    _PYTDX_POOL.api = None
+                    api = _pytdx_get_api()
+                    continue
+                break
             except Exception:
-                pass
-            _PYTDX_POOL.api = None
-            api = _pytdx_get_api()
-    if out:
-        _MINUTE_CACHE[key] = (out, time.time())
-    return out
+                try:
+                    api.disconnect()
+                except Exception:
+                    pass
+                _PYTDX_POOL.api = None
+                api = _pytdx_get_api()
+        if out:
+            _MINUTE_CACHE[key] = (out, time.time())
+        return out
+
+    return _pytdx_coalesce(key, _fetch)
 
 
 def get_quote_pytdx(code, ttl=3):
@@ -2077,50 +2313,53 @@ def get_quote_pytdx(code, ttl=3):
     cached = _QUOTE_CACHE.get(key)
     if cached and (time.time() - cached[1]) < ttl:
         return cached[0]
-    api = _pytdx_get_api()
-    out = {}
-    for _round in range(2):
-        if api is None:
-            break
-        try:
-            if not _pytdx_is_alive(api):
-                api = _pytdx_get_api()
-                if api is None:
-                    break
-            with _PYTDX_SEM:
-                rows = api.get_security_quotes([(mkt, c6)])
-            if not rows:
-                raise RuntimeError("empty quote")
-            q = rows[0]
-            bids = []
-            asks = []
-            for i in range(1, 6):
-                bp = q.get("bid%d" % i)
-                bv = q.get("bid_vol%d" % i)
-                ap = q.get("ask%d" % i)
-                av = q.get("ask_vol%d" % i)
-                if bp is None or ap is None:
-                    continue
-                bids.append([float(bp), float(bv or 0)])
-                asks.append([float(ap), float(av or 0)])
-            out = {
-                "price": float(q.get("price") or 0),
-                "last_close": float(q.get("last_close") or 0),
-                "servertime": q.get("servertime") or "",
-                "bids": bids,
-                "asks": asks,
-            }
-            break
-        except Exception:
+    def _fetch():
+        api = _pytdx_get_api()
+        out = {}
+        for _round in range(2):
+            if api is None:
+                break
             try:
-                api.disconnect()
+                if not _pytdx_is_alive(api):
+                    api = _pytdx_get_api()
+                    if api is None:
+                        break
+                with _PYTDX_SEM:
+                    rows = api.get_security_quotes([(mkt, c6)])
+                if not rows:
+                    raise RuntimeError("empty quote")
+                q = rows[0]
+                bids = []
+                asks = []
+                for i in range(1, 6):
+                    bp = q.get("bid%d" % i)
+                    bv = q.get("bid_vol%d" % i)
+                    ap = q.get("ask%d" % i)
+                    av = q.get("ask_vol%d" % i)
+                    if bp is None or ap is None:
+                        continue
+                    bids.append([float(bp), float(bv or 0)])
+                    asks.append([float(ap), float(av or 0)])
+                out = {
+                    "price": float(q.get("price") or 0),
+                    "last_close": float(q.get("last_close") or 0),
+                    "servertime": q.get("servertime") or "",
+                    "bids": bids,
+                    "asks": asks,
+                }
+                break
             except Exception:
-                pass
-            _PYTDX_POOL.api = None
-            api = _pytdx_get_api()
-    if out:
-        _QUOTE_CACHE[key] = (out, time.time())
-    return out
+                try:
+                    api.disconnect()
+                except Exception:
+                    pass
+                _PYTDX_POOL.api = None
+                api = _pytdx_get_api()
+        if out:
+            _QUOTE_CACHE[key] = (out, time.time())
+        return out
+
+    return _pytdx_coalesce(key, _fetch)
 
 
 _INDUSTRY_CACHE = {}
@@ -2423,9 +2662,12 @@ def _get_stock_pool_pytdx(ttl=1800):
 def get_market_overview(ttl=60):
     """A 股市场概况：主要指数涨跌、两市涨跌家数、涨停/跌停家数、两市总成交额。
 
-    指数行情与成交额用 get_security_quotes 直查，但**必须走能回指数数据的专服**
-    （_index_hq_connect → 安信/国泰君安；默认 _PYTDX_SERVERS 那批对指数一律返回空，
-    会导致 index-grid 空白）；专服全失败时回退腾讯 HTTP 快照（_fetch_index_quotes_http）。
+    指数行情两级降级（两条链路彼此独立，不会同时失效）：
+      1) L1·标准行情连接池 `_pytdx_get_api()`（服务器列表已全为券商专服 `_TDX_HQ_SERVERS`，
+         每台都回指数数据）：`get_security_quotes` + `get_sparkline`
+         —— 唯一能直接拿到**成交额**的通道，且复用线程持久连接（省一次握手）；
+      2) L2·腾讯 HTTP `_fetch_index_quotes_http`：qt.gtimg.cn 快照 + 当日分时走势图。
+    若 L1 返回的个别指数缺成交额，用 `_fill_index_amount_http` 从腾讯快照补齐（非独立级别）。
     两市总额 = 上证 000001 金额 + 深证综指 399106 金额。
     涨跌家数由全市场 A 股行情（一次性全表拉取，股票池缓存 30 分钟）聚合，默认 60s 缓存。
     涨停/跌停按 ±9.8% 涨幅阈值近似判断（主板 10%、创业板/科创板 20% 均被该阈值覆盖）。
@@ -2453,57 +2695,27 @@ def get_market_overview(ttl=60):
         ]
         api = _pytdx_get_api()
         indices = []
-        # 指数快照必须走「能回指数数据」的专服（默认 _pytdx_get_api 那批对指数一律返回空，
-        # 这正是本模块 index-grid 空白的根因）。专服全失败则回退腾讯 HTTP 快照。
-        idx_api, _idx_srv = _index_hq_connect()
-        if idx_api is not None:
-            try:
-                try:
-                    with _PYTDX_SEM:
-                        rows = idx_api.get_security_quotes([(m, c) for m, c, _n in index_tuples])
-                except Exception:
-                    rows = []
-                if rows:
-                    by_key = {}
-                    for r in rows:
-                        try:
-                            by_key[(int(r.get("market")), str(r.get("code")).zfill(6))] = r
-                        except Exception:
-                            pass
-                    for mkt, code, name in index_tuples:
-                        r = by_key.get((mkt, code))
-                        if not r:
-                            continue
-                        try:
-                            price = float(r.get("price") or 0)
-                            lc = float(r.get("last_close") or 0)
-                            pct = ((price - lc) / lc * 100) if lc else 0.0
-                            amount = float(r.get("amount") or 0)
-                            idx = {
-                                "code": code, "name": name, "price": price,
-                                "pre_close": lc, "pct": round(pct, 3), "amount": amount,
-                                "spark": [], "spark_base": 0.0,
-                            }
-                            # 小走势图 sparkline（tdx_extra / 0x0fd1）：prices 为 float 绝对价序列
-                            try:
-                                with _PYTDX_SEM:
-                                    sp = idx_api.get_sparkline(mkt, code)
-                                if sp and sp.get("prices"):
-                                    idx["spark"] = [float(x) for x in sp["prices"]]
-                                    idx["spark_base"] = float(sp.get("base_price") or 0)
-                            except Exception:
-                                pass
-                            indices.append(idx)
-                        except Exception:
-                            continue
-            finally:
-                try:
-                    idx_api.disconnect()
-                except Exception:
-                    pass
+        # 指数快照/走势图走标准行情连接池（`_PYTDX_SERVERS` 已全为券商专服，均回指数数据）。
+        # 取空则强制重连换一台重试一次；仍空才降级腾讯 HTTP。
+        idx_source = ""
+        idx_api = _pytdx_get_api()
+        for _att in range(2):
+            indices = _fetch_index_quotes_pytdx(idx_api, index_tuples)
+            if indices:
+                idx_source = "L1:pytdx"
+                break
+            idx_api = _pytdx_force_reconnect()
+        # ---- L2：腾讯 HTTP 快照（与 TDX 完全独立的链路）----
         if not indices:
             indices = _fetch_index_quotes_http(index_tuples)
+            if indices:
+                idx_source = "L2:http"
         out["indices"] = indices
+        out["index_source"] = idx_source
+        # 成交额补齐：L1 若个别指数缺额（如该代码未回包）则用腾讯快照补，保证两市总额正确
+        if any((not float(ix.get("amount") or 0)) and ix.get("code") in ("000001", "399106")
+               for ix in indices):
+            _fill_index_amount_http(indices, index_tuples)
         total_amount = 0.0
         for ix in indices:
             if ix.get("code") in ("000001", "399106"):
@@ -2778,43 +2990,64 @@ def _minutes_diff(t1, t2):
     return diff
 
 
-# 能回指数数据的专服（默认 _PYTDX_SERVERS 多数主站对 get_index_bars 返回空，
-# 实测安信/国泰君安主站可正常返回上证/深证指数 1 分钟 K 含 amount 字段）。
-_INDEX_HQ_SERVERS = [
-    ("安信", "59.36.5.11", 7709),
-    ("国泰君安", "117.34.114.13", 7709),
-    ("国泰君安", "117.34.114.14", 7709),
-    ("国泰君安", "117.34.114.15", 7709),
-    ("国泰君安", "117.34.114.16", 7709),
-    ("国泰君安", "117.34.114.17", 7709),
-    ("国泰君安", "117.34.114.18", 7709),
-    ("国泰君安", "117.34.114.20", 7709),
-    ("国泰君安", "117.34.114.27", 7709),
-]
+def _fetch_index_quotes_pytdx(api, index_tuples):
+    """用**标准行情连接池**取指数快照 + 小走势图，返回 indices（失败返回 []）。
 
+    2026-09-10 起：标准行情服务器池 `_PYTDX_SERVERS` 已全量收敛为券商自营专服
+    （`_TDX_HQ_SERVERS`），**每一台都能回指数数据**，故指数/sparkline 不再单独建
+    「专服连接」，直接复用 `_pytdx_get_api()` 的线程持久连接（省一次握手，约 0.2s）。
 
-def _index_hq_connect(timeout=6):
-    """连接一台「能回指数数据」的专服，返回 (api, 服务器名)；全失败返回 (None, "")。
+    - `get_security_quotes`：指数价 / 昨收 / **成交额 amount**（唯一带成交额的标准命令）；
+    - `get_sparkline`(0x0fd1，tdx_extra 补丁)：日内小走势图绝对价格序列。
 
-    指数的实时快照（get_security_quotes / get_sparkline）与分钟 K（get_index_bars）
-    都只有这批专服才回数据；默认 _PYTDX_SERVERS 那几台对指数一律返回空。
+    ⚠️ api 是线程复用的持久连接，**调用方不得 disconnect**（会破坏连接池）。
     """
-    if not _PYTDX_OK:
-        return None, ""
-    for (name, ip, port) in _INDEX_HQ_SERVERS:
-        a = None
+    if api is None:
+        return []
+    srv = _pytdx_server_name()
+    try:
+        with _PYTDX_SEM:
+            rows = api.get_security_quotes([(m, c) for m, c, _n in index_tuples])
+    except Exception:
+        rows = []
+    if not rows:
+        return []
+    by_key = {}
+    for r in rows:
         try:
-            a = _TdxHq(raise_exception=False)
-            if a.connect(ip, port, time_out=timeout):
-                return a, name
+            by_key[(int(r.get("market")), str(r.get("code")).zfill(6))] = r
         except Exception:
             pass
+    indices = []
+    for mkt, code, name in index_tuples:
+        r = by_key.get((mkt, code))
+        if not r:
+            continue
         try:
-            if a is not None:
-                a.disconnect()
+            price = float(r.get("price") or 0)
+            lc = float(r.get("last_close") or 0)
+            pct = ((price - lc) / lc * 100) if lc else 0.0
+            amount = float(r.get("amount") or 0)
+            idx = {
+                "code": code, "name": name, "price": price,
+                "pre_close": lc, "pct": round(pct, 3), "amount": amount,
+                "spark": [], "spark_base": lc,
+                "source": "pytdx:%s" % srv,
+            }
+            # 小走势图 sparkline（tdx_extra / 0x0fd1）：prices 为 float 绝对价序列
+            try:
+                with _PYTDX_SEM:
+                    sp = api.get_sparkline(mkt, code)
+                if sp and sp.get("prices"):
+                    idx["spark"] = [float(x) for x in sp["prices"]]
+                    idx["spark_base"] = float(sp.get("base_price") or 0)
+            except Exception:
+                pass
+            indices.append(idx)
         except Exception:
-            pass
-    return None, ""
+            continue
+    return indices
+
 
 # HTTP 兜底取数用的请求头 / 代理策略（强制直连，忽略系统与沙箱注入的 HTTP(S)_PROXY）
 _HTTP_HEAD = {"User-Agent": "Mozilla/5.0", "Referer": "https://gu.qq.com/"}
@@ -2931,10 +3164,55 @@ def _fetch_index_quotes_http(index_tuples):
     return out
 
 
+def _fill_index_amount_http(indices, index_tuples):
+    """只补成交额：用腾讯快照一次请求，把 indices 中 amount 缺失(0) 的项原地补齐。
+
+    用于 L1（专服 get_security_quotes）个别代码未回包 / amount 为 0 时的修补，
+    保证「两市总额 = 000001 + 399106」正确。这不是一个独立降级级别。
+    返回补齐的条数。
+    """
+    mkt_of = {str(c): m for m, c, _n in index_tuples}
+    keys = {}
+    for ix in (indices or []):
+        if float(ix.get("amount") or 0):
+            continue
+        m = mkt_of.get(str(ix.get("code")))
+        if m is None:
+            continue
+        keys[("sh" if int(m) == 1 else "sz") + str(ix.get("code"))] = ix
+    if not keys:
+        return 0
+    n = 0
+    try:
+        txt = _http_get_text("https://qt.gtimg.cn/q=" + ",".join(keys.keys()))
+        for line in txt.strip().split(";"):
+            line = line.strip()
+            if "=" not in line:
+                continue
+            key = line.split("=", 1)[0].strip().replace("v_", "")
+            ix = keys.get(key)
+            if ix is None:
+                continue
+            f = line.split("=", 1)[1].strip().strip('"').split("~")
+            if len(f) <= 40:
+                continue
+            try:
+                amt = float(f[37] or 0) * 1e4        # 万元 → 元
+            except Exception:
+                continue
+            if amt > 0:
+                ix["amount"] = amt
+                ix["amount_source"] = "tencent"
+                n += 1
+    except Exception as _e:
+        logging.warning("fill index amount via TX failed: %s", _e)
+    return n
+
+
 def _fetch_index_amount_http(code, market, max_days=6):
     """HTTP 兜底：取指数逐分钟成交额（元），返回 {date: [(hhmm, amount_元)]}。
 
-    pytdx 专服（_INDEX_HQ_SERVERS）全部不可用时启用。两个源互为备份：
+    pytdx 专服（`_TDX_HQ_SERVERS`）全部不可用时启用。两个源互为备份：
       1) 腾讯分时 day/query：一次返回最近若干交易日的分时，格式
          "HHMM price cumvol cumamount"，cumamount 为日内累计成交额(元)，
          做相邻差分即得每分钟成交额；上证 sh000001 / 深证 sz399001。
@@ -2999,62 +3277,48 @@ def _fetch_index_bars_amount(code, market, max_days=6):
     """取指数逐分钟成交额（元），按日期分组返回 {date: [(hhmm, amount_元)]}。
 
     数据源：pytdx_patches 的 TdxHq_API.get_index_bars（category=8 = 1 分钟 K 线；
-    分钟线 0-3,7,8 由 pip 版 pytdx_patches 保持原生实现）。直连能回指数数据的
-    专服（安信/国泰君安；默认 _PYTDX_SERVERS 多数主站对该接口返回空）。
+    分钟线 0-3,7,8 由 pip 版 pytdx_patches 保持原生实现）。走**标准行情连接池**
+    `_pytdx_get_api()`（其服务器列表已全为券商专服 `_TDX_HQ_SERVERS`；通达信公有云
+    主站对该接口一律返回空）。取空则强制重连换一台重试一次。
     单次最多 800 根，分两批 0~800 / 800~400 覆盖约 5 个交易日。amount(元) 为
-    原生字段，真实成交额（非 vol*price 近似）。专服全部失败时回退 HTTP 兜底
+    原生字段，真实成交额（非 vol*price 近似）。TDX 全部失败时回退 HTTP 兜底
     （_fetch_index_amount_http：腾讯分时 → 新浪 1 分钟 K）。
     """
     out = {}
     if not _PYTDX_OK:
         return _fetch_index_amount_http(code, market, max_days=max_days)
-    for (_name, ip, port) in _INDEX_HQ_SERVERS:
-        try:
-            a = _TdxHq(raise_exception=False)
-            if not a.connect(ip, port, time_out=6):
-                continue
-        except Exception:
-            try:
-                a.disconnect()
-            except Exception:
-                pass
-            continue
+    api = _pytdx_get_api()
+    for _att in range(2):
+        if api is None:
+            break
         try:
             bars = []
             for (start, count) in ((0, 800), (800, 400)):
                 try:
                     with _PYTDX_SEM:
-                        b = a.get_index_bars(8, market, code, start, count)
+                        b = api.get_index_bars(8, market, code, start, count)
                     if isinstance(b, list):
                         bars.extend(b)
                 except Exception:
                     pass
-            if not bars:
-                continue
-            day_pts = {}
-            for b in bars:
-                dt = b.get("datetime") or ""
-                if len(dt) < 16:
-                    continue
-                day = dt[:10]
-                hhmm = dt[11:16]
-                amt = float(b.get("amount") or 0.0)
-                day_pts.setdefault(day, []).append((hhmm, amt))
-            for day in day_pts:
-                day_pts[day].sort(key=lambda x: x[0])
-            out = day_pts
-            break
+            if bars:
+                day_pts = {}
+                for b in bars:
+                    dt = b.get("datetime") or ""
+                    if len(dt) < 16:
+                        continue
+                    day = dt[:10]
+                    hhmm = dt[11:16]
+                    amt = float(b.get("amount") or 0.0)
+                    day_pts.setdefault(day, []).append((hhmm, amt))
+                for day in day_pts:
+                    day_pts[day].sort(key=lambda x: x[0])
+                out = day_pts
+                break
         except Exception:
-            try:
-                a.disconnect()
-            except Exception:
-                pass
-            continue
-        finally:
-            try:
-                a.disconnect()
-            except Exception:
-                pass
+            pass
+        # 本台取空/异常 → 丢弃连接换一台再试（注意：不 disconnect 池连接，由重连函数处理）
+        api = _pytdx_force_reconnect()
     if out:
         keep = sorted(out.keys(), reverse=True)[:max_days]
         return {d: out[d] for d in keep}
@@ -3066,8 +3330,8 @@ def get_two_market_turnover(ttl=120):
     """两市成交分析（上证综指 000001 + 深证成指 399001 逐分钟成交额）。
 
     数据源：pytdx_patches 的 TdxHq_API.get_index_bars（category=8 = 1 分钟 K 线），
-    直连能回指数数据的专服（安信/国泰君安；默认 _PYTDX_SERVERS 多数主站对该接口
-    返回空）。amount(元) 为原生真实成交额字段，单根即该分钟成交额，逐分钟累加得
+    走标准行情连接池 `_pytdx_get_api()`（服务器列表已收敛为券商专服 `_TDX_HQ_SERVERS`，
+    每台都能回该接口；通达信公有云主站一律返回空）。amount(元) 为原生真实成交额字段，单根即该分钟成交额，逐分钟累加得
     累计成交额曲线。单次最多 800 根，分两批覆盖约 5 个交易日，取最近 5 日展示。
     上证指数 market=1 / code='000001'，深证成指 market=0 / code='399001'。
 
@@ -3293,41 +3557,44 @@ def get_transaction_pytdx(code, count=40, ttl=3):
     cached = _TICK_CACHE.get(key)
     if cached and (time.time() - cached[1]) < ttl:
         return cached[0]
-    api = _pytdx_get_api()
-    out = []
-    for _round in range(2):
-        if api is None:
-            break
-        try:
-            if not _pytdx_is_alive(api):
-                api = _pytdx_get_api()
-                if api is None:
-                    break
-            with _PYTDX_SEM:
-                rows = api.get_transaction_data(tx_mkt, c6, 0, max(800, count))
-            if not rows:
-                raise RuntimeError("empty ticks")
-            tail = rows[-count:] if len(rows) > count else rows
-            for t in tail:
-                bos = t.get("buyorsell")
-                out.append({
-                    "time": t.get("time") or "",
-                    "price": float(t.get("price") or 0),
-                    "vol": int(t.get("vol") or 0),
-                    "num": int(t.get("num") or 0),
-                    "buyorsell": int(bos) if bos is not None else 2,
-                })
-            break
-        except Exception:
+    def _fetch():
+        api = _pytdx_get_api()
+        out = []
+        for _round in range(2):
+            if api is None:
+                break
             try:
-                api.disconnect()
+                if not _pytdx_is_alive(api):
+                    api = _pytdx_get_api()
+                    if api is None:
+                        break
+                with _PYTDX_SEM:
+                    rows = api.get_transaction_data(tx_mkt, c6, 0, max(800, count))
+                if not rows:
+                    raise RuntimeError("empty ticks")
+                tail = rows[-count:] if len(rows) > count else rows
+                for t in tail:
+                    bos = t.get("buyorsell")
+                    out.append({
+                        "time": t.get("time") or "",
+                        "price": float(t.get("price") or 0),
+                        "vol": int(t.get("vol") or 0),
+                        "num": int(t.get("num") or 0),
+                        "buyorsell": int(bos) if bos is not None else 2,
+                    })
+                break
             except Exception:
-                pass
-            _PYTDX_POOL.api = None
-            api = _pytdx_get_api()
-    if out:
-        _TICK_CACHE[key] = (out, time.time())
-    return out
+                try:
+                    api.disconnect()
+                except Exception:
+                    pass
+                _PYTDX_POOL.api = None
+                api = _pytdx_get_api()
+        if out:
+            _TICK_CACHE[key] = (out, time.time())
+        return out
+
+    return _pytdx_coalesce(key, _fetch)
 
 
 # ============================================================================
