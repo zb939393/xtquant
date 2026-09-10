@@ -18,10 +18,11 @@ try:
     from pytdx.hq import TdxHq_API as _TdxHq
     import concurrent.futures as _futures
     _PYTDX_OK = True
-    # 应用 pytdx 猴子补丁：修复 get_minute_time_data 当日分时错位 / 断线心跳自愈等。
-    # 导入即生效，且须早于任何 TdxHq_API 实例创建（_pytdx_get_api 为惰性调用）。
+    # 应用 pytdx_patches 猴子补丁（导入即自动 apply_pytdx_patches()）：修复
+    # get_security_bars 日/周/月线第2根起日期/价格错位(P4)、get_minute_time_data
+    # 当日分时错位、TdxHq/ExHq 断线心跳自愈等。须在 TdxHq_API 实例创建前导入。
     try:
-        import pytdx_patches
+        import pytdx_patches  # noqa: F401
     except Exception:
         pass
     # 行情增强补丁（tdx_extra）：把 get_sparkline 等 0x0fd1 扩展接口挂到 TdxHq_API 上。
@@ -1878,7 +1879,7 @@ def get_kline_pytdx(code, count=120, ttl=120, batch=800, max_bars=5000, period="
     count 较大时（超过 PyTDX 单次 get_security_bars 上限约 800 根）自动循环
     start 偏移分批拉取，从而支持「全量」历史 K 线。
     adjust 支持：'' (原始/不复权) / 'qfq' (前复权) / 'hfq' (后复权)。
-    复权因子由 PyTDX get_xdxr_info（经 pytdx_patches 修复的连接）计算。
+    复权因子由 PyTDX get_xdxr_info 计算。
     """
     _PERIOD_CAT = {
         "1d": 9, "day": 9, "daily": 9,
@@ -1969,7 +1970,7 @@ def get_kline_pytdx(code, count=120, ttl=120, batch=800, max_bars=5000, period="
 
 
 def get_minute_time_data_pytdx(code, ttl=10):
-    """PyTDX 当日分时数据（数据源：经 pip 包 pytdx_patches 修复的 api.get_minute_time_data）。
+    """PyTDX 当日分时数据（数据源：api.get_minute_time_data）。
 
     悬浮框与自选股看盘板的分时图共用此接口。pip 补丁内部由 1 分钟 K 线
     （category=7，pytdx 解析完全正确）重构分时，但返回形态为
@@ -2002,7 +2003,7 @@ def get_minute_time_data_pytdx(code, ttl=10):
                 api = _pytdx_get_api()
                 if api is None:
                     break
-            # 经 pip pytdx_patches 修复的当日分时（1分钟K线重构，with_time 提供 datetime）
+            # 当日分时（1分钟K线重构，with_time 提供 datetime）
             with _PYTDX_SEM:
                 data = api.get_minute_time_data(mkt, c6, with_time=True)
             if not data:
@@ -2422,7 +2423,10 @@ def _get_stock_pool_pytdx(ttl=1800):
 def get_market_overview(ttl=60):
     """A 股市场概况：主要指数涨跌、两市涨跌家数、涨停/跌停家数、两市总成交额。
 
-    指数行情与成交额用 get_security_quotes 直查（上证 000001 金额 + 深证综指 399106 金额≈两市总额）；
+    指数行情与成交额用 get_security_quotes 直查，但**必须走能回指数数据的专服**
+    （_index_hq_connect → 安信/国泰君安；默认 _PYTDX_SERVERS 那批对指数一律返回空，
+    会导致 index-grid 空白）；专服全失败时回退腾讯 HTTP 快照（_fetch_index_quotes_http）。
+    两市总额 = 上证 000001 金额 + 深证综指 399106 金额。
     涨跌家数由全市场 A 股行情（一次性全表拉取，股票池缓存 30 分钟）聚合，默认 60s 缓存。
     涨停/跌停按 ±9.8% 涨幅阈值近似判断（主板 10%、创业板/科创板 20% 均被该阈值覆盖）。
     返回 {ok, indices:[{code,name,price,pre_close,pct,amount}], up, down, flat,
@@ -2449,49 +2453,61 @@ def get_market_overview(ttl=60):
         ]
         api = _pytdx_get_api()
         indices = []
-        total_amount = 0.0
-        if api is not None:
+        # 指数快照必须走「能回指数数据」的专服（默认 _pytdx_get_api 那批对指数一律返回空，
+        # 这正是本模块 index-grid 空白的根因）。专服全失败则回退腾讯 HTTP 快照。
+        idx_api, _idx_srv = _index_hq_connect()
+        if idx_api is not None:
             try:
-                with _PYTDX_SEM:
-                    rows = api.get_security_quotes([(m, c) for m, c, _n in index_tuples])
-            except Exception:
-                rows = []
-            if rows:
-                by_key = {}
-                for r in rows:
-                    try:
-                        by_key[(int(r.get("market")), str(r.get("code")).zfill(6))] = r
-                    except Exception:
-                        pass
-                for mkt, code, name in index_tuples:
-                    r = by_key.get((mkt, code))
-                    if not r:
-                        continue
-                    try:
-                        price = float(r.get("price") or 0)
-                        lc = float(r.get("last_close") or 0)
-                        pct = ((price - lc) / lc * 100) if lc else 0.0
-                        amount = float(r.get("amount") or 0)
-                        idx = {
-                            "code": code, "name": name, "price": price,
-                            "pre_close": lc, "pct": round(pct, 3), "amount": amount,
-                            "spark": [], "spark_base": 0.0,
-                        }
-                        # 小走势图 sparkline（tdx_extra / 0x0fd1）：prices 为 float 绝对价序列
+                try:
+                    with _PYTDX_SEM:
+                        rows = idx_api.get_security_quotes([(m, c) for m, c, _n in index_tuples])
+                except Exception:
+                    rows = []
+                if rows:
+                    by_key = {}
+                    for r in rows:
                         try:
-                            with _PYTDX_SEM:
-                                sp = api.get_sparkline(mkt, code)
-                            if sp and sp.get("prices"):
-                                idx["spark"] = [float(x) for x in sp["prices"]]
-                                idx["spark_base"] = float(sp.get("base_price") or 0)
+                            by_key[(int(r.get("market")), str(r.get("code")).zfill(6))] = r
                         except Exception:
                             pass
-                        indices.append(idx)
-                        if code in ("000001", "399106"):
-                            total_amount += amount
-                    except Exception:
-                        continue
+                    for mkt, code, name in index_tuples:
+                        r = by_key.get((mkt, code))
+                        if not r:
+                            continue
+                        try:
+                            price = float(r.get("price") or 0)
+                            lc = float(r.get("last_close") or 0)
+                            pct = ((price - lc) / lc * 100) if lc else 0.0
+                            amount = float(r.get("amount") or 0)
+                            idx = {
+                                "code": code, "name": name, "price": price,
+                                "pre_close": lc, "pct": round(pct, 3), "amount": amount,
+                                "spark": [], "spark_base": 0.0,
+                            }
+                            # 小走势图 sparkline（tdx_extra / 0x0fd1）：prices 为 float 绝对价序列
+                            try:
+                                with _PYTDX_SEM:
+                                    sp = idx_api.get_sparkline(mkt, code)
+                                if sp and sp.get("prices"):
+                                    idx["spark"] = [float(x) for x in sp["prices"]]
+                                    idx["spark_base"] = float(sp.get("base_price") or 0)
+                            except Exception:
+                                pass
+                            indices.append(idx)
+                        except Exception:
+                            continue
+            finally:
+                try:
+                    idx_api.disconnect()
+                except Exception:
+                    pass
+        if not indices:
+            indices = _fetch_index_quotes_http(index_tuples)
         out["indices"] = indices
+        total_amount = 0.0
+        for ix in indices:
+            if ix.get("code") in ("000001", "399106"):
+                total_amount += float(ix.get("amount") or 0.0)
         out["total_amount"] = total_amount
         # ---- 全市场涨跌家数（优先 akshare 乐咕一次请求；失败回退 pytdx 全市场遍历）----
         up = down = flat = limit_up = limit_down = 0
@@ -2739,7 +2755,7 @@ def _two_market_turnover_text(per_day, labels, milestones, bar_series):
         block = infos[0].get(m)
         if not block:
             continue
-        lines.append("%d:" % m)
+        lines.append("%d亿:" % m)
         lines.append("%s 成交,每千亿用时%s 分钟，上海占 %s%%" % (block[0], block[1], block[2]))
         for i in range(len(infos) - 1, 0, -1):
             d = infos[i].get(m)
@@ -2762,17 +2778,298 @@ def _minutes_diff(t1, t2):
     return diff
 
 
+# 能回指数数据的专服（默认 _PYTDX_SERVERS 多数主站对 get_index_bars 返回空，
+# 实测安信/国泰君安主站可正常返回上证/深证指数 1 分钟 K 含 amount 字段）。
+_INDEX_HQ_SERVERS = [
+    ("安信", "59.36.5.11", 7709),
+    ("国泰君安", "117.34.114.13", 7709),
+    ("国泰君安", "117.34.114.14", 7709),
+    ("国泰君安", "117.34.114.15", 7709),
+    ("国泰君安", "117.34.114.16", 7709),
+    ("国泰君安", "117.34.114.17", 7709),
+    ("国泰君安", "117.34.114.18", 7709),
+    ("国泰君安", "117.34.114.20", 7709),
+    ("国泰君安", "117.34.114.27", 7709),
+]
+
+
+def _index_hq_connect(timeout=6):
+    """连接一台「能回指数数据」的专服，返回 (api, 服务器名)；全失败返回 (None, "")。
+
+    指数的实时快照（get_security_quotes / get_sparkline）与分钟 K（get_index_bars）
+    都只有这批专服才回数据；默认 _PYTDX_SERVERS 那几台对指数一律返回空。
+    """
+    if not _PYTDX_OK:
+        return None, ""
+    for (name, ip, port) in _INDEX_HQ_SERVERS:
+        a = None
+        try:
+            a = _TdxHq(raise_exception=False)
+            if a.connect(ip, port, time_out=timeout):
+                return a, name
+        except Exception:
+            pass
+        try:
+            if a is not None:
+                a.disconnect()
+        except Exception:
+            pass
+    return None, ""
+
+# HTTP 兜底取数用的请求头 / 代理策略（强制直连，忽略系统与沙箱注入的 HTTP(S)_PROXY）
+_HTTP_HEAD = {"User-Agent": "Mozilla/5.0", "Referer": "https://gu.qq.com/"}
+_HTTP_NOPROXY = {"http": None, "https": None}
+
+
+def _http_get_text(url, timeout=8):
+    """HTTP GET 取文本；显式禁用代理（避免系统/沙箱代理拦截行情站点）。"""
+    import requests as _reqs
+    r = _reqs.get(url, timeout=timeout, headers=_HTTP_HEAD, proxies=_HTTP_NOPROXY)
+    r.raise_for_status()
+    return r.text
+
+
+def _sparkline_http(code, market, max_points=240):
+    """HTTP 兜底：取指数「当日日内价格序列」，供 index-grid 小走势图（sparkline）使用。
+
+    pytdx 的 sparkline 走 tdx_extra 0x0fd1 扩展命令（仅专服可用）。此函数为其 HTTP 备份：
+      1) 腾讯当日分时 minute/query：逐分钟行 "HHMM price cumvol cumamount"，
+         取 price 字段即价格序列（实测形态与 pytdx sparkline 一致）。
+      2) 新浪 5 分钟 K：取数据内最后一日（当日）的 close 序列。
+    取不到返回 []，前端 hasSpark 为假会自动隐藏小走势图，不影响其余字段展示。
+    """
+    import json as _json
+    sym = ("sh" if int(market) == 1 else "sz") + str(code)
+    # 1) 腾讯当日分时（价格列）
+    try:
+        txt = _http_get_text(
+            "https://web.ifzq.gtimg.cn/appstock/app/minute/query?code=%s" % sym)
+        node = ((_json.loads(txt).get("data") or {}).get(sym)) or {}
+        rows = ((node.get("data") or {}).get("data")) or []
+        prices = []
+        for row in rows:
+            parts = str(row).split()
+            if len(parts) >= 2:
+                try:
+                    prices.append(float(parts[1]))
+                except Exception:
+                    pass
+        if prices:
+            return prices[-max_points:]
+    except Exception as _e:
+        logging.warning("sparkline TX http fallback failed: %s", _e)
+    # 2) 新浪 5 分钟 K（最后一日 close）
+    try:
+        txt = _http_get_text(
+            "https://quotes.sina.cn/cn/api/json_v2.php/CN_MarketDataService.getKLineData"
+            "?symbol=%s&scale=5&ma=no&datalen=60" % sym)
+        data = _json.loads(txt)
+        if isinstance(data, list) and data:
+            days = {}
+            for r in data:
+                d = str(r.get("day") or "")
+                if len(d) < 10:
+                    continue
+                try:
+                    days.setdefault(d[:10], []).append(float(r.get("close")))
+                except Exception:
+                    pass
+            if days:
+                last_day = sorted(days.keys())[-1]
+                prices = [p for p in days[last_day] if p == p]
+                if prices:
+                    return prices[-max_points:]
+    except Exception as _e:
+        logging.warning("sparkline SINA http fallback failed: %s", _e)
+    return []
+
+
+def _fetch_index_quotes_http(index_tuples):
+    """HTTP 兜底：取指数实时快照，返回 [{code,name,price,pre_close,pct,amount,...}]。
+
+    数据源：腾讯行情快照 qt.gtimg.cn（GBK 文本，`~` 分隔）。实测与 pytdx 专服数值
+    完全一致（如上证 price=3937.78 / pre_close=3951.51 / amount=5180.05 亿）。
+    第 37 字段为成交额（万元），×1e4 得元。pytdx 专服全部不可用时启用。
+    **小走势图（spark）也有备份**：由 `_sparkline_http` 取当日日内价格序列
+    （腾讯当日分时 → 新浪 5 分钟 K），与 pytdx sparkline 形态一致。
+    """
+    sym_list = [("sh" if int(m) == 1 else "sz") + str(c) for m, c, _n in index_tuples]
+    out = []
+    try:
+        txt = _http_get_text("https://qt.gtimg.cn/q=" + ",".join(sym_list))
+        by_sym = {}
+        for line in txt.strip().split(";"):
+            line = line.strip()
+            if not line or "=" not in line:
+                continue
+            key = line.split("=", 1)[0].strip()
+            body = line.split("=", 1)[1].strip().strip('"')
+            fields = body.split("~")
+            if len(fields) > 40:
+                by_sym[key.replace("v_", "")] = fields
+        for m, code, name in index_tuples:
+            sym = ("sh" if int(m) == 1 else "sz") + str(code)
+            f = by_sym.get(sym)
+            if not f:
+                continue
+            try:
+                price = float(f[3] or 0)
+                pre = float(f[4] or 0)
+                amt = float(f[37] or 0) * 1e4          # 万元 → 元
+                pct = ((price - pre) / pre * 100) if pre else 0.0
+                out.append({
+                    "code": code, "name": name, "price": price,
+                    "pre_close": pre, "pct": round(pct, 3), "amount": amt,
+                    # 小走势图备份：当日日内价格序列（取不到则为空，前端自动隐藏）
+                    "spark": _sparkline_http(code, m),
+                    "spark_base": pre, "source": "tencent",
+                })
+            except Exception:
+                continue
+    except Exception as _e:
+        logging.warning("index quotes TX http fallback failed: %s", _e)
+    return out
+
+
+def _fetch_index_amount_http(code, market, max_days=6):
+    """HTTP 兜底：取指数逐分钟成交额（元），返回 {date: [(hhmm, amount_元)]}。
+
+    pytdx 专服（_INDEX_HQ_SERVERS）全部不可用时启用。两个源互为备份：
+      1) 腾讯分时 day/query：一次返回最近若干交易日的分时，格式
+         "HHMM price cumvol cumamount"，cumamount 为日内累计成交额(元)，
+         做相邻差分即得每分钟成交额；上证 sh000001 / 深证 sz399001。
+      2) 新浪 1 分钟 K（scale=1）：每根直接给 amount(元) 即该分钟成交额。
+    两源实测与 pytdx 结果完全一致（如 09-09 上证 8737 亿 / 深证 9819 亿）。
+    """
+    import json as _json
+    sym = ("sh" if int(market) == 1 else "sz") + str(code)
+    # 1) 腾讯分时（累计成交额 → 差分）
+    try:
+        txt = _http_get_text(
+            "https://web.ifzq.gtimg.cn/appstock/app/day/query?code=%s" % sym)
+        node = ((_json.loads(txt).get("data") or {}).get(sym)) or {}
+        out = {}
+        for it in (node.get("data") or []):
+            raw = str(it.get("date") or "")
+            rows = it.get("data") or []
+            if len(raw) != 8 or not rows:
+                continue
+            day = "%s-%s-%s" % (raw[:4], raw[4:6], raw[6:8])
+            pts, prev = [], 0.0
+            for row in rows:
+                parts = str(row).split()
+                if len(parts) < 4 or len(parts[0]) < 4:
+                    continue
+                h = parts[0]
+                cum = float(parts[3] or 0.0)
+                amt = cum - prev
+                prev = cum
+                pts.append(("%s:%s" % (h[:2], h[2:4]), amt if amt > 0 else 0.0))
+            if pts:
+                out[day] = pts
+        if out:
+            keep = sorted(out.keys(), reverse=True)[:max_days]
+            return {d: out[d] for d in keep}
+    except Exception as _e:
+        logging.warning("turnover TX http fallback failed: %s", _e)
+    # 2) 新浪 1 分钟 K（amount 即每分钟成交额）
+    try:
+        txt = _http_get_text(
+            "https://quotes.sina.cn/cn/api/json_v2.php/CN_MarketDataService.getKLineData"
+            "?symbol=%s&scale=1&ma=no&datalen=1500" % sym)
+        data = _json.loads(txt)
+        out = {}
+        if isinstance(data, list):
+            for r in data:
+                d = str(r.get("day") or "")
+                if len(d) < 16:
+                    continue
+                out.setdefault(d[:10], []).append((d[11:16], float(r.get("amount") or 0.0)))
+        for day in out:
+            out[day].sort(key=lambda x: x[0])
+        if out:
+            keep = sorted(out.keys(), reverse=True)[:max_days]
+            return {d: out[d] for d in keep}
+    except Exception as _e:
+        logging.warning("turnover SINA http fallback failed: %s", _e)
+    return {}
+
+
+def _fetch_index_bars_amount(code, market, max_days=6):
+    """取指数逐分钟成交额（元），按日期分组返回 {date: [(hhmm, amount_元)]}。
+
+    数据源：pytdx_patches 的 TdxHq_API.get_index_bars（category=8 = 1 分钟 K 线；
+    分钟线 0-3,7,8 由 pip 版 pytdx_patches 保持原生实现）。直连能回指数数据的
+    专服（安信/国泰君安；默认 _PYTDX_SERVERS 多数主站对该接口返回空）。
+    单次最多 800 根，分两批 0~800 / 800~400 覆盖约 5 个交易日。amount(元) 为
+    原生字段，真实成交额（非 vol*price 近似）。专服全部失败时回退 HTTP 兜底
+    （_fetch_index_amount_http：腾讯分时 → 新浪 1 分钟 K）。
+    """
+    out = {}
+    if not _PYTDX_OK:
+        return _fetch_index_amount_http(code, market, max_days=max_days)
+    for (_name, ip, port) in _INDEX_HQ_SERVERS:
+        try:
+            a = _TdxHq(raise_exception=False)
+            if not a.connect(ip, port, time_out=6):
+                continue
+        except Exception:
+            try:
+                a.disconnect()
+            except Exception:
+                pass
+            continue
+        try:
+            bars = []
+            for (start, count) in ((0, 800), (800, 400)):
+                try:
+                    with _PYTDX_SEM:
+                        b = a.get_index_bars(8, market, code, start, count)
+                    if isinstance(b, list):
+                        bars.extend(b)
+                except Exception:
+                    pass
+            if not bars:
+                continue
+            day_pts = {}
+            for b in bars:
+                dt = b.get("datetime") or ""
+                if len(dt) < 16:
+                    continue
+                day = dt[:10]
+                hhmm = dt[11:16]
+                amt = float(b.get("amount") or 0.0)
+                day_pts.setdefault(day, []).append((hhmm, amt))
+            for day in day_pts:
+                day_pts[day].sort(key=lambda x: x[0])
+            out = day_pts
+            break
+        except Exception:
+            try:
+                a.disconnect()
+            except Exception:
+                pass
+            continue
+        finally:
+            try:
+                a.disconnect()
+            except Exception:
+                pass
+    if out:
+        keep = sorted(out.keys(), reverse=True)[:max_days]
+        return {d: out[d] for d in keep}
+    # pytdx 专服全部失败 → HTTP 兜底（腾讯分时优先、新浪 1 分钟 K 次之）
+    return _fetch_index_amount_http(code, market, max_days=max_days)
+
+
 def get_two_market_turnover(ttl=120):
     """两市成交分析（上证综指 000001 + 深证成指 399001 逐分钟成交额）。
 
-    数据源：pytdx_patches 的 TdxHq_API.get_index_bars（category=7 = 1 分钟 K），
-    对指数返回干净的逐分钟成交额 amount(元)。上证指数 market=1 / code='000001'，
-    深证成指 market=0 / code='399001'。
-
-    单次 get_index_bars 最多取 800 根（>=1000 返回 None），故分两批：
-        start=0,   count=800  → 最近 ~3.3 个交易日
-        start=800, count=400  → 更早 ~1.7 个交易日
-    合并后按日期分组，取最近 5 个交易日（今日可为不完整盘中数据）。
+    数据源：pytdx_patches 的 TdxHq_API.get_index_bars（category=8 = 1 分钟 K 线），
+    直连能回指数数据的专服（安信/国泰君安；默认 _PYTDX_SERVERS 多数主站对该接口
+    返回空）。amount(元) 为原生真实成交额字段，单根即该分钟成交额，逐分钟累加得
+    累计成交额曲线。单次最多 800 根，分两批覆盖约 5 个交易日，取最近 5 日展示。
+    上证指数 market=1 / code='000001'，深证成指 market=0 / code='399001'。
 
     输出与 E:\\vue\\证券分析js\\5days-2-b.html 等价：
         - bar : 每 1000 亿成交额所需交易分钟（y 轴），各交易日为系列
@@ -2790,62 +3087,24 @@ def get_two_market_turnover(ttl=120):
            "milestones": [], "bar": {"series": []}, "line": {"x": [], "series": []},
            "totals": {}, "text": ""}
     try:
-        if not _PYTDX_OK:
-            out["error"] = "pytdx 未安装"
-            return out
-        # 分两批抓取 上证 + 深证 指数 1 分钟 K
-        sh_bars, sz_bars = [], []
-        for (start, count) in ((0, 800), (800, 400)):
-            for (mkt, code, sink) in ((1, "000001", sh_bars), (0, "399001", sz_bars)):
-                bars = None
-                for _ in range(2):
-                    a = _pytdx_get_api()
-                    if a is None:
-                        break
-                    try:
-                        with _PYTDX_SEM:
-                            bars = a.get_index_bars(7, mkt, code, start, count)
-                        if bars is not None:
-                            sink.extend(bars)
-                            break
-                    except Exception:
-                        try:
-                            a.disconnect()
-                        except Exception:
-                            pass
-                # bars 为 None 时跳过该批次（继续用已取到的数据兜底）
-
-        def _to_map(bars):
-            m = {}
-            for b in bars:
-                try:
-                    dt = b.get("datetime")
-                    if not dt:
-                        y, mo, d, h, mi = (b.get("year"), b.get("month"),
-                                           b.get("day"), b.get("hour"), b.get("minute"))
-                        if None in (y, mo, d, h, mi):
-                            continue
-                        dt = "%04d-%02d-%02d %02d:%02d" % (y, mo, d, h, mi)
-                    amt = b.get("amount") or 0
-                    m[dt] = m.get(dt, 0.0) + float(amt)
-                except Exception:
-                    continue
-            return m
-
-        sh_map = _to_map(sh_bars)
-        sz_map = _to_map(sz_bars)
-        if not sh_map:
+        # 抓取 上证(000001, mkt=1) + 深证(399001, mkt=0) 指数逐分钟成交额（元）。
+        # 数据源：pytdx_patches 的 get_index_bars(category=8 = 1 分钟 K 线)，
+        # 直连能回指数数据的专服（安信/国泰君安），amount 为原生真实成交额字段。
+        sh_pts = _fetch_index_bars_amount("000001", 1, max_days=6)
+        sz_pts = _fetch_index_bars_amount("399001", 0, max_days=6)
+        if not sh_pts:
             out["error"] = "未取到上证指数分钟数据"
             return out
 
-        # 按日期分组（以沪市时间轴为准，合并深市）
+        # 按日期分组（以沪市时间轴为主，合并深市）
         day_map = {}
-        for dt, sh_amt in sh_map.items():
-            sz_amt = sz_map.get(dt, 0.0)
-            day = dt.split(" ")[0]
-            day_map.setdefault(day, []).append((dt, sh_amt, sz_amt))
-        for day in day_map:
-            day_map[day].sort(key=lambda x: x[0])
+        for day in sh_pts:
+            sz_map = {hhmm: amt for hhmm, amt in sz_pts.get(day, [])}
+            rows = []
+            for hhmm, sh_amt in sh_pts[day]:
+                rows.append(("%s %s" % (day, hhmm), sh_amt, sz_map.get(hhmm, 0.0)))
+            rows.sort(key=lambda x: x[0])
+            day_map[day] = rows
 
         days_pick = sorted(day_map.keys(), reverse=True)[:5]
         labels = ["今天", "昨天", "前天", "前2天", "前三天"][:len(days_pick)]
@@ -2871,6 +3130,7 @@ def get_two_market_turnover(ttl=120):
                             "cum_sh": cum_sh_list, "total": total, "sh_pct": sh_pct})
             out["totals"][day] = {"亿": total, "sh_pct": sh_pct}
 
+        # 成交额口径：里程碑以 1000 亿 为步进（合计约 1~1.5 万亿 = 10000~15000 亿）
         milestones = list(range(1000, int(max_milestone) + 1, 1000))
         line_x = per_day[0]["hhmm"] if per_day else []
 

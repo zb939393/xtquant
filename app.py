@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """Flask 主入口：注册蓝图 + 启动服务。"""
-import logging, os, signal
+import logging, os, signal, sys
 from datetime import datetime
 from flask import Flask, jsonify, render_template
 from waitress import serve
@@ -176,7 +176,39 @@ def create_app():
     return app
 
 
+def _port_already_serving(port, host="127.0.0.1", timeout=1.5):
+    """检测端口是否已有服务在应答。
+
+    之所以不用 bind 判断：Windows 的 SO_REUSEADDR 允许两个进程 bind 同一端口
+    （后者"劫持"前者），bind 成功不代表没有实例在跑；而 TCP 连接能建立则一定是
+    已有监听者，检测才可靠。
+    """
+    import socket as _sock
+    s = _sock.socket(_sock.AF_INET, _sock.SOCK_STREAM)
+    try:
+        s.settimeout(timeout)
+        return s.connect_ex((host, port)) == 0
+    except Exception:
+        return False
+    finally:
+        try:
+            s.close()
+        except Exception:
+            pass
+
+
 if __name__ == "__main__":
+    # ---- 单实例守卫：防止重复启动（Windows SO_REUSEADDR 会静默堆实例） ----
+    if os.environ.get("XTQUANT_ALLOW_DUP") != "1" and _port_already_serving(Config.PORT):
+        _msg = (
+            "端口 %d 已有服务在运行，已拒绝重复启动（避免多实例抢同一端口）。\n"
+            "  · 查看当前实例： python restart_server.py --status\n"
+            "  · 重启为单实例： python restart_server.py\n"
+            "  · 确认要强起第二实例： 设置环境变量 XTQUANT_ALLOW_DUP=1 后重试"
+        ) % Config.PORT
+        print(_msg)
+        sys.exit(1)
+
     app = create_app()
 
     # 关键修复：改用生产级 WSGI 服务 waitress（替代 Flask 内置的 werkzeug 开发服务器，

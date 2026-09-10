@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<html lang="zh-CN" data-page-node-id="NGZ94mltkCifiWmnWztaoL">
+<head data-page-node-id="by2rsUhtqRZtAaADg5Yjoq">
+<meta charset="UTF-8" data-page-node-id="YJ2omFqCwesJAbJMy5zIb3">
+<meta name="viewport" content="width=device-width, initial-scale=1.0" data-page-node-id="D6eXVyntA0ADL2Ucid6rKh">
 <title>两市成交分析</title>
 <script src="https://unpkg.com/vue@2.7.16/dist/vue.min.js"></script>
 <script src="https://unpkg.com/echarts@5.5.0/dist/echarts.min.js"></script>
@@ -32,33 +32,33 @@
   .chart-err { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; color:#f56c6c; font-size:8px; padding:0 20px; text-align:center; }
 </style>
 </head>
-<body>
-<div id="app">
-  <div class="tb-hover"></div>
-  <div class="toolbar">
-    <span class="title">两市成交分析<span class="sub">上证综指 + 深证成指 · 逐分钟成交额</span></span>
-    <span class="updated" v-if="updatedAt">更新 [# updatedAt #]</span>
-    <div class="zoom-group">
-      <label>大小</label>
-      <input type="range" class="zoom-slider" min="50" max="150" step="1" v-model.number="zoom" @input="onZoomChange">
-      <span class="zoom-val">[# zoom #]%</span>
+<body data-page-node-id="zFpWuQmNAVeKe5LQvqTt0o">
+<div id="app" data-page-node-id="Xw0o32bfqzJ17MvbMZxbbh">
+  <div class="tb-hover" data-page-node-id="AbDsFRUFaTCnjTl2l1Tm3B"></div>
+  <div class="toolbar" data-page-node-id="Njk26ibWY03Mm3kVduUbbF">
+    <span class="title" data-page-node-id="G7oqtIIrZWuwuMu3lnLDK5">两市成交分析<span class="sub" data-page-node-id="Ct56l2EiGkgsekcxt2UOT5">上证综指 + 深证成指 · 逐分钟成交额</span></span>
+    <span class="updated" v-if="updatedAt" data-page-node-id="e9tqOl6xFLjZShIMFr0N2c">更新 [# updatedAt #]</span>
+    <div class="zoom-group" data-page-node-id="nOEl8WDHqQL8SJ9jYqkhuj">
+      <label data-page-node-id="QBmrfAGv1DDx6IX32NR5by">大小</label>
+      <input type="range" class="zoom-slider" min="50" max="150" step="1" v-model.number="zoom" @input="onZoomChange" data-page-node-id="GYN49s57E5O8PYWgawxTEY">
+      <span class="zoom-val" data-page-node-id="kFovKaAsmoRUCvwj1bOltt">[# zoom #]%</span>
     </div>
-    <button class="btn" :class="{active:onTop}" @click="toggleTop">[# onTop ? '置顶' : '未置顶' #]</button>
-    <button class="btn" @click="fetchData(true)">刷新</button>
+    <button class="btn" :class="{active:onTop}" @click="toggleTop" data-page-node-id="X1A7gTgEhROrvgTEIGnlOj">[# onTop ? '置顶' : '未置顶' #]</button>
+    <button class="btn" @click="fetchData(true)" data-page-node-id="YaL1s05ZH17xRIFK81Z8UX">刷新</button>
   </div>
-  <div class="content">
-    <div class="chart-wrap">
-      <div id="chartBar"></div>
+  <div class="content" data-page-node-id="t0jNIBSqx9WLl0c0FfYS2b">
+    <div class="chart-wrap" data-page-node-id="h71q1Q0fY9iJf7utA9P3Le">
+      <div id="chartBar" data-page-node-id="VBJHO9o8EIvleGSg9Mtj6l"></div>
     </div>
-    <div class="chart-wrap">
-      <div id="chartLine"></div>
+    <div class="chart-wrap" data-page-node-id="oHkun55l1JFENVmSHe3UUA">
+      <div id="chartLine" data-page-node-id="dvjaKx0Eyf4d0gzGSlcgr5"></div>
     </div>
-    <div class="summary" v-if="payload.text">
-      <div class="ln" v-for="(line, idx) in payloadLines" :key="idx">[# line #]</div>
+    <div class="summary" v-if="payload.text" data-page-node-id="Jw2Iwnlqkk16bIsA68nOds">
+      <div class="ln" v-for="(line, idx) in payloadLines" :key="idx" data-page-node-id="qyA47ecInVaEKiqgjHTnba">[# line #]</div>
     </div>
-    <div class="summary" v-else>加载中…</div>
+    <div class="summary" v-else data-page-node-id="4FLcEiuRzZK0AMbSDJotuh">加载中…</div>
   </div>
-  <div class="chart-err" v-if="chartErr">[# chartErr #]</div>
+  <div class="chart-err" v-if="chartErr" data-page-node-id="xshfN59jq4b5w1JPTqu2IT">[# chartErr #]</div>
 </div>
 
 <script>

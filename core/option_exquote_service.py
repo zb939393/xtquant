@@ -2,7 +2,6 @@
 """期权扩展行情(ExHq)盘口 / 分时 / 逐笔服务。
 
 数据源（pip 包，已在环境中安装，无需拷贝源码）：
-  - pytdx_patches ：对 pytdx 的分时 / 历史K线 / 心跳等接口打补丁（国信、国元专有扩展行情）。
   - tdx_exhq      ：封装 TdxExHq_API 连接与期权合约枚举（EXHQ_SERVERS 含国信7721 / 国元7721 / 通用7727）。
 
 对外归一化为与「可转债看盘板」board-rt 完全一致的数据契约：
@@ -17,7 +16,7 @@
 import time
 import threading
 
-# 必须先 import pytdx_patches 以应用补丁，再 import tdx_exhq（其 TdxExHq_API 复用被补丁过的解析器）。
+# 应用 pytdx_patches 补丁（get_security_bars P4 / 心跳自愈），须在 TdxExHq_API 使用前导入。
 try:
     import pytdx_patches  # noqa: F401
 except Exception:

@@ -589,7 +589,7 @@ def futures_zhangfu_popup_launch():
 
 @futures_bp.route("/amountflow/data")
 def futures_amountflow_data():
-    """两市成交分析（上证 + 深证 逐分钟成交额）：pytdx_patches get_index_bars 代理。"""
+    """两市成交分析（上证 + 深证 逐分钟成交额）：pytdx get_index_bars 取值。"""
     try:
         ttl = int(request.args.get("ttl", "120") or "120")
         data = ak_service.get_two_market_turnover(ttl=ttl)
