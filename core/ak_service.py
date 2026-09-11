@@ -2365,8 +2365,45 @@ def get_quote_pytdx(code, ttl=3):
 _INDUSTRY_CACHE = {}
 
 
+# ---------------------------------------------------------------------------
+# MAC 板块协议（「行业分布」弹窗数据源）可用主站
+#
+# 实测（2026-09-10，109 台 HQ 池全量扫描 tdx_mac.get_board_list）：只有 65 台会回
+# board_type=0（56 大行业）的数据，集中在国君 / 国信 / 安信 / 长城；华泰等 44 台对该
+# 协议不回包（连接超时）。下方固化其中延迟最低的 30 台（100~160ms）。
+#
+# 为什么必须单独维护这个清单：原实现是从「测速排名靠前的 4 台」里随机挑，而最快的几台
+# 恰好不支持该协议 → 每次随机选到就返回 0 板块、整窗空白，且单次耗时约 10s（超时）。
+# 典型表现：/futures/popup/industry 返回 ok=True 但 data=[]。
+#
+# 另注：board_type=1（细分行业，约 110 个）在同一批可用主站上同样能取到数据，
+# 与 type=0 共用本清单；此前观察到的「type=1 返回空」同样只是选到了不支持 MAC 的主站。
+# ---------------------------------------------------------------------------
+_MAC_BOARD_SERVERS = [
+    ("103.221.142.73", 7709), ("117.34.114.14", 7709), ("103.221.142.71", 7709),
+    ("103.221.142.82", 7709), ("103.221.142.72", 7709), ("182.118.47.168", 7709),
+    ("109.244.35.28", 7709), ("103.221.142.80", 7709), ("103.221.142.70", 7709),
+    ("103.221.142.67", 7709), ("182.118.47.141", 7709), ("162.14.135.116", 7709),
+    ("103.221.142.65", 7709), ("103.221.142.68", 7709), ("103.221.142.69", 7709),
+    ("103.221.142.83", 7709), ("59.36.5.11", 7709), ("103.251.85.200", 7709),
+    ("109.244.73.23", 7709), ("139.9.52.158", 7709), ("117.34.114.13", 7709),
+    ("139.159.143.228", 7709), ("119.97.164.189", 7709), ("101.133.231.193", 7709),
+    ("139.9.43.104", 7709), ("139.159.183.76", 7709), ("109.244.73.13", 7709),
+    ("103.251.85.148", 7709), ("101.133.129.19", 7709), ("116.211.121.102", 7709),
+]
+
+# 单次取数最多换几台主站（单台不支持该协议/临时抖动时自动换台，避免整窗空白）
+_MAC_TRY_COUNT = 3
+_MAC_TIMEOUT = 5
+
+
 def _pytdx_pick_mac_server():
-    """为 MAC 板块接口选一台行情主站（7709；多数券商 MAC 与行情同端口）。"""
+    """为 MAC 板块接口选一台行情主站（7709；多数券商 MAC 与行情同端口）。
+
+    优先从实测支持 MAC 板块协议的 _MAC_BOARD_SERVERS 里挑；该清单为空时才退回速度排名池。
+    """
+    if _MAC_BOARD_SERVERS:
+        return _rnd_pool.choice(_MAC_BOARD_SERVERS)
     ranked = _PYTDX_SERVERS_RANKED
     if ranked:
         try:
@@ -2378,32 +2415,29 @@ def _pytdx_pick_mac_server():
     return _rnd_pool.choice(_PYTDX_SERVERS)
 
 
-def get_industry_board_list(board_type=0, ttl=30):
-    """行业板块分布数据（tdx_mac 资金流向/板块 MAC 协议）。
+def _pytdx_pick_mac_servers(n=_MAC_TRY_COUNT):
+    """返回最多 n 台互不相同的候选主站，供失败换台重试用。"""
+    cands = list(_MAC_BOARD_SERVERS) if _MAC_BOARD_SERVERS else []
+    _rnd_pool.shuffle(cands)
+    out = cands[:n]
+    if len(out) < n:
+        extra = list(_PYTDX_SERVERS)
+        _rnd_pool.shuffle(extra)
+        for p in extra:
+            if len(out) >= n:
+                break
+            if p not in out:
+                out.append(p)
+    return out
 
-    数据源：tdx_mac.TdxMac(host, 7709).get_board_list(board_type, start, page_size)。
-    每个板块返回板块指数价格 price 与昨收 pre_close；涨幅统一按
-    pct = (price - pre_close) / pre_close * 100 计算（不使用接口自带 rise_speed）。
 
-    board_type：0=通达信 56 大行业，1=细分行业（约 110 个）。
-    返回 [{code, name, price, pre_close, pct, symbol_name, symbol_price}]。
-    低频（默认 30s 缓存）刷新，避免频繁打下游行情源。
-    """
-    key = "industry_%s" % board_type
-    cached = _INDUSTRY_CACHE.get(key)
-    if cached and (time.time() - cached[1]) < ttl:
-        return cached[0]
+def _fetch_industry_board_once(host, port, board_type):
+    """从单台主站拉一次板块列表（含翻页）；连不上 / 该主站不支持该协议时返回 []。"""
+    import tdx_mac
     out = []
-    if not _PYTDX_OK:
-        return out
-    try:
-        import tdx_mac
-    except Exception:
-        return out
-    host, port = _pytdx_pick_mac_server()
     m = None
     try:
-        m = tdx_mac.TdxMac(host, port, timeout=8)
+        m = tdx_mac.TdxMac(host, port, timeout=_MAC_TIMEOUT)
         m.connect()
         start = 0
         total = None
@@ -2442,13 +2476,83 @@ def get_industry_board_list(board_type=0, ttl=30):
             if total and start >= total:
                 break
     except Exception as e:
-        print("get_industry_board_list error: %s" % e)
+        print("get_industry_board_list(%s:%s) error: %s" % (host, port, e))
     finally:
         if m is not None:
             try:
                 m.close()
             except Exception:
                 pass
+    return out
+
+
+def _fetch_board_members_once(host, port, board_code):
+    """从单台主站拉一次板块成分股（含翻页）；连不上 / 不支持该协议时返回 []。"""
+    import tdx_mac
+    members = []
+    m = None
+    try:
+        m = tdx_mac.TdxMac(host, port, timeout=_MAC_TIMEOUT)
+        m.connect()
+        start = 0
+        total = None
+        for _ in range(30):
+            try:
+                r = m.get_board_members(str(board_code), start=start, page_size=80)
+            except Exception:
+                break
+            if not isinstance(r, dict) or r.get("error"):
+                break
+            lst = r.get("list") or []
+            if not lst:
+                break
+            members.extend(lst)
+            if total is None:
+                try:
+                    total = int(r.get("total") or 0)
+                except Exception:
+                    total = 0
+            start += len(lst)
+            if total and start >= total:
+                break
+    except Exception as e:
+        print("get_board_stocks members(%s:%s) error: %s" % (host, port, e))
+    finally:
+        if m is not None:
+            try:
+                m.close()
+            except Exception:
+                pass
+    return members
+
+
+def get_industry_board_list(board_type=0, ttl=30):
+    """行业板块分布数据（tdx_mac 资金流向/板块 MAC 协议）。
+
+    数据源：tdx_mac.TdxMac(host, 7709).get_board_list(board_type, start, page_size)。
+    每个板块返回板块指数价格 price 与昨收 pre_close；涨幅统一按
+    pct = (price - pre_close) / pre_close * 100 计算（不使用接口自带 rise_speed）。
+
+    board_type：0=通达信 56 大行业，1=细分行业（约 110 个）。
+    返回 [{code, name, price, pre_close, pct, symbol_name, symbol_price}]。
+    低频（默认 30s 缓存）刷新，避免频繁打下游行情源。
+    """
+    key = "industry_%s" % board_type
+    cached = _INDUSTRY_CACHE.get(key)
+    if cached and (time.time() - cached[1]) < ttl:
+        return cached[0]
+    out = []
+    if not _PYTDX_OK:
+        return out
+    try:
+        import tdx_mac  # noqa: F401
+    except Exception:
+        return out
+    # 单台失败（该主站不支持 MAC 协议 / 临时抖动）会导致整窗空白，故最多换 _MAC_TRY_COUNT 台。
+    for host, port in _pytdx_pick_mac_servers(_MAC_TRY_COUNT):
+        out = _fetch_industry_board_once(host, port, board_type)
+        if out:
+            break
     if out:
         _INDUSTRY_CACHE[key] = (out, time.time())
     return out
@@ -2522,40 +2626,11 @@ def get_board_stocks(board_code, ttl=15):
         import tdx_mac
     except Exception:
         return out
-    host, port = _pytdx_pick_mac_server()
-    m = None
-    try:
-        m = tdx_mac.TdxMac(host, port, timeout=8)
-        m.connect()
-        start = 0
-        total = None
-        for _ in range(30):
-            try:
-                r = m.get_board_members(str(board_code), start=start, page_size=80)
-            except Exception:
-                break
-            if not isinstance(r, dict) or r.get("error"):
-                break
-            lst = r.get("list") or []
-            if not lst:
-                break
-            members.extend(lst)
-            if total is None:
-                try:
-                    total = int(r.get("total") or 0)
-                except Exception:
-                    total = 0
-            start += len(lst)
-            if total and start >= total:
-                break
-    except Exception as e:
-        print("get_board_stocks members error: %s" % e)
-    finally:
-        if m is not None:
-            try:
-                m.close()
-            except Exception:
-                pass
+    # 同 get_industry_board_list：单台不支持该协议会导致空结果，故最多换 _MAC_TRY_COUNT 台。
+    for host, port in _pytdx_pick_mac_servers(_MAC_TRY_COUNT):
+        members = _fetch_board_members_once(host, port, board_code)
+        if members:
+            break
     if not members:
         return out
     tuples = []
@@ -2659,7 +2734,7 @@ def _get_stock_pool_pytdx(ttl=1800):
     return pool
 
 
-def get_market_overview(ttl=60):
+def get_market_overview(ttl=30):
     """A 股市场概况：主要指数涨跌、两市涨跌家数、涨停/跌停家数、两市总成交额。
 
     指数行情两级降级（两条链路彼此独立，不会同时失效）：
@@ -2669,7 +2744,7 @@ def get_market_overview(ttl=60):
       2) L2·腾讯 HTTP `_fetch_index_quotes_http`：qt.gtimg.cn 快照 + 当日分时走势图。
     若 L1 返回的个别指数缺成交额，用 `_fill_index_amount_http` 从腾讯快照补齐（非独立级别）。
     两市总额 = 上证 000001 金额 + 深证综指 399106 金额。
-    涨跌家数由全市场 A 股行情（一次性全表拉取，股票池缓存 30 分钟）聚合，默认 60s 缓存。
+    涨跌家数由全市场 A 股行情（一次性全表拉取，股票池缓存 30 分钟）聚合，默认 30s 缓存（与前端 30s 轮询对齐）。
     涨停/跌停按 ±9.8% 涨幅阈值近似判断（主板 10%、创业板/科创板 20% 均被该阈值覆盖）。
     返回 {ok, indices:[{code,name,price,pre_close,pct,amount}], up, down, flat,
           limit_up, limit_down, total_amount(元), pool}。
@@ -3326,7 +3401,7 @@ def _fetch_index_bars_amount(code, market, max_days=6):
     return _fetch_index_amount_http(code, market, max_days=max_days)
 
 
-def get_two_market_turnover(ttl=120):
+def get_two_market_turnover(ttl=60):
     """两市成交分析（上证综指 000001 + 深证成指 399001 逐分钟成交额）。
 
     数据源：pytdx_patches 的 TdxHq_API.get_index_bars（category=8 = 1 分钟 K 线），

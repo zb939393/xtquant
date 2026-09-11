@@ -22,6 +22,8 @@
   .btn:hover { background:#66b1ff; }
   .btn.active { background:#f56c6c; }
   .btn.active:hover { background:#f78989; }
+  .btn:disabled { opacity:.55; cursor:default; }
+  .btn:disabled:hover { background:#409eff; }
   .btn-plain { background:#fff; color:#409eff; border:1px solid #409eff; border-radius:6px; padding:3px 8px; font-size:9px; cursor:pointer; }
   .btn-plain:hover { background:#ecf5ff; }
   .btn-plain.active { background:#409eff; color:#fff; }
@@ -79,6 +81,7 @@
     </select>
     <span class="toolbar-right">
       <button class="btn" :class="{active:onTop}" @click="toggleTop">[# onTop ? '置顶' : '未置顶' #]</button>
+      <button class="btn" id="refreshBtn" :disabled="loading" @click="refresh">[# loading ? '刷新中…' : '刷新' #]</button>
       <button class="btn" @click="closeWin">关闭</button>
     </span>
   </div>
@@ -543,12 +546,12 @@ new Vue({
       if(this.showDepth && this.view === 'rt') this.fetchDepth();
       this.$nextTick(() => this.onWinResize());
     },
-    fetchDepth(){
+    fetchDepth(force){
       if(!this.codeFull) return;
-      reqJSON('/market/depth/' + this.codeFull + '?ttl=3&_=' + Date.now(), { cache: 'no-store' })
+      reqJSON('/market/depth/' + this.codeFull + '?ttl=' + (force ? 0 : 3) + '&_=' + Date.now(), { cache: 'no-store' })
         .then(resp => { if(resp.ok) this.depth = resp.data || {}; })
         .catch(() => {});
-      reqJSON('/market/tick/' + this.codeFull + '?count=40&ttl=3&_=' + Date.now(), { cache: 'no-store' })
+      reqJSON('/market/tick/' + this.codeFull + '?count=40&ttl=' + (force ? 0 : 3) + '&_=' + Date.now(), { cache: 'no-store' })
         .then(resp => { if(resp.ok) this.ticks = resp.data || []; })
         .catch(() => {});
     },
@@ -564,14 +567,16 @@ new Vue({
     onPeriod(){ this.fetchData(true); },
     onCount(){ this.fetchData(true); },
     onIndicator(){ this.render(); },
+    // 刷新：force=true → ttl=0，分时绕 10s、K线绕 30s 缓存；盘口/逐笔由下面 fetchDepth(force) 一并强刷
+    refresh(){ if(this.loading) return; this.fetchData(true); },
     fetchData(force){
       if(this.loading) return;
       this.loading = true;
       // K线请求量按展示数+缓冲收敛（对齐期指看盘：1d/1w/1m 200 根，其余 280 根），指标基于全量、仅显示最近 klCount 根
       const reqCount = this.view === 'rt' ? 0 : Math.max(this.klCount, (this.period === '1d' || this.period === '1w' || this.period === '1m') ? 200 : 280);
       const url = this.view === 'rt'
-        ? '/market/minute/' + this.codeFull + '?ttl=10&_=' + Date.now()
-        : '/market/kline/' + this.codeFull + '?count=' + reqCount + '&period=' + this.period + '&_=' + Date.now();
+        ? '/market/minute/' + this.codeFull + '?ttl=' + (force ? 0 : 10) + '&_=' + Date.now()
+        : '/market/kline/' + this.codeFull + '?count=' + reqCount + '&period=' + this.period + '&ttl=' + (force ? 0 : 30) + '&_=' + Date.now();
       reqJSON(url, { cache: 'no-store' })
         .then(resp => {
           if(!resp.ok) throw new Error(resp.error || 'backend error');
@@ -585,7 +590,7 @@ new Vue({
           }
           this.updatedAt = new Date().toLocaleTimeString('zh-CN', {hour12:false});
           this.render();
-          if(this.view === 'rt' && this.showDepth) this.fetchDepth();
+          if(this.view === 'rt' && this.showDepth) this.fetchDepth(force);
         })
         .catch(err => { this.updatedAt = '加载失败：' + err.message; })
         .finally(() => { this.loading = false; });
@@ -598,6 +603,7 @@ new Vue({
         ? buildRtOption(this.list, this.preClose, 'bond', 0, 0, true)
         : buildMiniKlineOption(this.list, this.fullList, this.indicator, this.indVals);
       this.chart.setOption(option, true);
+      if(this.chart.resize) this.chart.resize();
     },
     onWinResize(){ if(this.chart && this.chart.resize) this.chart.resize(); },
   },

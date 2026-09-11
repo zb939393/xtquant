@@ -314,6 +314,29 @@ def futures_snapshot():
         return jsonify({"ok": False, "error": str(e), "data": []})
 
 
+@futures_bp.route("/pool/stats")
+def futures_pool_stats():
+    """扩展行情主站池健康度（延迟排序 + 故障降权的可观测视图）。
+
+    返回每台节点的 {ip, port, ema_ms, fails, ok, fail, cooldown_left}，
+    按当前选路优先级排序；`order` 为下一次选路的实际顺序。只读，无副作用。
+    """
+    try:
+        router = getattr(fut, "_router", None)
+        if router is None:
+            return jsonify({"ok": False, "error": "pool router unavailable", "data": []})
+        pairs = list(getattr(fut, "_PYTDX_EXT_SERVERS", []) or [])
+        order = router.select(pairs) if pairs else []
+        return jsonify({
+            "ok": True,
+            "total": len(pairs),
+            "order": [{"ip": ip, "port": port} for (ip, port) in order],
+            "data": router.snapshot(),
+        })
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e), "data": []})
+
+
 @futures_bp.route("/popup")
 def futures_popup():
     """期指综合看盘·独立弹窗页面（4 分时 + 12 K线），供 PyWebView 独立窗口加载。"""
@@ -564,7 +587,7 @@ def futures_stock_chart_launch():
 def futures_popup_overview():
     """A 股市场概况：主要指数涨跌、两市涨跌家数、涨停/跌停家数、两市总成交额。"""
     try:
-        ttl = int(request.args.get("ttl", "60") or "60")
+        ttl = int(request.args.get("ttl", "30") or "30")
         data = ak_service.get_market_overview(ttl=ttl)
         return jsonify({"ok": data.get("ok", False), "error": data.get("error", ""), "data": data})
     except Exception as e:
@@ -606,7 +629,7 @@ def futures_zhangfu_popup_launch():
 def futures_amountflow_data():
     """两市成交分析（上证 + 深证 逐分钟成交额）：pytdx get_index_bars 取值。"""
     try:
-        ttl = int(request.args.get("ttl", "120") or "120")
+        ttl = int(request.args.get("ttl", "60") or "60")
         data = ak_service.get_two_market_turnover(ttl=ttl)
         return jsonify({"ok": data.get("ok", False), "error": data.get("error", ""), "data": data})
     except Exception as e:

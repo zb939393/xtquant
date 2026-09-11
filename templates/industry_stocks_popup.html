@@ -22,6 +22,8 @@
   .btn:hover { background:#66b1ff; }
   .btn.active { background:#f56c6c; }
   .btn.active:hover { background:#f78989; }
+  .btn:disabled { opacity:.55; cursor:default; }
+  .btn:disabled:hover { background:#409eff; }
   .chart-wrap { position:absolute; top:0; left:0; right:0; bottom:0; }
   #chart { position:absolute; top:0; left:0; right:0; bottom:0; }
 </style>
@@ -34,6 +36,7 @@
     <span class="muted" v-if="updatedAt">共 [# list.length #] 只个股 · 更新 [# updatedAt #]</span>
     <span class="toolbar-right">
       <button class="btn" :class="{active:onTop}" @click="toggleTop">[# onTop ? '置顶' : '未置顶' #]</button>
+      <button class="btn" id="refreshBtn" :disabled="loading" @click="refresh">[# loading ? '刷新中…' : '刷新' #]</button>
       <button class="btn" @click="closeWin">关闭</button>
     </span>
   </div>
@@ -97,10 +100,12 @@ new Vue({
         vm: this,
       });
     },
+    // 刷新：force=true → ttl=0，绕过服务端 15s 缓存重取（首屏/轮询仍走 ttl=15）
+    refresh(){ if(this.loading) return; this.fetchData(true); },
     fetchData(force){
       if(this.loading) return;
       this.loading = true;
-      const url = '/futures/industry/stocks/data?board=' + encodeURIComponent(this.board) + '&ttl=15&_=' + Date.now();
+      const url = '/futures/industry/stocks/data?board=' + encodeURIComponent(this.board) + '&ttl=' + (force ? 0 : 15) + '&_=' + Date.now();
       reqJSON(url, { cache:'no-store' })
         .then(resp => {
           if(!resp.ok) throw new Error(resp.error || 'backend error');
@@ -178,6 +183,7 @@ new Vue({
         }],
       };
       this.chart.setOption(option, true);
+      if(this.chart.resize) this.chart.resize();
     },
     onWinResize(){ if(this.chart && this.chart.resize) this.chart.resize(); },
   },

@@ -4,8 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>全市场涨幅分布</title>
-<script src="https://unpkg.com/vue@2.7.16/dist/vue.min.js"></script>
-<script src="https://unpkg.com/echarts@5.5.0/dist/echarts.min.js"></script>
+<script src="/static/vue.min.js"></script>
+<script src="/static/echarts.min.js"></script>
 <style>
   * { margin:0; padding:0; box-sizing:border-box; }
   html, body { height:100%; }
@@ -25,6 +25,7 @@
   .btn { background:#fff; color:#409eff; border:1px solid #409eff; border-radius:6px; padding:3px 8px; font-size:calc(10px * var(--zoom, 1)); cursor:pointer; }
   .btn:hover { background:#ecf5ff; }
   .btn.active { background:#409eff; color:#fff; }
+  .btn:disabled { opacity:.6; cursor:default; }
   .zoom-group { display:flex; align-items:center; gap:6px; }
   .zoom-group label { font-size:10px; color:#909399; }
   .zoom-slider { width:80px; }
@@ -51,7 +52,8 @@
       <span class="zoom-val">[# zoom #]%</span>
     </div>
     <button class="btn" :class="{active:onTop}" @click="toggleTop">[# onTop ? '置顶' : '未置顶' #]</button>
-    <button class="btn" @click="fetchData(true)">刷新</button>
+    <button class="btn" id="refreshBtn" :disabled="loading" @click="refresh">[# loading ? '刷新中…' : '刷新' #]</button>
+    <button class="btn" @click="closeWin">关闭</button>
   </div>
   <div id="chart"></div>
   <div class="chart-err" v-if="chartErr">[# chartErr #]</div>
@@ -68,6 +70,11 @@ function reqJSON(url, opts){
   });
 }
 function sideColor(side){ return side === 'up' ? '#e74c3c' : (side === 'down' ? '#27ae60' : '#909399'); }
+// 综合窗口「刷新全部」会带 ?force=1 重载本页 → 首屏直接绕过服务端缓存（ttl=0）；
+// 独立打开本窗口时没有该参数，首屏仍走缓存（开窗更快）。
+const FORCE_ON_LOAD = (function(){
+  try { return /[?&]force=1/.test(location.search || ''); } catch(e){ return false; }
+})();
 new Vue({
   el: '#app',
   delimiters: ['[#', '#]'],
@@ -89,7 +96,7 @@ new Vue({
   },
   mounted(){
     this.initChart();
-    this.$nextTick(() => { if(this.chart) this.chart.resize(); this.fetchData(true); });
+    this.$nextTick(() => { if(this.chart) this.chart.resize(); this.fetchData(FORCE_ON_LOAD); });
   },
   beforeDestroy(){
     if(this.timer) clearInterval(this.timer);
@@ -98,12 +105,21 @@ new Vue({
   methods: {
     initChart(){
       if(typeof echarts === 'undefined'){
-        this.chartErr = 'ECharts 资源未加载（CDN 不可达）';
+        this.chartErr = 'ECharts 资源未加载（/static/echarts.min.js 不可达）';
         return;
       }
-      this.chart = echarts.init(document.getElementById('chart'));
+      this.chartErr = '';
+      try { this.chart = echarts.getInstanceByDom(document.getElementById('chart')) || echarts.init(document.getElementById('chart')); }
+      catch(e){ this.chart = echarts.init(document.getElementById('chart')); }
     },
     onResize(){ if(this.chart) this.chart.resize(); },
+    refresh(){
+      if(this.loading) return;
+      this.fetchData(true);
+      // 请求即使失败也要重算画布尺寸，兜住"窗口零尺寸初始化"造成的空白
+      this.$nextTick(() => setTimeout(() => this.onResize(), 80));
+    },
+    closeWin(){ try{ window.close(); }catch(e){} },
     fz(v){ return Math.max(1, Math.round(v * this.zoom / 100)); },
     onZoomChange(){
       try{ localStorage.setItem('zoom_zhangfu', this.zoom); }catch(e){}
@@ -121,7 +137,8 @@ new Vue({
     fetchData(force){
       if(this.loading) return;
       this.loading = true;
-      const url = '/futures/zhangfu/distribution?ttl=30&_=' + Date.now();
+      const ttl = force ? 0 : 30;
+      const url = '/futures/zhangfu/distribution?ttl=' + ttl + '&_=' + Date.now();
       reqJSON(url, { cache:'no-store' })
         .then(resp => {
           if(!resp.ok) throw new Error(resp.error || 'backend error');

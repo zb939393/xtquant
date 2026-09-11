@@ -4,8 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>行业板块分布 · 独立窗口</title>
-<script src="https://unpkg.com/vue@2.7.16/dist/vue.min.js"></script>
-<script src="https://unpkg.com/echarts@5.5.0/dist/echarts.min.js"></script>
+<script src="/static/vue.min.js"></script>
+<script src="/static/echarts.min.js"></script>
 <script src="/static/js/popup-launcher.js"></script>
 <style>
   * { margin:0; padding:0; box-sizing:border-box; }
@@ -21,6 +21,7 @@
   .toolbar-right { margin-left:auto; display:flex; align-items:center; gap:10px; }
   .btn { background:#409eff; color:#fff; border:none; border-radius:6px; padding:3px 8px; font-size:calc(9px * var(--zoom, 1)); cursor:pointer; }
   .btn:hover { background:#66b1ff; }
+  .btn:disabled { opacity:.6; cursor:default; }
   .btn.active { background:#f56c6c; }
   .btn.active:hover { background:#f78989; }
   .zoom-group { display:flex; align-items:center; gap:6px; }
@@ -48,6 +49,7 @@
     </div>
     <span class="toolbar-right">
       <button class="btn" :class="{active:onTop}" @click="toggleTop">[# onTop ? '置顶' : '未置顶' #]</button>
+      <button class="btn" id="refreshBtn" :disabled="loading" @click="refresh">[# loading ? '刷新中…' : '刷新' #]</button>
       <button class="btn" @click="closeWin">关闭</button>
     </span>
   </div>
@@ -66,6 +68,11 @@ function reqJSON(url, opts){
       .catch(reject);
   });
 }
+// 综合窗口「刷新全部」会带 ?force=1 重载本页 → 首屏直接绕过服务端缓存（ttl=0）；
+// 独立打开本窗口时没有该参数，首屏仍走缓存（开窗更快）。
+const FORCE_ON_LOAD = (function(){
+  try { return /[?&]force=1/.test(location.search || ''); } catch(e){ return false; }
+})();
 new Vue({
   el: '#app',
   delimiters: ['[#', '#]'],
@@ -80,7 +87,7 @@ new Vue({
   },
   created(){
     document.documentElement.style.setProperty('--zoom', this.zoom / 100);
-    this.fetchData(true);
+    this.fetchData(FORCE_ON_LOAD);   // 首屏走 30s 缓存（被综合窗口带 force=1 重载时则强制刷新）；需要最新数据点工具栏「刷新」
     this.timer = setInterval(() => this.fetchData(false), 30000);
     window.addEventListener('resize', this.onWinResize);
   },
@@ -120,10 +127,19 @@ new Vue({
       this.updatedAt = '';
       this.fetchData(true);
     },
+    // 工具栏「刷新」：绕过 30s 缓存强制取数并重绘（与「股指资金」弹窗同款兜底）
+    refresh(){
+      if(this.loading) return;
+      this.fetchData(true);
+      // 数据请求即使失败，也先重算一次画布尺寸：窗口若在隐藏/零尺寸状态下初始化，
+      // ECharts 会画出空白，resize 后即可正常显示上一帧内容。
+      this.$nextTick(() => setTimeout(() => this.onWinResize(), 80));
+    },
     fetchData(force){
       if(this.loading) return;
       this.loading = true;
-      const url = '/futures/popup/industry?type=' + this.industryType + '&ttl=30&_=' + Date.now();
+      const ttl = force ? 0 : 30;   // ttl=0 时后端缓存判断恒不命中 -> 强制打下游行情源
+      const url = '/futures/popup/industry?type=' + this.industryType + '&ttl=' + ttl + '&_=' + Date.now();
       reqJSON(url, { cache:'no-store' })
         .then(resp => {
           if(!resp.ok) throw new Error(resp.error || 'backend error');
@@ -203,6 +219,8 @@ new Vue({
         }],
       };
       this.chart.setOption(option, true);
+      // 每次渲染后重算画布尺寸：兜住「窗口初始化时容器尺寸为 0」导致的空白
+      if(this.chart.resize) this.chart.resize();
     },
     onWinResize(){ if(this.chart && this.chart.resize) this.chart.resize(); },
   },

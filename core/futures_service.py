@@ -38,7 +38,9 @@ except Exception:
     connect_exhq = None
     _EXHQ_OK = False
 
-# 扩展行情服务器源：与期权共用 core/tdx_ext_servers._TDX_EXT_SERVERS（长城+国元+国信 7721，共 12 台）。
+# 扩展行情服务器源：与期权共用 core/tdx_ext_servers._TDX_EXT_SERVERS
+# （长城4+国元5+国信3+川财2 的 7721 共 14 台，通达信官方 7727 一台，
+#   另有 GitHub 来源 中信4+华泰8+国君4 的 7721 共 16 台、银河 7730 一台，合计 32 台）。
 # 取代 tdx_exhq 内置的 EXHQ_SERVERS（国信/国元7721 + 通用7727），由本池单一管控，期权与之同源。
 try:
     from core.tdx_ext_servers import _TDX_EXT_SERVERS, _PYTDX_EXT_SERVERS
@@ -58,6 +60,15 @@ try:
 except Exception:
     TdxExHq_API = None
     _EXT_API_OK = False
+
+# 池选路器：延迟排序优先 + 故障节点临时降权（与期权共用同一份统计，见 core/tdx_pool_router）
+try:
+    from core import tdx_pool_router as _router
+except Exception:
+    try:
+        import tdx_pool_router as _router
+    except Exception:
+        _router = None
 
 
 def ext_available():
@@ -93,7 +104,7 @@ _EXHQ_TIMEOUT = 6.0
 # =========================================================
 # 并发控制：singleflight 合并 + 全局连接信号量限流
 # =========================================================
-# 对外并发取数连接数上限：防止突发把 12 台券商 7721 单台连接打爆（雪崩）。
+# 对外并发取数连接数上限：防止突发把 32 台券商扩展行情主站单台连接打爆（雪崩）。
 # 每次查询仍「新建连接」以规避长连接被服务端丢弃后 recv 挂死，仅在此封顶总数。
 _EXHQ_MAX_CONCURRENT = 20
 _EXHQ_SEM = threading.Semaphore(_EXHQ_MAX_CONCURRENT)
@@ -149,36 +160,103 @@ def _f(v):
         return 0.0
 
 
+def _probe_latency(host, port, timeout=3.0):
+    """预热探测：连一次即断开，返回耗时毫秒；失败返回 None。
+    只负责测量，成败由 tdx_pool_router 统一上报（避免双重计数）。"""
+    try:
+        api = TdxExHq_API()
+    except Exception:
+        return None
+    t0 = time.time()
+    try:
+        if not api.connect(host, port, time_out=timeout):
+            return None
+        return (time.time() - t0) * 1000.0
+    except Exception:
+        return None
+    finally:
+        try:
+            api.disconnect()
+        except Exception:
+            pass
+
+
 def _get_api():
-    """新建一个扩展行情连接（从 _TDX_EXT_SERVERS 池随机优选，失败换下一台）；失败返回 None。
-    每次查询都新建，避免长连接被服务端丢弃后 recv 挂死。"""
+    """新建一个扩展行情连接（池内按「延迟排序优先 + 故障降权」选路，失败换下一台）；失败返回 None。
+    每次查询都新建，避免长连接被服务端丢弃后 recv 挂死。
+
+    选路由 core/tdx_pool_router 统一负责：优先挑 EMA 延迟低的节点，连续失败的节点会被
+    临时冷却（指数退避），冷却到期自动回到候选池。若 router 不可用则退化为随机洗牌。"""
     if not ext_available():
         return None
     import random
-    hosts = list(_PYTDX_EXT_SERVERS)
-    random.shuffle(hosts)
-    for host, port in hosts:
+    pairs = list(_PYTDX_EXT_SERVERS)
+    if not pairs:
+        return None
+    if _router is not None:
+        # 冷启动/间隔到期时后台异步测一遍延迟（非阻塞）
+        try:
+            _router.maybe_warmup(pairs, _probe_latency)
+        except Exception:
+            pass
+        order = _router.select(pairs)
+    else:
+        order = list(pairs)
+        random.shuffle(order)
+    for host, port in order:
+        api = None
+        t0 = time.time()
         try:
             api = TdxExHq_API()
-            if api.connect(host, port, time_out=_EXHQ_TIMEOUT):
-                # 收紧 socket 超时，避免服务端丢弃空闲连接后 recv 长时间阻塞。
+            if not api.connect(host, port, time_out=_EXHQ_TIMEOUT):
                 try:
-                    api.client.settimeout(_EXHQ_TIMEOUT)
+                    api.disconnect()
                 except Exception:
                     pass
-                return api
+                if _router:
+                    _router.report_failure(host, port)
+                continue
+            # 收紧 socket 超时，避免服务端丢弃空闲连接后 recv 长时间阻塞。
             try:
-                api.disconnect()
+                api.client.settimeout(_EXHQ_TIMEOUT)
             except Exception:
                 pass
+            if _router:
+                _router.report_success(host, port, (time.time() - t0) * 1000.0)
+            # 记住实际连上的节点，供取数失败时精确定位降权
+            try:
+                api._pool_addr = (host, port)
+            except Exception:
+                pass
+            return api
         except Exception:
+            try:
+                if api is not None:
+                    api.disconnect()
+            except Exception:
+                pass
+            if _router:
+                _router.report_failure(host, port)
             continue
     return None
 
 
+def _report_api_failure(api):
+    """取数中途失败时，对实际连上的那台节点上报故障（供选路器降权）。"""
+    if _router is None or api is None:
+        return
+    addr = getattr(api, "_pool_addr", None)
+    if not addr:
+        return
+    try:
+        _router.report_failure(addr[0], addr[1])
+    except Exception:
+        pass
+
+
 def _safe_query(fn):
-    """执行一次 ExHq 查询（受全局连接信号量 _EXHQ_SEM 限流，防止并发打爆券商 7721）；
-    连接异常时换新连接重试一次，结束后释放 socket。"""
+    """执行一次 ExHq 查询（受全局连接信号量 _EXHQ_SEM 限流，防止并发打爆券商扩展行情主站）；
+    连接异常时换新连接重试一次，结束后释放 socket。失败节点会被选路器降权。"""
     if not ext_available():
         return None
 
@@ -189,6 +267,7 @@ def _safe_query(fn):
         try:
             return fn(api)
         except Exception:
+            _report_api_failure(api)
             try:
                 api.disconnect()
             except Exception:
@@ -198,6 +277,7 @@ def _safe_query(fn):
                 try:
                     return fn(api2)
                 except Exception:
+                    _report_api_failure(api2)
                     return None
                 finally:
                     try:

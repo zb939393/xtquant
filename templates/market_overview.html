@@ -142,7 +142,8 @@ new Vue({
     fetchData(force){
       if(this.loading) return;
       this.loading = true;
-      const url = '/futures/popup/overview?ttl=60&_=' + Date.now();
+      const ttl = force ? 0 : 30;   // 30s 轮询 → 缓存也设 30s，两者对齐才每次轮询都取到新数据
+      const url = '/futures/popup/overview?ttl=' + ttl + '&_=' + Date.now();
       reqJSON(url, { cache:'no-store' })
         .then(resp => {
           if(!resp.ok) throw new Error(resp.error || 'backend error');

@@ -4,8 +4,8 @@
 <meta charset="UTF-8" data-page-node-id="YJ2omFqCwesJAbJMy5zIb3">
 <meta name="viewport" content="width=device-width, initial-scale=1.0" data-page-node-id="D6eXVyntA0ADL2Ucid6rKh">
 <title>两市成交分析</title>
-<script src="https://unpkg.com/vue@2.7.16/dist/vue.min.js"></script>
-<script src="https://unpkg.com/echarts@5.5.0/dist/echarts.min.js"></script>
+<script src="/static/vue.min.js"></script>
+<script src="/static/echarts.min.js"></script>
 <style>
   * { margin:0; padding:0; box-sizing:border-box; }
   html, body { height:100%; }
@@ -44,7 +44,8 @@
       <span class="zoom-val" data-page-node-id="kFovKaAsmoRUCvwj1bOltt">[# zoom #]%</span>
     </div>
     <button class="btn" :class="{active:onTop}" @click="toggleTop" data-page-node-id="X1A7gTgEhROrvgTEIGnlOj">[# onTop ? '置顶' : '未置顶' #]</button>
-    <button class="btn" @click="fetchData(true)" data-page-node-id="YaL1s05ZH17xRIFK81Z8UX">刷新</button>
+    <button class="btn" id="refreshBtn" :disabled="loading" @click="refresh" data-page-node-id="YaL1s05ZH17xRIFK81Z8UX">[# loading ? '刷新中…' : '刷新' #]</button>
+    <button class="btn" @click="closeWin" data-page-node-id="cl0sEW1nBTN4EwVw2KzM1p">关闭</button>
   </div>
   <div class="content" data-page-node-id="t0jNIBSqx9WLl0c0FfYS2b">
     <div class="chart-wrap" data-page-node-id="h71q1Q0fY9iJf7utA9P3Le">
@@ -71,7 +72,19 @@ function reqJSON(url, opts){
       .catch(reject);
   });
 }
+function chartFor(domId){
+  var dom = document.getElementById(domId);
+  if(!dom) return null;
+  var inst = null;
+  try { inst = echarts.getInstanceByDom(dom); } catch(e){}
+  return inst || echarts.init(dom);
+}
 const DAY_COLOR = { '今天': '#e74c3c', '昨天': '#f39c12', '前天': '#27ae60', '前2天': '#3498db', '前三天': '#9b59b6' };
+// 综合窗口「刷新全部」会带 ?force=1 重载本页 → 首屏直接绕过服务端缓存（ttl=0）。
+// 独立打开本窗口时没有该参数，首屏仍走缓存（开窗更快）。
+const FORCE_ON_LOAD = (function(){
+  try { return /[?&]force=1/.test(location.search || ''); } catch(e){ return false; }
+})();
 new Vue({
   el: '#app',
   delimiters: ['[#', '#]'],
@@ -100,7 +113,7 @@ new Vue({
   },
   mounted(){
     this.initCharts();
-    this.$nextTick(() => { this.onResize(); this.fetchData(true); });
+    this.$nextTick(() => { this.onResize(); this.fetchData(FORCE_ON_LOAD); });
   },
   beforeDestroy(){
     if(this.timer) clearInterval(this.timer);
@@ -109,26 +122,49 @@ new Vue({
   methods: {
     initCharts(){
       if(typeof echarts === 'undefined'){
-        this.chartErr = 'ECharts 资源未加载（CDN 不可达）';
+        this.chartErr = 'ECharts 资源未加载（/static/echarts.min.js 不可达）';
         return;
       }
-      this.barChart = echarts.init(document.getElementById('chartBar'));
-      this.lineChart = echarts.init(document.getElementById('chartLine'));
+      this.chartErr = '';
+      this.barChart = chartFor('chartBar');
+      this.lineChart = chartFor('chartLine');
     },
     resizeCharts(){
       const z = this.zoom / 100;
+      let gotWidth = 0;
       [['chartBar', this.barChart], ['chartLine', this.lineChart]].forEach(([id, chart]) => {
         const el = document.getElementById(id);
         if(!el) return;
         const w = el.clientWidth || (el.parentNode ? el.parentNode.clientWidth : 0);
         if(!w) return;
+        gotWidth = w;
         el.style.height = Math.round(w * 0.6 * z) + 'px';
         if(chart) chart.resize();
       });
+      if(gotWidth) this._sizeSeen = true;
     },
     onResize(){
       this.resizeCharts();
+      // 窗口若在零尺寸时初始化，画布为 0×0 且显示窗口不一定触发 resize
+      // → 短时重试若干次，拿到宽度后补一次渲染
+      if(this._sizeSeen) return;
+      let tries = 0;
+      const tick = () => {
+        if(this._sizeSeen || tries >= 12) return;
+        tries++;
+        this.resizeCharts();
+        if(this._sizeSeen){ this.render(); return; }
+        setTimeout(tick, 120);
+      };
+      setTimeout(tick, 120);
     },
+    refresh(){
+      if(this.loading) return;
+      this._sizeSeen = false;
+      this.fetchData(true);
+      this.$nextTick(() => setTimeout(() => this.onResize(), 80));
+    },
+    closeWin(){ try{ window.close(); }catch(e){} },
     onZoomChange(){
       const z = this.zoom / 100;
       try{ localStorage.setItem('zoom_amountflow', this.zoom); }catch(e){}
@@ -147,7 +183,8 @@ new Vue({
     fetchData(force){
       if(this.loading) return;
       this.loading = true;
-      const url = '/futures/amountflow/data?ttl=120&_=' + Date.now();
+      const ttl = force ? 0 : 60;   // 60s 轮询 → 缓存也设 60s，两者对齐才每次轮询都取到新数据
+      const url = '/futures/amountflow/data?ttl=' + ttl + '&_=' + Date.now();
       reqJSON(url, { cache:'no-store' })
         .then(resp => {
           if(!resp.ok) throw new Error(resp.error || 'backend error');

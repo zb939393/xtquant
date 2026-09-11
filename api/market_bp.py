@@ -22,11 +22,12 @@ def kline(code):
     count = int(request.args.get("count", "120"))
     period = request.args.get("period", "1d")
     adjust = request.args.get("adjust", "")
+    ttl = int(request.args.get("ttl", "120") or "120")
     if adjust not in ("qfq", "hfq"):
         adjust = ""
     data = []
     try:
-        data = ak_service.get_kline_pytdx(code, count=count, period=period, adjust=adjust)
+        data = ak_service.get_kline_pytdx(code=code, count=count, period=period, adjust=adjust, ttl=ttl)
     except Exception:
         data = []
     return jsonify({"ok": bool(data), "count": len(data), "src": "pytdx",

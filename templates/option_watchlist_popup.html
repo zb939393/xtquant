@@ -81,7 +81,7 @@
       <el-switch v-model="showBands" size="mini" active-text="±σ通道"></el-switch>
       <el-switch v-model="showSide" size="mini" active-text="盘口"></el-switch>
       <el-switch v-model="onTop" size="mini" active-text="置顶" @change="onTopChange"></el-switch>
-      <el-button type="primary" size="mini" icon="el-icon-refresh" :loading="loading" @click="reload(true)">刷新</el-button>
+      <el-button type="primary" size="mini" icon="el-icon-refresh" :loading="loading" @click="refreshAll()">刷新</el-button>
       <el-button type="primary" size="mini" icon="el-icon-close" @click="closeWin">关闭</el-button>
     </span>
   </div>
@@ -354,6 +354,7 @@ Vue.component('opt-board-rt', {
   },
   mounted(){
     this._setupIO();
+    window.addEventListener('__forcerefresh', this._onForce);
     if(typeof ResizeObserver !== 'undefined'){
       const el = this.$refs.chart;
       if(el){
@@ -365,16 +366,29 @@ Vue.component('opt-board-rt', {
     }
   },
   beforeDestroy(){
+    window.removeEventListener('__forcerefresh', this._onForce);
     if(this._io){ try{ this._io.disconnect(); }catch(e){} this._io = null; }
     if(this._timer){ clearInterval(this._timer); this._timer = null; }
     if(this._ro){ try{ this._ro.disconnect(); }catch(e){} this._ro = null; }
     if(this._chart){ try{ this._chart.dispose(); }catch(e){} this._chart = null; }
   },
   methods: {
+    // 工具栏「刷新」广播：可见的立即用 ttl=0 重取；滚出视野的先记账，等它回到视野再强制取一次
+    _onForce(){
+      if(this._visible){ this._refresh(true); }
+      else { this._forcePending = true; }
+    },
     _setupIO(){
-      const start = () => { if(!this._timer){ this._timer = setInterval(() => this._refresh(), 3000); this._refresh(); } };
+      const start = () => {
+        if(!this._timer){
+          this._timer = setInterval(() => this._refresh(), 3000);
+          const f = this._forcePending;   // 滚出视野期间攒下的强制刷新意图
+          this._forcePending = false;
+          this._refresh(f);
+        }
+      };
       const stop = () => { if(this._timer){ clearInterval(this._timer); this._timer = null; } };
-      if(typeof IntersectionObserver === 'undefined'){ start(); return; }
+      if(typeof IntersectionObserver === 'undefined'){ this._visible = true; start(); return; }
       this._io = new IntersectionObserver((entries) => {
         const e = entries[0];
         if(e.isIntersecting){
@@ -398,19 +412,20 @@ Vue.component('opt-board-rt', {
     _fmtVol(v){ return fmtWan(v, 0); },
     _updown(price, base){ const n = num(price), b = num(base); if(isNaN(n) || isNaN(b)) return ''; return n > b ? 'up' : (n < b ? 'down' : 'flat'); },
     _tickCls(t){ return t === 0 ? 'buy' : (t === 1 ? 'sell' : 'neutral'); },
-    _refresh(){
+    _refresh(force){
       if(!this.code) return;
-      this._drawChart();
-      this._refreshLive();
+      this._drawChart(force);
+      this._refreshLive(force);
     },
-    _refreshLive(){
+    _refreshLive(force){
       if(!this.code) return;
-      this._loadQuote();
-      this._loadTicks();
+      this._loadQuote(force);
+      this._loadTicks(force);
     },
-    async _drawChart(){
+    async _drawChart(force){
       try{
-        const js = await reqJSON('/option/exquote/minute/' + encodeURIComponent(this.code) + '?ttl=10&_=' + Date.now(), { cache: 'no-store' });
+        // force（工具栏「刷新」）→ ttl=0 绕过服务端缓存；3s 轮询维持 ttl=10
+        const js = await reqJSON('/option/exquote/minute/' + encodeURIComponent(this.code) + '?ttl=' + (force ? 0 : 10) + '&_=' + Date.now(), { cache: 'no-store' });
         const data = (js && js.data) || [];
         this.src = (js && js.src) || (js && js.ok ? 'ok' : '');
         if(!data.length){ if(this._chart){ try{ this._chart.clear(); }catch(_){} } return; }
@@ -451,9 +466,9 @@ Vue.component('opt-board-rt', {
       this._chart.setOption(buildRtOption(this._rt, pc, this.kind, this.avgVolPerMin, this.delta, this.showBands), true);
       this._chart.resize();
     },
-    async _loadQuote(){
+    async _loadQuote(force){
       try{
-        const dj = await reqJSON('/option/exquote/quote/' + encodeURIComponent(this.code) + '?ttl=3&_=' + Date.now(), { cache: 'no-store' });
+        const dj = await reqJSON('/option/exquote/quote/' + encodeURIComponent(this.code) + '?ttl=' + (force ? 0 : 3) + '&_=' + Date.now(), { cache: 'no-store' });
         this.quote = (dj && dj.data) || {};
         if(this._chart){
           this.$nextTick(() => { try{ this._chart.resize(); }catch(e){} });
@@ -463,9 +478,9 @@ Vue.component('opt-board-rt', {
         }
       }catch(e){}
     },
-    async _loadTicks(){
+    async _loadTicks(force){
       try{
-        const tj = await reqJSON('/option/exquote/tick/' + encodeURIComponent(this.code) + '?count=40&ttl=3&_=' + Date.now(), { cache: 'no-store' });
+        const tj = await reqJSON('/option/exquote/tick/' + encodeURIComponent(this.code) + '?count=40&ttl=' + (force ? 0 : 3) + '&_=' + Date.now(), { cache: 'no-store' });
         this.ticks = (tj && tj.data) || [];
       }catch(e){}
     },
@@ -540,6 +555,11 @@ Vue.component('opt-board-rt', {
 
 const OPT_WATCH_ORDER_KEY = 'option_watch_order_v1';
 
+// 综合窗口「刷新全部」会带 ?force=1 重载本页：列表本身已 force=1，但 16 个格子的
+// 分时/盘口/逐笔带 ttl=10/3/3 → 需要在 mounted 广播一次 __forcerefresh 让它们用 ttl=0 重取。
+const FORCE_ON_LOAD = (function(){
+  try { return /[?&]force=1/.test(location.search || ''); } catch(e){ return false; }
+})();
 new Vue({
   el: '#app',
   delimiters: ['[#', '#]'],
@@ -583,6 +603,15 @@ new Vue({
           return this._reconcileWatchCodes((resp.codes || []));
         })
         .catch(() => []);
+    },
+    // 工具栏「刷新」：
+    //  - 自选列表 /option/full?force=1 会同步刷新后端 6s 缓存；
+    //  - 但 16 个格子的分时 /option/exquote/minute（ttl=10）、五档盘口 /quote（ttl=3）、
+    //    逐笔 /tick（ttl=3）都不吃 force 参数，不广播的话「刷新」会命中服务端缓存、看着没反应。
+    refreshAll() {
+      if (this.loading) return;
+      window.dispatchEvent(new Event('__forcerefresh'));
+      this.reload(true);
     },
     async reload(force) {
       if (force) { this.loading = true; this.statusMsg = ''; }
@@ -637,6 +666,9 @@ new Vue({
     document.documentElement.style.setProperty('--zoom', this.zoom / 100);
   },
   mounted() {
+    // 滚出视野的格子先记 _forcePending、回到视野再强取。Vue 2 中子组件 mounted 先于
+    // 父组件 mounted，所以此刻各格子的 __forcerefresh 监听已就绪。
+    if (FORCE_ON_LOAD) { try { window.dispatchEvent(new Event('__forcerefresh')); } catch(e) {} }
     this.reload(true).then(() => this.applyRefreshInterval());
   },
   beforeDestroy() {

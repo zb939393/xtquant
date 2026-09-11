@@ -40,6 +40,7 @@
       <span class="zoom-val" id="zoomVal">100%</span>
     </div>
     <button class="btn active" id="topBtn" onclick="toggleTop()">置顶</button>
+    <button class="btn" id="refreshBtn" onclick="manualRefresh()">刷新</button>
   </div>
   <div class="charts">
     <div id="main"></div>
@@ -110,6 +111,31 @@ function toggleTop(){
   }
 }
 
+// ===== 手动刷新（工具栏按钮）=====
+// 用途：窗口在隐藏/零尺寸状态下初始化时 ECharts 会画不出内容；或首屏新浪脚本未及时返回导致空白。
+// 点一下即重新拉取四个分时脚本并完整重绘两块图。
+function manualRefresh(){
+  var btn = document.getElementById("refreshBtn");
+  if (btn) { btn.disabled = true; btn.textContent = "刷新中…"; }
+  chart_s(function (ok, missing) {
+    if (btn) { btn.disabled = false; btn.textContent = "刷新"; }
+    if (!ok) {
+      console.warn("期指分时数据未就绪，缺失:", missing);
+      var el = document.getElementById("updated");
+      if (el) el.textContent = "行情未就绪，点「刷新」重试";
+      // 数据虽未到，仍强制重算一次画布尺寸，避免容器尺寸变化后残留空白
+      try { if (chartS) chartS.resize(); } catch (e) {}
+      try { if (chartF) chartF.resize(); } catch (e) {}
+      return;
+    }
+    // 渲染完成后再补一次 resize，兜住"初始化时容器尺寸尚为 0"的情况
+    setTimeout(function(){
+      try { if (chartS) chartS.resize(); } catch (e) {}
+      try { if (chartF) chartF.resize(); } catch (e) {}
+    }, 60);
+  });
+}
+
 // ===== 交易时段判断 =====
 function checkAuditTime(beginTime, endTime) {
   var nowDate = new Date();
@@ -129,14 +155,37 @@ function checkAuditTime(beginTime, endTime) {
 }
 
 // ===== 期指行情（新浪分时，经后端代理 /futures/capital/sina）=====
+// 新浪 JSONP 的响应体是 `var t1nf_<sym>=...`，靠动态插入 script 标签注入后挂到 window 上，渲染时直接读取。
+var _SINA_SYMS = ['ih0', 'if0', 'ic0', 'im0'];
+var _SINA_VARS = { ih0: 't1nf_ih0', if0: 't1nf_if0', ic0: 't1nf_ic0', im0: 't1nf_im0' };
+var _sinaSeq = 0;        // 渲染轮次序号：新一轮开始时，上一轮的回调直接作废
+var _sinaWaitTimer = null;
+
 function readdata1(nid){
-  var url = "/futures/capital/sina?sym=" + encodeURIComponent(nid);
+  // 带时间戳绕开浏览器缓存（后端本身也已下发 Cache-Control: no-store）
+  var url = "/futures/capital/sina?sym=" + encodeURIComponent(nid) + "&_=" + Date.now();
   var s = document.createElement('script');
   s.type = 'text/javascript';
   s.async = true;
   s.src = url;
+  // 加载完即摘掉标签：20s 轮询下 script 标签会不断累积；全局变量已生成，摘除不影响数据
+  var drop = function () { if (s.parentNode) s.parentNode.removeChild(s); };
+  s.onload = drop;
+  s.onerror = drop;
   var x = document.getElementsByTagName('script')[0];
-  x.parentNode.insertBefore(s, x);
+  if (x && x.parentNode) { x.parentNode.insertBefore(s, x); }
+  else { document.body.appendChild(s); }
+}
+
+// ===== 图表实例复用：避免反复 echarts.init 触发 "chart instance already initialized" 警告，
+// 也保证刷新时能拿到已存在的实例做增量重绘（容器零尺寸初始化后，resize() 即可正常画出）=====
+function _chartFor(domId){
+  var dom = document.getElementById(domId);
+  if (!dom) return null;
+  var inst = null;
+  try { inst = echarts.getInstanceByDom(dom); } catch (e) {}
+  if (!inst) { inst = echarts.init(dom); }
+  return inst;
 }
 
 function realdata1(data){
@@ -151,7 +200,8 @@ function realdata1(data){
 }
 
 function makechart_s(data){
-  var mychart = echarts.init(document.getElementById("main"));
+  var mychart = _chartFor("main");
+  if (!mychart) return null;
   var option = {
     animation: false,
     title: { text: "期指行情", textStyle: { fontSize: fz(12) } },
@@ -180,16 +230,34 @@ function makechart_s(data){
     ]
   };
   mychart.setOption(option);
+  try { mychart.resize(); } catch (e) {}
   chartS = mychart;
   return mychart;
 }
 
-function chart_s(){
-  readdata1('ih0');
-  readdata1('if0');
-  readdata1('ic0');
-  readdata1('im0');
-  setTimeout(function(){
+// 等待四个新浪分时脚本就绪（代替原来的死等 1s）：数据到齐才渲染，慢网/失败时给出明确反馈。
+function _waitSina(seq, deadline, cb){
+  var missing = [];
+  for (var i = 0; i < _SINA_SYMS.length; i++){
+    var v = _SINA_VARS[_SINA_SYMS[i]];
+    if (!window[v] || !window[v].length) missing.push(_SINA_SYMS[i]);
+  }
+  if (!missing.length) return cb(true, []);
+  if (Date.now() > deadline) return cb(false, missing);
+  _sinaWaitTimer = setTimeout(function(){ _waitSina(seq, deadline, cb); }, 120);
+}
+
+function chart_s(cb){
+  _sinaSeq++;
+  var seq = _sinaSeq;
+  if (_sinaWaitTimer) { clearTimeout(_sinaWaitTimer); _sinaWaitTimer = null; }
+  // 先清掉上一轮结果，确保「等到」的一定是本轮新数据（否则短路的旧值会被直接画出来）
+  for (var i = 0; i < _SINA_SYMS.length; i++) { window[_SINA_VARS[_SINA_SYMS[i]]] = undefined; }
+  for (var j = 0; j < _SINA_SYMS.length; j++) { readdata1(_SINA_SYMS[j]); }
+
+  _waitSina(seq, Date.now() + 8000, function (ok, missing) {
+    if (seq !== _sinaSeq) return;            // 已有更新的一轮在跑，本次作废
+    if (!ok) { if (cb) cb(false, missing); return; }
     var data = {};
     data.bb = ['8:30', '10:30', '11:30', '14:00', '15:00'];
     data.x = ['09:30', '09:31', '09:32', '09:33', '09:34', '09:35', '09:36', '09:37', '09:38', '09:39', '09:40', '09:41',
@@ -221,7 +289,10 @@ function chart_s(){
     var f2 = makechart_s(data);
     var f1 = updatechart();
     if (f1 && f2) echarts.connect([f1, f2]);
-  }, 1000);
+    var el = document.getElementById("updated");
+    if (el) el.textContent = "更新 " + new Date().toLocaleTimeString('zh-CN', { hour12: false });
+    if (cb) cb(true, []);
+  });
 }
 
 // ===== 资金流（东方财富 fflow，经后端代理 /futures/capital/fflow）=====
@@ -297,7 +368,8 @@ function chartdata(dic){
 
 function makechart(chartdata){
   var f1 = 60, f2 = 120, f3 = 180, f4 = 240;
-  var mychart = echarts.init(document.getElementById("main1"));
+  var mychart = _chartFor("main1");
+  if (!mychart) return null;
   var option = {
     animation: false,
     title: { text: "资金", textStyle: { fontSize: fz(12) } },
@@ -343,6 +415,7 @@ function makechart(chartdata){
     ]
   };
   mychart.setOption(option);
+  try { mychart.resize(); } catch (e) {}
   chartF = mychart;
   return mychart;
 }
@@ -366,9 +439,7 @@ setInterval(function(){
   } else {
     console.log("闭市");
   }
-  document.getElementById("updated").textContent = "更新 " + new Date().toLocaleTimeString('zh-CN', { hour12: false });
 }, 20000);
-document.getElementById("updated").textContent = "更新 " + new Date().toLocaleTimeString('zh-CN', { hour12: false });
 </script>
 </body>
 </html>

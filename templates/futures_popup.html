@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8" />
@@ -84,6 +84,7 @@
         <el-option label="ADX" value="adx"></el-option>
         <el-option label="ATR" value="atr"></el-option>
       </el-select>
+      <el-button type="primary" size="mini" icon="el-icon-refresh" :loading="loading" @click="refreshAll">刷新</el-button>
       <el-button type="primary" size="mini" icon="el-icon-close" @click="closeWin">关闭</el-button>
     </span>
   </div>
@@ -625,6 +626,7 @@ Vue.component('fut-compact-rt', {
       if (this._rt && this._rt.length) this._redraw();
     });
     window.addEventListener('__zoomchange', this._onZoom);
+    window.addEventListener('__forcerefresh', this._onForce);
     if(typeof ResizeObserver !== 'undefined'){
       const el = this.$refs.chart;
       if(el){
@@ -635,6 +637,7 @@ Vue.component('fut-compact-rt', {
   },
   beforeDestroy(){
     window.removeEventListener('__zoomchange', this._onZoom);
+    window.removeEventListener('__forcerefresh', this._onForce);
     if(this._io){ try{ this._io.disconnect(); }catch(e){} this._io = null; }
     if(this._timer){ clearInterval(this._timer); this._timer = null; }
     if(this._ro){ try{ this._ro.disconnect(); }catch(e){} this._ro = null; }
@@ -642,10 +645,22 @@ Vue.component('fut-compact-rt', {
   },
   methods: {
     _onZoom(){ this._redraw(); },
+    // 工具栏「刷新」广播：可见的立即用 ttl=0 重取；滚出视野的先记账，等它回到视野再强制取一次
+    _onForce(){
+      if(this._visible){ this._drawChart(true); }
+      else { this._forcePending = true; }
+    },
     _setupIO(){
-      const start = () => { if(!this._timer){ this._timer = setInterval(() => this._drawChart(), 3000); this._drawChart(); } };
+      const start = () => {
+        if(!this._timer){
+          this._timer = setInterval(() => this._drawChart(), 3000);
+          const f = this._forcePending;   // 滚出视野期间攒下的强制刷新意图
+          this._forcePending = false;
+          this._drawChart(f);
+        }
+      };
       const stop = () => { if(this._timer){ clearInterval(this._timer); this._timer = null; } };
-      if(typeof IntersectionObserver === 'undefined'){ start(); return; }
+      if(typeof IntersectionObserver === 'undefined'){ this._visible = true; start(); return; }
       this._io = new IntersectionObserver((entries) => {
         const e = entries[0];
         if(e.isIntersecting){
@@ -667,10 +682,11 @@ Vue.component('fut-compact-rt', {
       if(!pc){ const p = num(this.price), c = num(this.chgPct); if(isFinite(p) && p > 0 && isFinite(c)) pc = p / (1 + c / 100); }
       return pc;
     },
-    async _drawChart(){
+    async _drawChart(force){
       if(!this.code) return;
       try{
-        const js = await reqJSON('/futures/exquote/minute/' + encodeURIComponent(this.code) + '?ttl=3&_=' + Date.now(), { cache: 'no-store' });
+        // force（工具栏「刷新」）→ ttl=0 绕过服务端缓存；3s 轮询维持 ttl=3
+        const js = await reqJSON('/futures/exquote/minute/' + encodeURIComponent(this.code) + '?ttl=' + (force ? 0 : 3) + '&_=' + Date.now(), { cache: 'no-store' });
         const data = (js && js.data) || [];
         this.src = (js && js.src) || (js && js.ok ? 'ok' : '');
         if(!data.length){ if(this._chart){ try{ this._chart.clear(); }catch(_){} } return; }
@@ -751,6 +767,7 @@ Vue.component('fut-kline', {
   mounted(){
     this._setupIO();
     window.addEventListener('__zoomchange', this._onZoom);
+    window.addEventListener('__forcerefresh', this._onForce);
     if(typeof ResizeObserver !== 'undefined'){
       const el = this.$refs.chart;
       if(el){
@@ -762,6 +779,7 @@ Vue.component('fut-kline', {
   watch: { period(){ if(this._visible) this._draw(); }, count(){ if(this._visible) this._draw(); }, indicator(){ this._redraw(); } },
   beforeDestroy(){
     window.removeEventListener('__zoomchange', this._onZoom);
+    window.removeEventListener('__forcerefresh', this._onForce);
     if(this._io){ try{ this._io.disconnect(); }catch(e){} this._io = null; }
     if(this._timer){ clearInterval(this._timer); this._timer = null; }
     if(this._ro){ try{ this._ro.disconnect(); }catch(e){} this._ro = null; }
@@ -769,10 +787,22 @@ Vue.component('fut-kline', {
   },
   methods: {
     _onZoom(){ this._redraw(); },
+    // 工具栏「刷新」广播：可见的立即用 ttl=0 重取；滚出视野的先记账，等它回到视野再强制取一次
+    _onForce(){
+      if(this._visible){ this._draw(true); }
+      else { this._forcePending = true; }
+    },
     _setupIO(){
-      const start = () => { if(!this._timer){ this._timer = setInterval(() => this._draw(), 3000); this._draw(); } };
+      const start = () => {
+        if(!this._timer){
+          this._timer = setInterval(() => this._draw(), 3000);
+          const f = this._forcePending;   // 滚出视野期间攒下的强制刷新意图
+          this._forcePending = false;
+          this._draw(f);
+        }
+      };
       const stop = () => { if(this._timer){ clearInterval(this._timer); this._timer = null; } };
-      if(typeof IntersectionObserver === 'undefined'){ start(); return; }
+      if(typeof IntersectionObserver === 'undefined'){ this._visible = true; start(); return; }
       this._io = new IntersectionObserver((entries) => {
         const e = entries[0];
         if(e.isIntersecting){
@@ -788,13 +818,14 @@ Vue.component('fut-kline', {
       this._chart = chart;
       return chart;
     },
-    async _draw(){
+    async _draw(force){
       if(!this.code) return;
       const chart = this._ensureChart();
       if(!chart) return;
       try{
         // 拉取全量历史（接口上限 700 根）用于指标计算，仅显示最近 this.count 根，保证指标无预热缺口（全量显示）
-        const js = await reqJSON('/futures/exquote/kline/' + encodeURIComponent(this.code) + '?period=' + encodeURIComponent(this.period) + '&count=700&ttl=15&_=' + Date.now(), { cache: 'no-store' });
+        // force（工具栏「刷新」）→ ttl=0 绕过服务端缓存；3s 轮询维持 ttl=15
+        const js = await reqJSON('/futures/exquote/kline/' + encodeURIComponent(this.code) + '?period=' + encodeURIComponent(this.period) + '&count=700&ttl=' + (force ? 0 : 15) + '&_=' + Date.now(), { cache: 'no-store' });
         const full = (js && js.data) || [];
         const show = this.count && this.count > 0 ? Math.min(this.count, full.length) : full.length;
         const data = full.slice(-show);
@@ -852,6 +883,11 @@ Vue.component('fut-kline', {
     '</div>'
 });
 
+// 综合窗口「刷新全部」会带 ?force=1 重载本页：快照本身无缓存，但 16 个格子的
+// 分时/K线带 ttl=3/15 → 需要在 mounted 广播一次 __forcerefresh 让它们用 ttl=0 重取。
+const FORCE_ON_LOAD = (function(){
+  try { return /[?&]force=1/.test(location.search || ''); } catch(e){ return false; }
+})();
 new Vue({
   el: '#app',
   delimiters: ['[#', '#]'],
@@ -886,13 +922,29 @@ new Vue({
           this.rows = resp.data || [];
           this.statusMsg = '';
           this.updatedAt = new Date().toLocaleTimeString('zh-CN', {hour12:false});
+          return true;
         })
         .catch(err => {
           this.statusMsg = '期指数据加载失败：' + err.message;
+          return false;
         })
         .finally(() => { this.loading = false; });
     },
     reload(force) { this.fetchSnapshot(!!force); },
+    // 工具栏「刷新」：
+    //  - 头部快照 /futures/snapshot 无服务端缓存，每次直连行情，force 即可；
+    //  - 但 16 个格子的分时 /futures/exquote/minute 带 ttl=3、K线 /futures/exquote/kline
+    //    带 ttl=15，不广播的话「刷新」会命中服务端缓存、看起来没反应。
+    refreshAll(){
+      if(this.loading) return;
+      window.dispatchEvent(new Event('__forcerefresh'));
+      this.fetchSnapshot(true).then((ok) => { if(ok) this._flashMsg('已刷新'); });
+    },
+    _flashMsg(t){
+      this.statusMsg = t + ' ' + new Date().toLocaleTimeString('zh-CN', {hour12:false});
+      if(this._msgTimer) clearTimeout(this._msgTimer);
+      this._msgTimer = setTimeout(() => { this.statusMsg = ''; }, 2500);
+    },
     onZoomChange() {
       zoom = this.zoom;
       try{ localStorage.setItem('zoom_futures', this.zoom); }catch(e){}
@@ -939,9 +991,14 @@ new Vue({
   },
   mounted() {
     this.fetchSnapshot(true).then(() => this.applyRefreshInterval());
+    // 被综合窗口以 ?force=1 重载时，广播一次强制刷新给 16 个格子（可见的立刻 ttl=0，
+    // 滚出视野的先记 _forcePending、回到视野再强取）。Vue 2 中子组件 mounted 先于父组件
+    // mounted，所以此刻各格子的 __forcerefresh 监听已就绪。
+    if (FORCE_ON_LOAD) { try { window.dispatchEvent(new Event('__forcerefresh')); } catch(e) {} }
   },
   beforeDestroy() {
     if (this.timer) clearInterval(this.timer);
+    if (this._msgTimer) { clearTimeout(this._msgTimer); this._msgTimer = null; }
   },
 });
 </script>

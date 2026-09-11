@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>市场概况 · 综合独立窗口</title>
-<script src="https://unpkg.com/vue@2.7.16/dist/vue.min.js"></script>
+<script src="/static/vue.min.js"></script>
 <script src="/static/js/popup-launcher.js"></script>
 <style>
   * { margin:0; padding:0; box-sizing:border-box; }
@@ -245,10 +245,14 @@ new Vue({
       }
     },
     refreshAll() {
+      // 注意：?_t= 只绕过**浏览器**缓存。子页重新加载后走的是首屏默认 ttl
+      // （amountflow 60s / zhangfu 30s / industry 30s / news 20s），会**命中服务端缓存**
+      // → 看着重绘了、画的还是旧数据。所以必须同时带 force=1：
+      // 子页首屏读到它就把 fetchData(false) 换成 fetchData(true)（ttl=0），才是真刷新。
       var frames = document.querySelectorAll('.frame-wrap iframe');
       frames.forEach(function(iframe, i) {
-        var base = iframe.src.split('?_t=')[0];
-        iframe.src = base + '?_t=' + (Date.now() + i);
+        var base = (iframe.src || '').split('?_t=')[0];
+        iframe.src = base + '?_t=' + (Date.now() + i) + '&force=1';
       });
       this.updatedAt = '刷新全部 ' + new Date().toLocaleTimeString('zh-CN', { hour12: false });
     },
