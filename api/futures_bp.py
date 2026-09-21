@@ -69,6 +69,9 @@ def _vwap_eff_params(code, args):
     leg = (args.get("leg") or "").strip().lower() or "pm"
     if leg == "am":
         fields = ("am_k", "am_rr", "days")
+    elif leg == "both":
+        # 双腿同屏：两套参数都要（上午 am_k/am_rr + 下午 k_long/k_short/rr + days）
+        fields = ("am_k", "am_rr", "k_long", "k_short", "rr", "days")
     else:
         fields = ("k_long", "k_short", "rr", "days")
     out = {}
@@ -95,7 +98,7 @@ def _vwap_eff_params(code, args):
 
 
 def _vwap_cache_key(prefix, code, p):
-    tail = "_".join("%s%s" % (k, p[k]) for k in ("leg", "k_long", "k_short", "am_k", "rr", "days") if k in p)
+    tail = "_".join("%s%s" % (k, p[k]) for k in ("leg", "k_long", "k_short", "am_k", "k_pct", "am_rr", "pm_rr", "rr", "days") if k in p)
     return "%s%s_%s" % (prefix, code, tail)
 
 
@@ -227,22 +230,46 @@ def futures_vwap(code):
         except Exception:
             ttl = 15
         leg = (request.args.get("leg") or "").strip().lower() or "pm"
-        params = {}
-        for k in ("k_long", "k_short", "rr", "atr_mult", "atr_period", "time_stop", "k_pct"):
+        if leg not in ("am", "pm", "both"):
+            leg = "pm"
+        # URL 上显式给定的原始数值（优先级最高）
+        raw = {}
+        for k in ("k_long", "k_short", "rr", "atr_mult", "atr_period", "time_stop", "k_pct", "am_k", "am_rr"):
             v = request.args.get(k)
             if v is not None and v != "":
                 try:
-                    params[k] = float(v)
+                    raw[k] = float(v)
                 except Exception:
                     pass
         # URL 未显式指定的，用服务端保存的 per-code 参数补齐（days 也走同一套）
         p = _vwap_eff_params(code, request.args)
-        for k in ("k_long", "k_short", "rr", "am_k"):
-            if k not in params and k in p:
-                params[k] = p[k]
-        # 上午腿：把 am_k 映射成服务层约定的 k_pct（门槛 %）
-        if leg == "am" and "am_k" in params and "k_pct" not in params:
-            params["k_pct"] = params.pop("am_k")
+
+        def _pick(dst, key, *srcs):
+            for s in srcs:
+                if s is not None:
+                    dst[key] = s
+                    return
+
+        # 归一化：服务层 build_vwap_view 认 k_pct/am_rr（上午）与 k_long/k_short/pm_rr（下午）
+        params = {}
+        if leg == "am":
+            _pick(params, "k_pct", raw.get("k_pct"), raw.get("am_k"), p.get("am_k"))
+            _pick(params, "rr", raw.get("am_rr"), raw.get("rr"), p.get("am_rr"))
+        elif leg == "both":
+            # 双腿同屏：两套参数分别归一化，'rr' 归下午腿、'am_rr' 归上午腿
+            _pick(params, "k_pct", raw.get("k_pct"), raw.get("am_k"), p.get("am_k"))
+            _pick(params, "am_rr", raw.get("am_rr"), p.get("am_rr"))
+            _pick(params, "k_long", raw.get("k_long"), p.get("k_long"))
+            _pick(params, "k_short", raw.get("k_short"), p.get("k_short"))
+            _pick(params, "pm_rr", raw.get("rr"), p.get("rr"))
+        else:  # pm
+            _pick(params, "k_long", raw.get("k_long"), p.get("k_long"))
+            _pick(params, "k_short", raw.get("k_short"), p.get("k_short"))
+            _pick(params, "rr", raw.get("rr"), p.get("rr"))
+        # 双腿共用的可选覆盖
+        for k in ("atr_mult", "atr_period", "time_stop"):
+            if k in raw:
+                params[k] = raw[k]
         try:
             days = int(float(request.args.get("days", "") or p.get("days", 30)))
         except Exception:
