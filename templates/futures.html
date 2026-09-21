@@ -1,10 +1,10 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-<meta charset="UTF-8" />
+<html lang="zh-CN" data-page-node-id="bHxnnNmNFgiB7THznbqTcF">
+<head data-page-node-id="kGEgHOJozsOnQwLLRLYzK4">
+<meta charset="UTF-8" data-page-node-id="t1u8GFh8T5UjTD8Zup6n5w" />
 <title>股指期货监控看板</title>
-<meta name="viewport" content="width=device-width,initial-scale=1.0" />
-<link rel="stylesheet" href="https://unpkg.com/element-ui/lib/theme-chalk/index.css" />
+<meta name="viewport" content="width=device-width,initial-scale=1.0" data-page-node-id="nTznM8XxRHGFiQOc66yc5H" />
+<link rel="stylesheet" href="https://unpkg.com/element-ui/lib/theme-chalk/index.css" data-page-node-id="aK6rx9USKiz0oH8KZ0YopF" />
 <style>
   html,body{margin:0;padding:0;height:100%;}
   body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;background:#f5f7fa;color:#303133;}
@@ -94,143 +94,166 @@
   }
 </style>
 </head>
-<body>
+<body data-page-node-id="EIMWqgZDcqZ3KGQBHuI2s1">
 {% include '_navbar.html' %}
-<div id="app">
-  <div class="topbar">
-    <h2>📈 股指期货监控看板 <span class="legend">（中金所 CFFEX · 当月连续 · <b class="up">红涨</b>/<b class="down">绿跌</b>）</span></h2>
-    <div>
-      <a href="/popup-setup" target="_blank" style="margin-right:12px;font-size:12px;color:#909399;text-decoration:none;" title="B 机器配置助手：注册 xtquant-popup 协议、查看日志位置">🖥 B 机器配置</a>
-      <el-button icon="el-icon-refresh" size="mini" :loading="loading" @click="reload(true)">刷新</el-button>
-      <el-select v-model="refreshInterval" size="mini" style="width:138px;margin-left:10px;" clearable @change="applyRefreshInterval">
-        <el-option label="1秒自动刷新" :value="1000"></el-option>
-        <el-option label="3秒自动刷新" :value="3000"></el-option>
-        <el-option label="5秒自动刷新" :value="5000"></el-option>
-        <el-option label="10秒自动刷新" :value="10000"></el-option>
-        <el-option label="手动刷新" :value="0"></el-option>
+<div id="app" data-page-node-id="N6jRoHlhyO6OU09ZNPOlxL">
+  <div class="topbar" data-page-node-id="GWmr2RJDO3yZddoafe8Xi3">
+    <h2 data-page-node-id="iGnADVOPiWAx1JIrNuSmbP">📈 股指期货监控看板 <span class="legend" data-page-node-id="hYSc1GQDEdQcHASpXIAfaC">（中金所 CFFEX · 当月连续 · <b class="up" data-page-node-id="19JAuEQCtPgDiZxyH8kFK0">红涨</b>/<b class="down" data-page-node-id="OjlHVmS8X5ZjHfmBV3mDUz">绿跌</b>）</span></h2>
+    <div data-page-node-id="T2wlI5KLejkDzO8XFPecQz">
+      <a href="/popup-setup" target="_blank" style="margin-right:12px;font-size:12px;color:#909399;text-decoration:none;" title="B 机器配置助手：注册 xtquant-popup 协议、查看日志位置" data-page-node-id="jtl2FVRCgHOwIlDSpvbP9c">🖥 B 机器配置</a>
+      <el-button icon="el-icon-refresh" size="mini" :loading="loading" @click="reload(true)" data-page-node-id="GUpsA7aIS4JgLT2mqmYRqG">刷新</el-button>
+      <el-select v-model="refreshInterval" size="mini" style="width:138px;margin-left:10px;" clearable @change="applyRefreshInterval" data-page-node-id="skymSF79dmPhExijeQpwN7">
+        <el-option label="1秒自动刷新" :value="1000" data-page-node-id="7imY4todGG1ZBSzOy4pm14"></el-option>
+        <el-option label="3秒自动刷新" :value="3000" data-page-node-id="sgGVCULawolkII2hjGyNrd"></el-option>
+        <el-option label="5秒自动刷新" :value="5000" data-page-node-id="eqQVTeo4Tta4S7j6tjJMAz"></el-option>
+        <el-option label="10秒自动刷新" :value="10000" data-page-node-id="LS2DsrNGSnmpTYhoHGC83b"></el-option>
+        <el-option label="手动刷新" :value="0" data-page-node-id="fcHX5chohqieY3rydd3Wzp"></el-option>
       </el-select>
-      <el-checkbox v-model="showBook" size="mini" border style="margin-left:10px;" @change="onSideChange">盘口</el-checkbox>
-      <el-checkbox v-model="showTicks" size="mini" border @change="onSideChange">逐笔</el-checkbox>
-      <el-button icon="el-icon-back" size="mini" @click="goBack">返回</el-button>
+      <el-checkbox v-model="showBook" size="mini" border style="margin-left:10px;" @change="onSideChange" data-page-node-id="PNHUikqfjQUtGloxxHz8VQ">盘口</el-checkbox>
+      <el-checkbox v-model="showTicks" size="mini" border @change="onSideChange" data-page-node-id="BfFE6VRAaKVGoFVCcIGcyA">逐笔</el-checkbox>
+      <el-button icon="el-icon-back" size="mini" @click="goBack" data-page-node-id="jRcL6ZBZi9sTCIdcZYSO2H">返回</el-button>
     </div>
   </div>
 
-  <div class="kpis">
-    <div class="kpi"><div class="label">合约数</div><div class="val">${rows.length}</div></div>
-    <div class="kpi warn"><div class="label">数据更新</div><div class="val">${updatedAt}</div></div>
-    <div class="kpi" v-for="r in rows" :key="'kpi-'+r.code" :class="updownCls(r.change_pct)">
-      <div class="label">${r.code} · ${r.name}</div>
-      <div class="val">${fmtNum(r.price, 2)} <span style="font-size:13px;">${fmtPct(r.change_pct, 2, true)}</span></div>
+  <div class="kpis" data-page-node-id="Q92g8O19dR2XABFIqgte2f">
+    <div class="kpi" data-page-node-id="Dfd6Q7E23Vg52BYjMRRsRW"><div class="label" data-page-node-id="S9QyQECxdd5CTF5FpB0l0L">合约数</div><div class="val" data-page-node-id="fH2JhTCSmpxbmUXidlaERL">${rows.length}</div></div>
+    <div class="kpi warn" data-page-node-id="Wp8ZJSwdZg0AN8Pp0YPUqT"><div class="label" data-page-node-id="t3zZuBMMAc76RZ2C97xFWt">数据更新</div><div class="val" data-page-node-id="vKvY2WyVDCmNAUnKh1iyr1">${updatedAt}</div></div>
+    <div class="kpi" v-for="r in rows" :key="'kpi-'+r.code" :class="updownCls(r.change_pct)" data-page-node-id="T6hGojSa74WKYNsW7lWO4X">
+      <div class="label" data-page-node-id="51IKtLG9CBAEltSUyUMdUZ">${r.code} · ${r.name}</div>
+      <div class="val" data-page-node-id="b603eyEgiWcpltSonLkZVi">${fmtNum(r.price, 2)} <span style="font-size:13px;" data-page-node-id="S1SgYD9lxnn8lpQ4cxcB5v">${fmtPct(r.change_pct, 2, true)}</span></div>
     </div>
   </div>
 
-  <div v-if="firstLoaded && !loading && rows.length === 0" class="banner banner-loading">
-    <i class="el-icon-loading"></i> 正在拉取中金所股指期货行情…
+  <div v-if="firstLoaded && !loading && rows.length === 0" class="banner banner-loading" data-page-node-id="TLhsNofNbAzK7gxeZ5onHj">
+    <i class="el-icon-loading" data-page-node-id="0OyOQYfbgOqBwhMOumRtLO"></i> 正在拉取中金所股指期货行情…
   </div>
-  <div v-if="statusMsg" class="banner banner-error">
-    <i class="el-icon-warning"></i>
-    <span>${statusMsg}</span>
-    <el-button size="mini" type="danger" plain icon="el-icon-refresh" @click="fetchSnapshot(true)" style="margin-left:10px;">重试</el-button>
+  <div v-if="statusMsg" class="banner banner-error" data-page-node-id="7uCBKnQ443ECL3qzle0XFi">
+    <i class="el-icon-warning" data-page-node-id="xe6A4Z1zFWpLEpY8FhIQ9J"></i>
+    <span data-page-node-id="rzc1vHou1nHfyPGuJbS2oH">${statusMsg}</span>
+    <el-button size="mini" type="danger" plain icon="el-icon-refresh" @click="fetchSnapshot(true)" style="margin-left:10px;" data-page-node-id="b2ps7yyO7RSWqoqV2mEfCL">重试</el-button>
   </div>
 
-  <el-tabs v-model="activeTab" class="board-tabs">
-    <el-tab-pane label="分时看盘（盘口/逐笔）" name="rt">
-      <div class="board-view">
-        <div class="board-toolbar">
-          <span class="board-title">📈 期指看盘</span>
-          <span class="muted" v-if="rtMode==='rt'">分时图（实时）· 五档盘口 · 逐笔成交（数据来自扩展行情 pytdx · 中金所 CFFEX）</span>
-          <span class="muted" v-else-if="rtMode==='vwap'">VWAP 偏离度策略 · 突破口径：dev_z 向上突破 +${fmtNum(getVwapParams(vwapActiveCode).k_long,2)} 做多 / 向下跌破 −${fmtNum(Math.abs(getVwapParams(vwapActiveCode).k_short),2)} 做空 · 仅 13:00–14:55 开仓 · 1.5ATR 止损 / ${fmtNum(getVwapParams(vwapActiveCode).rr,1)}R 止盈 · 14:55 强平</span>
-          <span class="muted" v-else>K线（${periodLabel(klinePeriod)}）· 蜡烛图 + BOLL · 成交量 · ${indicator === 'mfi' ? 'MFI' : (indicator === 'adx' ? 'ADX' : 'ATR')} 指标</span>
-          <span class="board-toolbar-right">
-            <el-radio-group v-model="rtMode" size="mini">
-              <el-radio-button label="rt">分时</el-radio-button>
-              <el-radio-button label="vwap">VWAP</el-radio-button>
-              <el-radio-button label="kline">K线</el-radio-button>
+  <el-tabs v-model="activeTab" class="board-tabs" data-page-node-id="pDYkLqfDADWmGoXZR7n6w5">
+    <el-tab-pane label="分时看盘（盘口/逐笔）" name="rt" data-page-node-id="8d6YFtA8EhlZJdmjIDoUgv">
+      <div class="board-view" data-page-node-id="cfQdVjHYas2y5uVGDQzhyR">
+        <div class="board-toolbar" data-page-node-id="K3GOHpKUbVk8tMub4rNxkW">
+          <span class="board-title" data-page-node-id="rt3OlHeZMsBY4v5Qj1U6Lb">📈 期指看盘</span>
+          <span class="muted" v-if="rtMode==='rt'" data-page-node-id="rX8qpzsFwFmna4BSgTWtNH">分时图（实时）· 五档盘口 · 逐笔成交（数据来自扩展行情 pytdx · 中金所 CFFEX）</span>
+          <span class="muted" v-else-if="rtMode==='vwap' && vwapLeg==='am'" data-page-node-id="SmdMGiVRWHAiQ3z8vZw8XD">上午开盘驱动(drive) · 09:30–09:45 定方向：ret1545 ≥ +${fmtNum(getVwapLegParams(vwapActiveCode,'am').am_k,2)}% 做多 / ≤ −${fmtNum(getVwapLegParams(vwapActiveCode,'am').am_k,2)}% 做空 · 09:46 入场 · 1.5ATR(1m) 止损 / ${fmtNum(getVwapLegParams(vwapActiveCode,'am').am_rr,1)}R 止盈 · 11:30 强平</span>
+          <span class="muted" v-else-if="rtMode==='vwap'" data-page-node-id="Zu6BBQmzZbQg1xAEYIhtaI">下午 VWAP 动量 · 突破口径：dev_z 向上突破 +${fmtNum(getVwapLegParams(vwapActiveCode,'pm').k_long,2)} 做多 / 向下跌破 −${fmtNum(Math.abs(getVwapLegParams(vwapActiveCode,'pm').k_short),2)} 做空 · 仅 13:00–14:55 开仓 · 1.5ATR 止损 / ${fmtNum(getVwapLegParams(vwapActiveCode,'pm').rr,1)}R 止盈 · 14:55 强平</span>
+          <span class="muted" v-else data-page-node-id="GCAVmpkdrmcUHc8etNEtCB">K线（${periodLabel(klinePeriod)}）· 蜡烛图 + BOLL · 成交量 · ${indicator === 'mfi' ? 'MFI' : (indicator === 'adx' ? 'ADX' : 'ATR')} 指标</span>
+          <span class="board-toolbar-right" data-page-node-id="ptDJ0IepAkTF0NVRyOk3P6">
+            <el-radio-group v-model="rtMode" size="mini" data-page-node-id="KoFaHnS3RRBpwLk07jWQV9">
+              <el-radio-button label="rt" data-page-node-id="GeFFpZz0UfOAg84u3W8EdV">分时</el-radio-button>
+              <el-radio-button label="vwap" data-page-node-id="llfU2dWzI7KqU3cMLt8qGh">VWAP</el-radio-button>
+              <el-radio-button label="kline" data-page-node-id="nPZtXXYvVL0VLsy7ks71bz">K线</el-radio-button>
             </el-radio-group>
-            <template v-if="rtMode==='vwap'">
-              <el-select v-model="vwapActiveCode" size="mini" style="width:110px;margin-left:10px;" placeholder="选择品种" @change="onVwapActiveCodeChange">
-                <el-option v-for="r in rows" :key="r.code" :label="r.code" :value="r.code"></el-option>
+            <template v-if="rtMode==='vwap'" data-page-node-id="epnKLDZB5nPjX6SNZsRVTb">
+              <el-radio-group v-model="vwapLeg" size="mini" style="margin-left:10px;" data-page-node-id="HNkZ3KmyXDxunWkGopRBID">
+                <el-radio-button label="am" data-page-node-id="NR0suFRsjQ5Bgm59pZURlc">上午腿(开盘驱动)</el-radio-button>
+                <el-radio-button label="pm" data-page-node-id="2hradvD99GypWuWKZzlHJP">下午腿(VWAP动量)</el-radio-button>
+              </el-radio-group>
+              <el-select v-model="vwapActiveCode" size="mini" style="width:110px;margin-left:10px;" placeholder="选择品种" @change="onVwapActiveCodeChange" data-page-node-id="RdELjmeoDZPYnwChyn06DZ">
+                <el-option v-for="r in rows" :key="r.code" :label="r.code" :value="r.code" data-page-node-id="DcFEvfGGakSy1XCYk7WRUK"></el-option>
               </el-select>
-              <template v-if="vwapActiveCode">
-                <span class="muted" style="margin-left:10px;">多 z≥</span>
-                <el-input-number :value="getVwapParams(vwapActiveCode).k_long" size="mini" style="width:116px;margin-left:4px;"
-                  :precision="2" :step="0.05" step-strictly :min="0.05" :max="5"
-                  @change="setVwapParam('k_long', $event)"></el-input-number>
-                <span class="muted" style="margin-left:8px;">空 z≤</span>
-                <el-input-number :value="getVwapParams(vwapActiveCode).k_short" size="mini" style="width:116px;margin-left:4px;"
-                  :precision="2" :step="0.05" step-strictly :min="-5" :max="-0.05"
-                  @change="setVwapParam('k_short', $event)"></el-input-number>
-                <el-select :value="getVwapParams(vwapActiveCode).rr" size="mini" style="width:80px;margin-left:6px;" placeholder="盈亏比" @change="setVwapParam('rr', $event)">
-                  <el-option label="1.0R" :value="1.0"></el-option>
-                  <el-option label="1.5R" :value="1.5"></el-option>
-                  <el-option label="2.0R" :value="2.0"></el-option>
-                  <el-option label="3.0R" :value="3.0"></el-option>
-                </el-select>
-                <span class="muted" style="margin-left:6px;">基线 ${getVwapParams(vwapActiveCode).days || 30} 日</span>
+              <template v-if="vwapActiveCode" data-page-node-id="BMeSKkNhhW14hdLRPryQko">
+                <!-- 上午腿：单阈值 ±k%（ret1545）+ 2.0R -->
+                <template v-if="vwapLeg==='am'" data-page-node-id="aUH0OsDzbMXEsvQz5fQryZ">
+                  <span class="muted" style="margin-left:10px;" data-page-node-id="8cyY61ff3pKcUhpXG3yPq6">±阈值%</span>
+                  <el-input-number :value="getVwapLegParams(vwapActiveCode,'am').am_k" size="mini" style="width:110px;margin-left:4px;"
+                    :precision="2" :step="0.05" :min="0.05" :max="3"
+                    @change="setVwapParam('am_k', $event)" data-page-node-id="fdhqcI51FMf2FEnB4qTmtf"></el-input-number>
+                  <el-select :value="getVwapLegParams(vwapActiveCode,'am').am_rr" size="mini" style="width:80px;margin-left:6px;" placeholder="盈亏比" @change="setVwapParam('am_rr', $event)" data-page-node-id="Fn5aFZC8M9q1MZJORuxvBT">
+                    <el-option label="1.0R" :value="1.0" data-page-node-id="wJWLybd1iYyYbKuc1mZ4YY"></el-option>
+                    <el-option label="1.5R" :value="1.5" data-page-node-id="HARiprPeqBgHuz4jNJzTPz"></el-option>
+                    <el-option label="2.0R" :value="2.0" data-page-node-id="NUYOSwEH7Zv6w33k5ncV8l"></el-option>
+                    <el-option label="3.0R" :value="3.0" data-page-node-id="C3Yx8CS2TkVA8gny5zvnmv"></el-option>
+                  </el-select>
+                  <span class="muted" style="margin-left:6px;" data-page-node-id="Vo6RCEvOnLJTznfxm44bg1">基线 ${getVwapLegParams(vwapActiveCode,'am').days || 30} 日</span>
+                </template>
+                <!-- 下午腿：dev_z 多/空阈值 + 1.5R -->
+                <template v-else data-page-node-id="1pBOysHgRMur9CizG5puCB">
+                  <span class="muted" style="margin-left:10px;" data-page-node-id="xAAMf75u1alo6hWNMJOBKx">多 z≥</span>
+                  <el-input-number :value="getVwapLegParams(vwapActiveCode,'pm').k_long" size="mini" style="width:116px;margin-left:4px;"
+                    :precision="2" :step="0.05" step-strictly :min="0.05" :max="5"
+                    @change="setVwapParam('k_long', $event)" data-page-node-id="S75sZu9hWhEXekwQubWnKM"></el-input-number>
+                  <span class="muted" style="margin-left:8px;" data-page-node-id="IhqLbUwjcz7FhnR8TbnqzW">空 z≤</span>
+                  <el-input-number :value="getVwapLegParams(vwapActiveCode,'pm').k_short" size="mini" style="width:116px;margin-left:4px;"
+                    :precision="2" :step="0.05" step-strictly :min="-5" :max="-0.05"
+                    @change="setVwapParam('k_short', $event)" data-page-node-id="LcjVIOX5lFA7kbCgKA3MLW"></el-input-number>
+                  <el-select :value="getVwapLegParams(vwapActiveCode,'pm').rr" size="mini" style="width:80px;margin-left:6px;" placeholder="盈亏比" @change="setVwapParam('rr', $event)" data-page-node-id="U0xAy0gEASMDzgOQy82sKa">
+                    <el-option label="1.0R" :value="1.0" data-page-node-id="YmLMEhz4wQzUCE6b8HNiWu"></el-option>
+                    <el-option label="1.5R" :value="1.5" data-page-node-id="652rFRMvBFcbS5CKSX7eVs"></el-option>
+                    <el-option label="2.0R" :value="2.0" data-page-node-id="ytHkNy8LORa7ePMNPLPdtl"></el-option>
+                    <el-option label="3.0R" :value="3.0" data-page-node-id="Gb66Pb6oLGVwJZbI6gRfMF"></el-option>
+                  </el-select>
+                  <span class="muted" style="margin-left:6px;" data-page-node-id="d5KNs2Ol2sOvLAB8p6mNs4">基线 ${getVwapLegParams(vwapActiveCode,'pm').days || 30} 日</span>
+                </template>
               </template>
             </template>
-            <template v-if="rtMode==='kline'">
-              <el-select v-model="klinePeriod" size="mini" style="width:96px;margin-left:10px;" placeholder="周期">
-                <el-option label="1 分钟" value="1min"></el-option>
-                <el-option label="5 分钟" value="5min"></el-option>
-                <el-option label="30 分钟" value="30min"></el-option>
-                <el-option label="60 分钟" value="60min"></el-option>
-                <el-option label="日线" value="day"></el-option>
-                <el-option label="周线" value="week"></el-option>
-                <el-option label="月线" value="month"></el-option>
+            <template v-if="rtMode==='kline'" data-page-node-id="XPetSz9OzPiz9fCdUkmj3K">
+              <el-select v-model="klinePeriod" size="mini" style="width:96px;margin-left:10px;" placeholder="周期" data-page-node-id="EZO0lzamtLToXpK6F2Qh8Z">
+                <el-option label="1 分钟" value="1min" data-page-node-id="BTH8dQrzKVC0CzR4GQHb4F"></el-option>
+                <el-option label="5 分钟" value="5min" data-page-node-id="8HqkyZpzukzLS5MVP4LzLF"></el-option>
+                <el-option label="30 分钟" value="30min" data-page-node-id="BYl7tjJylRjqmHhTU59zHe"></el-option>
+                <el-option label="60 分钟" value="60min" data-page-node-id="O9vq7kudJVZyxy6y3HgDkd"></el-option>
+                <el-option label="日线" value="day" data-page-node-id="u0ldvYKvkCTfw3Ld5puVW7"></el-option>
+                <el-option label="周线" value="week" data-page-node-id="ufgY01aIZ8Cj4fjZUBXq78"></el-option>
+                <el-option label="月线" value="month" data-page-node-id="ZKECmxDErCFRAyQ5Cj2375"></el-option>
               </el-select>
-              <el-select v-model="klineCount" size="mini" style="width:96px;margin-left:10px;" placeholder="K线数">
-                <el-option label="60" :value="60"></el-option>
-                <el-option label="90" :value="90"></el-option>
-                <el-option label="120" :value="120"></el-option>
-                <el-option label="150" :value="150"></el-option>
-                <el-option label="180" :value="180"></el-option>
-                <el-option label="240" :value="240"></el-option>
-                <el-option label="300" :value="300"></el-option>
-                <el-option label="400" :value="400"></el-option>
-                <el-option label="500" :value="500"></el-option>
-                <el-option label="600" :value="600"></el-option>
-                <el-option label="700" :value="700"></el-option>
+              <el-select v-model="klineCount" size="mini" style="width:96px;margin-left:10px;" placeholder="K线数" data-page-node-id="uhVoGTZ6u1yCryVALy4gjU">
+                <el-option label="60" :value="60" data-page-node-id="2s9LYOV9nueNfQNTxW5ktF"></el-option>
+                <el-option label="90" :value="90" data-page-node-id="xbO75Gl13nQFy2Fbgr5Ydi"></el-option>
+                <el-option label="120" :value="120" data-page-node-id="ndwImuAS6zXnezzfrSsJpX"></el-option>
+                <el-option label="150" :value="150" data-page-node-id="7X8XJZlZN5WA2yNEcuIBcL"></el-option>
+                <el-option label="180" :value="180" data-page-node-id="TaOVGsmkNs0qGvRulkBV9W"></el-option>
+                <el-option label="240" :value="240" data-page-node-id="DOTyTEMdnIUJioBBTUtuMH"></el-option>
+                <el-option label="300" :value="300" data-page-node-id="oZntp7yjBoDLPT2V8WfJkX"></el-option>
+                <el-option label="400" :value="400" data-page-node-id="2dL04ZaOY1P4YNXwAMHYmf"></el-option>
+                <el-option label="500" :value="500" data-page-node-id="fFVmcfyMgiEubc615IgAt1"></el-option>
+                <el-option label="600" :value="600" data-page-node-id="wvhsPPmjASDhYRPGbiLI9d"></el-option>
+                <el-option label="700" :value="700" data-page-node-id="di87BpzNg9afaQ3GBoYmpV"></el-option>
               </el-select>
-              <el-select v-model="indicator" size="mini" style="width:108px;margin-left:10px;" placeholder="指标">
-                <el-option label="MFI" value="mfi"></el-option>
-                <el-option label="ADX" value="adx"></el-option>
-                <el-option label="ATR" value="atr"></el-option>
+              <el-select v-model="indicator" size="mini" style="width:108px;margin-left:10px;" placeholder="指标" data-page-node-id="FFbXiD4VxVjuChPnFLtLTZ">
+                <el-option label="MFI" value="mfi" data-page-node-id="qSHQWG28zIObLk9eHTc6I3"></el-option>
+                <el-option label="ADX" value="adx" data-page-node-id="DOj4XEJy0L7zTeIGha4Bn5"></el-option>
+                <el-option label="ATR" value="atr" data-page-node-id="2ZnqoaUchJJet7flEtaKgc"></el-option>
               </el-select>
             </template>
-            <el-switch v-if="rtMode==='rt'" v-model="showBands" size="mini" active-text="±σ通道" style="margin-left:12px;"></el-switch>
-            <span class="muted" style="margin-left:12px;">实时刷新：${refreshInterval ? (refreshInterval/1000) + ' 秒' : '手动'}</span>
+            <el-switch v-if="rtMode==='rt'" v-model="showBands" size="mini" active-text="±σ通道" style="margin-left:12px;" data-page-node-id="CKdnmhlhhBcRrkpuZCrnwV"></el-switch>
+            <span class="muted" style="margin-left:12px;" data-page-node-id="EpywSRD8T1zrcfaN9EFBqK">实时刷新：${refreshInterval ? (refreshInterval/1000) + ' 秒' : '手动'}</span>
           </span>
         </div>
-        <div class="board-rows" ref="boardRows">
-          <div class="board-row-chunk">
-            <div v-for="row in rows" :key="row.code" class="board-cell">
-              <div class="board-row-head">
-                <span class="board-badge" :class="updownCls(row.change_pct)" v-text="row.code"></span>
-                <span class="board-name" v-text="row.name"></span>
-                <span class="cell-ind" v-if="rtMode==='kline' && ci(row.code, klinePeriod)">
-                  <span class="ci atr"><b>ATR</b>${fmt2(ci(row.code, klinePeriod).atr)}</span>
-                  <span class="ci adx"><b>ADX</b>${fmt2(ci(row.code, klinePeriod).adx)}</span>
-                  <span class="ci pdi"><b>+DI</b>${fmt2(ci(row.code, klinePeriod).pdi)}</span>
-                  <span class="ci mdi"><b>-DI</b>${fmt2(ci(row.code, klinePeriod).mdi)}</span>
-                  <span class="ci mfi"><b>MFI</b>${fmt2(ci(row.code, klinePeriod).mfi)}</span>
+        <div class="board-rows" ref="boardRows" data-page-node-id="BKC82oGNPwmvHkUrWiwLLn">
+          <div class="board-row-chunk" data-page-node-id="fvqWu9eyUYEIWArP2QhjK0">
+            <div v-for="row in rows" :key="row.code" class="board-cell" data-page-node-id="eHSMyDNEGtUiX2hhYmZsPB">
+              <div class="board-row-head" data-page-node-id="21VftetwV0jF15qwBAgWHn">
+                <span class="board-badge" :class="updownCls(row.change_pct)" v-text="row.code" data-page-node-id="ruJLp6v3cfwkiANjBOq0zr"></span>
+                <span class="board-name" v-text="row.name" data-page-node-id="iQasViiHP05Y92Ky9DcPHi"></span>
+                <span class="cell-ind" v-if="rtMode==='kline' && ci(row.code, klinePeriod)" data-page-node-id="iI4z8t50piD9S4jRHQjwbC">
+                  <span class="ci atr" data-page-node-id="2l9SRlOAdn6O4HuGdyFU0h"><b data-page-node-id="TDksHHBwW5FXN8p7s5MXK9">ATR</b>${fmt2(ci(row.code, klinePeriod).atr)}</span>
+                  <span class="ci adx" data-page-node-id="CDO9zm0Roiscyc15Ik3bUX"><b data-page-node-id="zwgyKaiAWJGV6FgYpsuCev">ADX</b>${fmt2(ci(row.code, klinePeriod).adx)}</span>
+                  <span class="ci pdi" data-page-node-id="6ryaLHcGRJfGnNd86Iw0jy"><b data-page-node-id="UN3rX9D3EBOzOwNGqXtnRd">+DI</b>${fmt2(ci(row.code, klinePeriod).pdi)}</span>
+                  <span class="ci mdi" data-page-node-id="Zf2LyjLIWI3eIPC25qFoyl"><b data-page-node-id="2hWMqBivi7BYtGFUpz29pQ">-DI</b>${fmt2(ci(row.code, klinePeriod).mdi)}</span>
+                  <span class="ci mfi" data-page-node-id="snFpTGtauf39RsSs1LBB11"><b data-page-node-id="KuWtpaSFwU1EtcN4BOMt9O">MFI</b>${fmt2(ci(row.code, klinePeriod).mfi)}</span>
                 </span>
-                <span class="cell-ind" v-if="rtMode==='vwap' && vw(row.code)">
-                  <span class="ci atr"><b>ATR5</b>${fmt2(vw(row.code).atr5)}</span>
-                  <span class="ci" :class="vwZcls(vw(row.code).dev_z)"><b>dev_z</b>${fmt2(vw(row.code).dev_z)}</span>
-                  <span class="ci" :class="vwStateCls(vw(row.code).state)"><b>仓</b>${vwStateText(vw(row.code).state)}</span>
-                  <span class="ci" :class="vwPnlCls(vw(row.code).pnl_r)"><b>当日</b>${fmtPct(num(vw(row.code).pnl_r), 2, true)}R</span>
-                  <span class="ci"><b>信号</b>${vw(row.code).n_sig}</span>
+                <span class="cell-ind" v-if="rtMode==='vwap' && vw(row.code)" data-page-node-id="7QxvyEqQV34mL6ottFkEYl">
+                  <span class="ci atr" data-page-node-id="wr05CusVH8DvpNyHpRfsyp"><b data-page-node-id="EQF9eT7uGj9RScIg8ZP2Hd">ATR5</b>${fmt2(vw(row.code).atr5)}</span>
+                  <span class="ci" :class="vwZcls(vw(row.code).ret1545, 'am')" v-if="vwapLeg==='am'" data-page-node-id="U8V3Imt8F2X56Rvbu9XS1v"><b data-page-node-id="5Kxpr9WwDwQoDHz3xYTTCc">ret1545</b>${fmt2(vw(row.code).ret1545)}%</span>
+                  <span class="ci" :class="vwZcls(vw(row.code).dev_z, 'pm')" v-else data-page-node-id="Kr1oGFDSREOqLcCVF4mksZ"><b data-page-node-id="qUr3dgaLs6HesTmlVdXDJH">dev_z</b>${fmt2(vw(row.code).dev_z)}</span>
+                  <span class="ci" :class="vwStateCls(vw(row.code).state)" data-page-node-id="mmmGp92hRfZnChNbcAwIc3"><b data-page-node-id="o8YgAuSk6WJbEgVRWVKUTk">仓</b>${vwStateText(vw(row.code).state)}</span>
+                  <span class="ci" :class="vwPnlCls(vw(row.code).pnl_r)" data-page-node-id="xHFcQZVxZAFfcoVeiaMa1h"><b data-page-node-id="ECIjqZnBpruIHm9xyMWH8w">当日</b>${fmtPct(num(vw(row.code).pnl_r), 2, true)}R</span>
+                  <span class="ci" data-page-node-id="SynaEKFsrDQ3iDlUdOKKtY"><b data-page-node-id="bi6LT1SW7m5BtaLtaQdUC1">信号</b>${vw(row.code).n_sig}</span>
                 </span>
-                <span class="board-chart-spacer"></span>
-                <span class="board-chg" :class="updownCls(row.change_pct)">${fmtNum(num(row.price) - num(row.prev_close), 2)}</span>
-                <span class="board-chg-pct" :class="updownCls(row.change_pct)">${fmtPct(row.change_pct, 2, true)}</span>
+                <span class="board-chart-spacer" data-page-node-id="H7b3a1Z7ZznJFGSNLmkoDX"></span>
+                <span class="board-chg" :class="updownCls(row.change_pct)" data-page-node-id="VEswCPZuzFP4RggBpKHHql">${fmtNum(num(row.price) - num(row.prev_close), 2)}</span>
+                <span class="board-chg-pct" :class="updownCls(row.change_pct)" data-page-node-id="YStfDgh8d2qVBUvacHwE9L">${fmtPct(row.change_pct, 2, true)}</span>
               </div>
-              <div class="board-panel board-panel-chart">
-                <fut-board-rt v-if="rtMode==='rt'" :key="'rt-'+row.code" :code="row.code" :prev-close="num(row.prev_close)" :price="num(row.price)" :chg-pct="num(row.change_pct)" kind="futures" :show-book="showBook" :show-ticks="showTicks" :show-bands="showBands" :params="getVwapParams(row.code)"></fut-board-rt>
-                <fut-board-rt v-else-if="rtMode==='vwap'" :key="'vwap-'+row.code" mode="vwap" :code="row.code" :prev-close="num(row.prev_close)" :price="num(row.price)" :chg-pct="num(row.change_pct)" kind="futures" :show-book="showBook" :show-ticks="showTicks" :params="getVwapParams(row.code)" @vwap="onVwap" @params-change="onParamsChange"></fut-board-rt>
-                <div v-else class="board-kline-cell">
-                  <fut-kline :code="row.code" :period="klinePeriod" :count="klineCount" :indicator="indicator" kind="futures" @indicators="onIndicators"></fut-kline>
+              <div class="board-panel board-panel-chart" data-page-node-id="7Pz5fJRX5OTT8fqJw7ofML">
+                <fut-board-rt v-if="rtMode==='rt'" :key="'rt-'+row.code" :code="row.code" :prev-close="num(row.prev_close)" :price="num(row.price)" :chg-pct="num(row.change_pct)" kind="futures" :show-book="showBook" :show-ticks="showTicks" :show-bands="showBands" :params="getVwapParams(row.code, 'pm')" data-page-node-id="3HugOfeNEMBeujBpl73KzV"></fut-board-rt>
+                <fut-board-rt v-else-if="rtMode==='vwap'" :key="'vwap-'+row.code" mode="vwap" :code="row.code" :prev-close="num(row.prev_close)" :price="num(row.price)" :chg-pct="num(row.change_pct)" kind="futures" :show-book="showBook" :show-ticks="showTicks" :params="getVwapParams(row.code, vwapLeg)" :leg="vwapLeg" @vwap="onVwap" @params-change="onParamsChange" data-page-node-id="jfNPbja07pmiknFqCo0TqK"></fut-board-rt>
+                <div v-else class="board-kline-cell" data-page-node-id="29OyAzlEloQAe4YqHorpfc">
+                  <fut-kline :code="row.code" :period="klinePeriod" :count="klineCount" :indicator="indicator" kind="futures" @indicators="onIndicators" data-page-node-id="LGvDraS63AFSK3PE4Ume32"></fut-kline>
                 </div>
               </div>
             </div>
@@ -238,58 +261,58 @@
         </div>
       </div>
     </el-tab-pane>
-    <el-tab-pane label="综合期指看盘" name="comp" lazy>
-      <div class="comp-board">
-        <div class="board-toolbar">
-          <span class="board-title">📊 综合期指看盘</span>
-          <span class="muted">4 个当月连续合约 × 分时 / 1分钟 / 5分钟 / 30分钟 K线（中金所 CFFEX · 红涨绿跌）</span>
-          <span class="board-toolbar-right">
-            <span class="muted">分时 30s / K线 15s 自动刷新</span>
-            <el-switch v-model="showBands" size="mini" active-text="±σ通道" style="margin-left:12px;margin-right:4px;"></el-switch>
-            <el-select v-model="klineCount" size="mini" style="width:96px;margin-left:10px;" placeholder="天数">
-              <el-option label="60" :value="60"></el-option>
-              <el-option label="90" :value="90"></el-option>
-              <el-option label="120" :value="120"></el-option>
-              <el-option label="150" :value="150"></el-option>
-              <el-option label="180" :value="180"></el-option>
-              <el-option label="240" :value="240"></el-option>
-              <el-option label="300" :value="300"></el-option>
-              <el-option label="400" :value="400"></el-option>
-              <el-option label="500" :value="500"></el-option>
-              <el-option label="600" :value="600"></el-option>
-              <el-option label="700" :value="700"></el-option>
+    <el-tab-pane label="综合期指看盘" name="comp" lazy data-page-node-id="RlyeREOXJhR2faCYEOcvwp">
+      <div class="comp-board" data-page-node-id="7t66QyYwu9Y0kC2bAcMyjI">
+        <div class="board-toolbar" data-page-node-id="Y8Be5CwaXCsaHJXwiNyqYi">
+          <span class="board-title" data-page-node-id="QRiGJVy4YsCppaqqUBEvkB">📊 综合期指看盘</span>
+          <span class="muted" data-page-node-id="gi1Vs13Yx5vxtxMjOh33I7">4 个当月连续合约 × 分时 / 1分钟 / 5分钟 / 30分钟 K线（中金所 CFFEX · 红涨绿跌）</span>
+          <span class="board-toolbar-right" data-page-node-id="tZreIWbGSSbGTCF3reQBbj">
+            <span class="muted" data-page-node-id="kZgWHyKjD8OSmJCuVkKDVr">分时 30s / K线 15s 自动刷新</span>
+            <el-switch v-model="showBands" size="mini" active-text="±σ通道" style="margin-left:12px;margin-right:4px;" data-page-node-id="nKZfF2EICQDxR4i8r9IjCP"></el-switch>
+            <el-select v-model="klineCount" size="mini" style="width:96px;margin-left:10px;" placeholder="天数" data-page-node-id="smw33Z79hEyESbnjMt8cGX">
+              <el-option label="60" :value="60" data-page-node-id="JrGP395x4GNDNlK0OsVwie"></el-option>
+              <el-option label="90" :value="90" data-page-node-id="wOub3E20MKPGNBKjMQ4AaI"></el-option>
+              <el-option label="120" :value="120" data-page-node-id="FgoP2EBwU1CgKoqcpertZw"></el-option>
+              <el-option label="150" :value="150" data-page-node-id="nsKFfpQw8de6UDdbvfoAiR"></el-option>
+              <el-option label="180" :value="180" data-page-node-id="vTUzJ42WyMt5DGUtMixFRB"></el-option>
+              <el-option label="240" :value="240" data-page-node-id="Z3tIBHihLvYo32na2kJcw0"></el-option>
+              <el-option label="300" :value="300" data-page-node-id="izuqUW7OKGAQ7Cm57MmYab"></el-option>
+              <el-option label="400" :value="400" data-page-node-id="TbzpSqREVjwtK1lHJlOV6S"></el-option>
+              <el-option label="500" :value="500" data-page-node-id="kYiygijSQF23E4HXe06NtN"></el-option>
+              <el-option label="600" :value="600" data-page-node-id="9EV2SN6OOLqfOrBtToygdz"></el-option>
+              <el-option label="700" :value="700" data-page-node-id="uGVvSDHtS9JIYNw3YvksU7"></el-option>
             </el-select>
-            <el-select v-model="indicator" size="mini" style="width:108px;margin-left:10px;" placeholder="指标">
-              <el-option label="MFI" value="mfi"></el-option>
-              <el-option label="ADX" value="adx"></el-option>
-              <el-option label="ATR" value="atr"></el-option>
+            <el-select v-model="indicator" size="mini" style="width:108px;margin-left:10px;" placeholder="指标" data-page-node-id="TmK2jfDddUyNhWptYE6Jqd">
+              <el-option label="MFI" value="mfi" data-page-node-id="Iu7Z4on7tRdraYPGSwmMra"></el-option>
+              <el-option label="ADX" value="adx" data-page-node-id="MebFQCRiXX47XBsULkgLKx"></el-option>
+              <el-option label="ATR" value="atr" data-page-node-id="J6AVcGGEG9B6WdwN7TwfeO"></el-option>
             </el-select>
-            <el-button type="primary" size="mini" icon="el-icon-rank" :loading="popupLaunching" @click="launchPopup" style="margin-left:10px;">独立弹窗</el-button>
-            <el-button type="success" size="mini" icon="el-icon-view" :loading="integratedLaunching" @click="launchIntegratedPopup" title="集成行业分布/涨幅分布/新闻/成交分析/外围股市/股指资金/期权等全部子窗的综合弹窗">市场概况</el-button>
+            <el-button type="primary" size="mini" icon="el-icon-rank" :loading="popupLaunching" @click="launchPopup" style="margin-left:10px;" data-page-node-id="O8DgUxruCBNCUcu2oTtdoW">独立弹窗</el-button>
+            <el-button type="success" size="mini" icon="el-icon-view" :loading="integratedLaunching" @click="launchIntegratedPopup" title="集成行业分布/涨幅分布/新闻/成交分析/外围股市/股指资金/期权等全部子窗的综合弹窗" data-page-node-id="Rt0CA4jAB3V2PTqpbOSpko">市场概况</el-button>
           </span>
         </div>
-        <div class="comp-rows">
-          <div class="comp-row" v-for="tf in compTimeframes" :key="tf.key">
-            <div class="comp-row-label">${tf.label}</div>
-            <div class="comp-row-cells">
-              <div v-for="row in rows" :key="row.code" class="comp-cell">
-                <div class="comp-cell-head">
-                  <span class="board-badge" :class="updownCls(row.change_pct)" v-text="row.code"></span>
-                  <span class="board-name" v-text="row.name"></span>
-                  <span class="cell-ind" v-if="ci(row.code, tf.key)">
-                    <span class="ci atr"><b>ATR</b>${fmt2(ci(row.code, tf.key).atr)}</span>
-                    <span class="ci adx"><b>ADX</b>${fmt2(ci(row.code, tf.key).adx)}</span>
-                    <span class="ci pdi"><b>+DI</b>${fmt2(ci(row.code, tf.key).pdi)}</span>
-                    <span class="ci mdi"><b>-DI</b>${fmt2(ci(row.code, tf.key).mdi)}</span>
-                    <span class="ci mfi"><b>MFI</b>${fmt2(ci(row.code, tf.key).mfi)}</span>
+        <div class="comp-rows" data-page-node-id="Jx5mOQBRXXzjudePZOyMuO">
+          <div class="comp-row" v-for="tf in compTimeframes" :key="tf.key" data-page-node-id="fn3pFZf9TpTyN7mkmQkC5R">
+            <div class="comp-row-label" data-page-node-id="yOy7aLis0GtVTnkhNdMRpi">${tf.label}</div>
+            <div class="comp-row-cells" data-page-node-id="79JhLiykzRWnx5c3tzs3xq">
+              <div v-for="row in rows" :key="row.code" class="comp-cell" data-page-node-id="TiRVZ7tI7XlBtULAyrL7U0">
+                <div class="comp-cell-head" data-page-node-id="nUPvBehJl2fr5t0OiW8ZEY">
+                  <span class="board-badge" :class="updownCls(row.change_pct)" v-text="row.code" data-page-node-id="wN6e7PShHUT4JEIucq6Kan"></span>
+                  <span class="board-name" v-text="row.name" data-page-node-id="jAQtGybsyx7oUlrrP9ojKQ"></span>
+                  <span class="cell-ind" v-if="ci(row.code, tf.key)" data-page-node-id="Mk64iol8TByFa7jNvLkXgg">
+                    <span class="ci atr" data-page-node-id="tFXKRoYd9722VgrYIIzkS8"><b data-page-node-id="gVVu3VU7xHRuXWyzF8O2BU">ATR</b>${fmt2(ci(row.code, tf.key).atr)}</span>
+                    <span class="ci adx" data-page-node-id="WGg9sMljhm8T6kArRGvtGQ"><b data-page-node-id="CdC8famS5H9E16100p7GPW">ADX</b>${fmt2(ci(row.code, tf.key).adx)}</span>
+                    <span class="ci pdi" data-page-node-id="H521migMqAxbeFusRnkzaO"><b data-page-node-id="ZJEBw2oXrO7cWyg0bi8mG5">+DI</b>${fmt2(ci(row.code, tf.key).pdi)}</span>
+                    <span class="ci mdi" data-page-node-id="ConYBu7Yc1ENLX3ujsoIOu"><b data-page-node-id="ZeKeCN1vRhzBLwa7Trwqby">-DI</b>${fmt2(ci(row.code, tf.key).mdi)}</span>
+                    <span class="ci mfi" data-page-node-id="Ti3wXSpzhuvfQM6ioR3TzO"><b data-page-node-id="AH9MfCEHwhZWCjFcFsDj7u">MFI</b>${fmt2(ci(row.code, tf.key).mfi)}</span>
                   </span>
-                  <span class="board-chart-spacer" v-if="tf.key==='rt'"></span>
-                  <span class="board-chg" v-if="tf.key==='rt'" :class="updownCls(row.change_pct)">${fmtNum(num(row.price) - num(row.prev_close), 2)}</span>
-                  <span class="board-chg-pct" v-if="tf.key==='rt'" :class="updownCls(row.change_pct)">${fmtPct(row.change_pct, 2, true)}</span>
+                  <span class="board-chart-spacer" v-if="tf.key==='rt'" data-page-node-id="4GU91GyX5IiK8dVGZ65QFr"></span>
+                  <span class="board-chg" v-if="tf.key==='rt'" :class="updownCls(row.change_pct)" data-page-node-id="3Dc6DtOa8LresVKWu9GA1M">${fmtNum(num(row.price) - num(row.prev_close), 2)}</span>
+                  <span class="board-chg-pct" v-if="tf.key==='rt'" :class="updownCls(row.change_pct)" data-page-node-id="YxzSJYlrJ2w5S8Oo801Cq1">${fmtPct(row.change_pct, 2, true)}</span>
                 </div>
-                <div class="comp-cell-chart">
-                  <fut-compact-rt v-if="tf.key==='rt'" :code="row.code" :prev-close="num(row.prev_close)" :price="num(row.price)" :chg-pct="num(row.change_pct)" kind="futures" :show-bands="showBands"></fut-compact-rt>
-                  <fut-kline v-else :code="row.code" :period="tf.key" :count="klineCount" :indicator="indicator" kind="futures" @indicators="onIndicators"></fut-kline>
+                <div class="comp-cell-chart" data-page-node-id="KN4oypYKTzP3ev4Udb00VK">
+                  <fut-compact-rt v-if="tf.key==='rt'" :code="row.code" :prev-close="num(row.prev_close)" :price="num(row.price)" :chg-pct="num(row.change_pct)" kind="futures" :show-bands="showBands" data-page-node-id="aeOpu9QlAfMTsDB26BEj2K"></fut-compact-rt>
+                  <fut-kline v-else :code="row.code" :period="tf.key" :count="klineCount" :indicator="indicator" kind="futures" @indicators="onIndicators" data-page-node-id="Hk9Su9bzbx96YAEltGomoU"></fut-kline>
                 </div>
               </div>
             </div>
@@ -564,6 +587,8 @@ function buildVwapOption(payload, prevClose, kind){
   const P = (payload && payload.params) || {};
   const signals = (payload && payload.signals) || [];
   const last = (payload && payload.last) || {};
+  const leg = (payload && payload.leg) || 'pm';        // am=上午开盘驱动 / pm=下午 VWAP 动量
+  const subKey = leg === 'am' ? 'r' : 'z';             // 子图指标：上午 ret_open(%) / 下午 dev_z
   const upColor = '#e74c3c', downColor = '#27ae60', vwapColor = '#f5a623';
 
   // X 轴：与分时图（rtSessionAxis）完全一致，缺失分钟留空对齐刻度
@@ -581,7 +606,7 @@ function buildVwapOption(payload, prevClose, kind){
     prices[i] = s.p;
     vwaps[i] = (s.vw == null ? null : s.vw);
     devs[i] = (s.d == null ? null : s.d);
-    zs[i] = (s.z == null ? null : s.z);
+    zs[i] = (s[subKey] == null ? null : s[subKey]);
     vols[i] = s.v;
   });
   const seriesByIndex = new Array(session.length);
@@ -611,15 +636,21 @@ function buildVwapOption(payload, prevClose, kind){
   const ampMin = hasPrev ? -ext * 100 : undefined;
   const ampMax = hasPrev ? ext * 100 : undefined;
 
-  // ---- dev_z 轴范围：覆盖全部阈值并留边 ----
-  let zmax = Math.max(Math.abs(Number(P.k_long) || 1.0), Math.abs(Number(P.k_short) || 1.5)) + 0.6;
+  // ---- 子图轴范围：覆盖全部阈值并留边 ----
+  const thrHi = leg === 'am' ? Math.abs(Number(P.k_pct) || 0.40) : Math.abs(Number(P.k_long) || 1.0);
+  const thrLo = leg === 'am' ? Math.abs(Number(P.k_pct) || 0.40) : Math.abs(Number(P.k_short) || 1.5);
+  let zmax = Math.max(thrHi, thrLo) + 0.6;
   zs.forEach(function(z){ if(z != null && isFinite(z)){ const a = Math.abs(z); if(a > zmax) zmax = a; } });
   zmax = zmax * 1.08;
 
-  // ---- 开仓时段：下午第一根 ~ 14:55（报告：仅 13:00-14:55 允许开新仓）----
-  let sessFrom = null;
-  for(let i = 0; i < series.length; i++){ if(series[i].pos >= 120){ sessFrom = series[i].t; break; } }
-  const sessTo = '14:55';
+  // ---- 开仓时段底纹：上午 09:46–11:30 / 下午 13:00–14:55 ----
+  let sessFrom = null, sessTo = null;
+  if(leg === 'am'){
+    sessFrom = '09:46'; sessTo = '11:30';
+  } else {
+    for(let i = 0; i < series.length; i++){ if(series[i].pos >= 120){ sessFrom = series[i].t; break; } }
+    sessTo = '14:55';
+  }
 
   // ---- 信号点 ----
   const entryPts = [], exitPts = [];
@@ -677,7 +708,13 @@ function buildVwapOption(payload, prevClose, kind){
     return (p >= base) ? upColor : downColor;
   });
 
-  // ---- 标题：策略关键状态 ----
+  // ---- 标题：策略关键状态（按腿展示子图指标 / ATR 口径）----
+  const subLabel = leg === 'am' ? 'ret1545' : 'dev_z';
+  const subVal = leg === 'am'
+    ? (payload.ret1545 == null ? '--' : fmtNum(num(payload.ret1545), 2) + '%')
+    : (lastZ == null ? '--' : fmtNum(lastZ, 2));
+  const atrLabel = 'ATR5';
+  const atrVal = fmtNum(num(payload && payload.atr5), 2);
   const stText = last.state === 'long' ? '持多' : (last.state === 'short' ? '持空' : '空仓');
   const stColor = last.state === 'long' ? upColor : (last.state === 'short' ? downColor : '#909399');
   const nWin = signals.filter(function(s){ return s.exit_why === 'target'; }).length;
@@ -685,11 +722,28 @@ function buildVwapOption(payload, prevClose, kind){
   const titleParts = [
     (payload && payload.date) ? payload.date : '',
     '基线 ' + (((payload && payload.baseline) || {}).days || '-') + '日',
-    'ATR5 ' + fmtNum(num(payload && payload.atr5), 2),
-    'dev_z ' + (lastZ == null ? '--' : fmtNum(lastZ, 2)),
+    atrLabel + ' ' + atrVal,
+    subLabel + ' ' + subVal,
     '信号 ' + signals.length + '（止盈 ' + nWin + '）',
     '合计 ' + fmtPct(sumR, 2, true) + 'R',
   ];
+
+  // 子图阈值线：上午 ±k_pct（ret1545 对称）/ 下午 k_long / k_short（dev_z）
+  const subMarkLines = leg === 'am'
+    ? [
+        { yAxis: Number(P.k_pct) || 0.40, lineStyle: { color: upColor, type: 'dashed', width: 1 },
+          label: { show: true, position: 'insideEndTop', formatter: '做多 +' + fmtNum(num(P.k_pct), 2) + '%', fontSize: 9, color: upColor } },
+        { yAxis: -(Number(P.k_pct) || 0.40), lineStyle: { color: downColor, type: 'dashed', width: 1 },
+          label: { show: true, position: 'insideEndBottom', formatter: '做空 −' + fmtNum(num(P.k_pct), 2) + '%', fontSize: 9, color: downColor } },
+        { yAxis: 0, lineStyle: { color: '#c0c4cc', width: 1 }, label: { show: false } },
+      ]
+    : [
+        { yAxis: Number(P.k_long) || 1.0, lineStyle: { color: upColor, type: 'dashed', width: 1 },
+          label: { show: true, position: 'insideEndTop', formatter: '做多 +' + fmtNum(num(P.k_long), 2), fontSize: 9, color: upColor } },
+        { yAxis: Number(P.k_short) || -1.5, lineStyle: { color: downColor, type: 'dashed', width: 1 },
+          label: { show: true, position: 'insideEndBottom', formatter: '做空 −' + fmtNum(Math.abs(num(P.k_short)), 2), fontSize: 9, color: downColor } },
+        { yAxis: 0, lineStyle: { color: '#c0c4cc', width: 1 }, label: { show: false } },
+      ];
 
   return {
     backgroundColor: '#fff',
@@ -715,7 +769,8 @@ function buildVwapOption(payload, prevClose, kind){
         let h = '<div style="font-size:11px;margin-bottom:2px;">' + (s.t || '') + '</div>';
         h += '价 ' + fmtNum(s.p, 2) + '　VWAP ' + (s.vw == null ? '--' : fmtNum(s.vw, 2)) + '<br/>';
         h += '偏离 ' + (s.d == null ? '--' : fmtNum(s.d, 2)) + ' 点';
-        h += '　<b style="color:' + ((s.z == null || s.z >= 0) ? upColor : downColor) + '">dev_z ' + (s.z == null ? '--' : fmtNum(s.z, 3)) + '</b><br/>';
+        const sv = (s[subKey] == null ? '--' : fmtNum(s[subKey], leg === 'am' ? 2 : 3) + (leg === 'am' ? '%' : ''));
+        h += '　<b style="color:' + ((s[subKey] == null || s[subKey] >= 0) ? upColor : downColor) + '">' + subLabel + ' ' + sv + '</b><br/>';
         h += 'ATR5 ' + (s.a == null ? '--' : fmtNum(s.a, 2)) + '　量 ' + fmtWan(s.v);
         for(let k = 0; k < signals.length; k++){
           const g = signals[k];
@@ -743,7 +798,7 @@ function buildVwapOption(payload, prevClose, kind){
       { gridIndex: 0, position: 'right', type: 'value', min: ampMin, max: ampMax, scale: true, splitLine: { show: false }, name: '幅度%', nameLocation: 'end', nameGap: 2, nameTextStyle: { fontSize: 9, color: '#909399' },
         axisLabel: { color: function(v){ return v > 0 ? upColor : (v < 0 ? downColor : '#909399'); }, fontSize: 9, formatter: function(v){ return fmtPct(v, 2, true); } } },
       { gridIndex: 1, type: 'value', min: -zmax, max: zmax, splitLine: { lineStyle: { color: '#f2f2f2' } }, axisLabel: { color: '#909399', fontSize: 9 },
-        name: 'dev_z', nameLocation: 'end', nameGap: 2, nameTextStyle: { fontSize: 9, color: '#909399' } },
+        name: leg === 'am' ? 'ret1545%' : 'dev_z', nameLocation: 'end', nameGap: 2, nameTextStyle: { fontSize: 9, color: '#909399' } },
       { gridIndex: 2, type: 'value', scale: true, splitLine: { show: false }, axisLabel: { show: false } }
     ],
     series: [
@@ -755,23 +810,16 @@ function buildVwapOption(payload, prevClose, kind){
         markLine: { silent: true, symbol: 'none', lineStyle: { color: '#c0c4cc', type: 'dashed', width: 1 },
           data: [{ yAxis: prevClose }], label: { formatter: hasPrev ? ('昨收 ' + fmtNum(prevClose, 2)) : '', fontSize: 9, color: '#909399' } },
         markArea: (sessFrom ? { silent: true, itemStyle: { color: 'rgba(245,166,35,0.07)' },
-          label: { show: true, position: 'insideTop', formatter: '开仓时段', fontSize: 9, color: '#c8901f' },
+          label: { show: true, position: 'insideTop', formatter: leg === 'am' ? '上午开仓 09:46–11:30' : '开仓时段', fontSize: 9, color: '#c8901f' },
           data: [[{ xAxis: sessFrom }, { xAxis: sessTo }]] } : undefined) },
       { name: 'VWAP', type: 'line', data: vwaps, showSymbol: false, smooth: false, connectNulls: true, z: 5,
         lineStyle: { width: 1.3, color: vwapColor } },
       { name: '开仓', type: 'scatter', data: entryPts, z: 12, zlevel: 1,
         markLine: { silent: true, symbol: 'none', data: slLines } },
       { name: '平仓', type: 'scatter', data: exitPts, z: 11, zlevel: 1 },
-      { name: 'dev_z', type: 'line', xAxisIndex: 1, yAxisIndex: 2, data: zs, showSymbol: false, connectNulls: true,
+      { name: subLabel, type: 'line', xAxisIndex: 1, yAxisIndex: 2, data: zs, showSymbol: false, connectNulls: true,
         lineStyle: { width: 1.1, color: '#409EFF' }, z: 4,
-        markLine: { silent: true, symbol: 'none',
-          data: [
-      { yAxis: Number(P.k_long) || 1.0, lineStyle: { color: upColor, type: 'dashed', width: 1 },
-        label: { show: true, position: 'insideEndTop', formatter: '做多 +' + fmtNum(num(P.k_long), 2), fontSize: 9, color: upColor } },
-      { yAxis: Number(P.k_short) || -1.5, lineStyle: { color: downColor, type: 'dashed', width: 1 },
-        label: { show: true, position: 'insideEndBottom', formatter: '做空 −' + fmtNum(Math.abs(num(P.k_short)), 2), fontSize: 9, color: downColor } },
-            { yAxis: 0, lineStyle: { color: '#c0c4cc', width: 1 }, label: { show: false } }
-          ] } },
+        markLine: { silent: true, symbol: 'none', data: subMarkLines } },
       { name: '量', type: 'bar', xAxisIndex: 2, yAxisIndex: 3, data: vols,
         itemStyle: { color: function(p){ return volColors[p.dataIndex] || upColor; } } }
     ]
@@ -1186,6 +1234,8 @@ Vue.component('fut-board-rt', {
       mode: { type: String, default: 'rt' },
       // 逐品种策略参数对象 {k_long, k_short, rr, days}（父组件按品种下发，优先于下面的标量 prop）
       params: { type: Object, default: null },
+      // 两腿：'am'=上午开盘驱动(ret1545) / 'pm'=下午 VWAP 动量(dev_z)
+      leg: { type: String, default: 'pm' },
       kLong: { type: Number, default: 1.0 },
       kShort: { type: Number, default: -1.5 },
       rr: { type: Number, default: 1.5 },
@@ -1211,6 +1261,9 @@ Vue.component('fut-board-rt', {
     _effKShort(){ return this._pParams.k_short; },
     _effRR(){ return this._pParams.rr; },
     _effDays(){ return this._pParams.days; },
+    // 上午腿：腿标识 + ret1545 门槛（来自 params.am_k）
+    _effLeg(){ return (this.leg === 'am') ? 'am' : 'pm'; },
+    _effKPct(){ const p = this.params || {}; const n = Number(p.am_k); return isFinite(n) ? n : 0.40; },
     // 分时图 dev_z 副图的做多/做空阈值线：与 VWAP 模式共用同一份参数
     // （优先父组件下发的 params，回退后端响应里的 vwap_params，再回退默认）。
     _rtThresholds(){
@@ -1243,10 +1296,15 @@ Vue.component('fut-board-rt', {
     _effKShort(){ this._resetChart(); },
     _effRR(){ this._resetChart(); },
     _effDays(){ this._resetChart(); },
+    _effLeg(){ this._resetChart(); },
+    _effKPct(){ this._resetChart(); },
     // 监听 per-symbol params 变化，向父组件上报（供父组件存 localStorage）
     _pParams: {
       handler(v, ov){
         if(!v || !this.isVwap) return;
+        // 上午腿的参数由父组件工具栏独占（am_k/am_rr），子组件不回写，
+        // 避免把下午腿默认 k_long/k_short 写回、污染 per-code 参数。
+        if(this._effLeg === 'am') return;
         // 只在「数值真的变了」时回写父组件。父组件每次渲染都会 new 一个 params 对象，
         // 若按引用比较会形成 父重渲染 -> 子 watch -> 回写 -> 父重渲染 的死循环。
         const prev = this._lastPEmitted;
@@ -1394,11 +1452,18 @@ Vue.component('fut-board-rt', {
     async _drawVwapChart(){
       try{
         if(!this.code) return;
-        const q = '?days=' + encodeURIComponent(this._effDays)
-                + '&k_long=' + encodeURIComponent(this._effKLong)
-                + '&k_short=' + encodeURIComponent(this._effKShort)
-                + '&rr=' + encodeURIComponent(this._effRR)
-                + '&_=' + Date.now();
+        const leg = this._effLeg;
+        let q = '?leg=' + encodeURIComponent(leg) + '&days=' + encodeURIComponent(this._effDays);
+        if(leg === 'am'){
+          // 上午开盘驱动：ret1545 单阈值 k_pct + 盈亏比 rr（2.0R）
+          q += '&k_pct=' + encodeURIComponent(this._effKPct) + '&rr=' + encodeURIComponent(this._effRR);
+        } else {
+          // 下午 VWAP 动量：dev_z 多/空阈值 + 盈亏比 rr（1.5R）
+          q += '&k_long=' + encodeURIComponent(this._effKLong)
+             + '&k_short=' + encodeURIComponent(this._effKShort)
+             + '&rr=' + encodeURIComponent(this._effRR);
+        }
+        q += '&_=' + Date.now();
         const js = await reqJSON('/futures/vwap/' + encodeURIComponent(this.code) + q, { cache: 'no-store' });
         if(!js || !js.ok || !js.series || !js.series.length){
           this.vwErr = (js && js.error) ? ('后端:' + js.error) : '后端返回空数据';
@@ -1452,6 +1517,8 @@ Vue.component('fut-board-rt', {
         code: this.code,
         atr5: js.atr5,
         dev_z: devZ,
+        ret1545: js.ret1545,
+        leg: js.leg,
         state: (js.last && js.last.state) || 'flat',
         entry: (js.last && js.last.entry) != null ? js.last.entry : null,
         stop: (js.last && js.last.stop) != null ? js.last.stop : null,
@@ -1571,6 +1638,8 @@ new Vue({
       showBands: true,
       // 分时看盘三态：rt=分时 / vwap=VWAP 偏离度策略 / kline=K线
       rtMode: 'rt',
+      // VWAP 策略两条腿：am=上午开盘驱动(drive) / pm=下午 VWAP 动量
+      vwapLeg: 'pm',
       // VWAP 策略参数：各品种独立存储，key 为 code
       vwapParams: {},
       vwapActiveCode: '',
@@ -1632,6 +1701,7 @@ new Vue({
             this.$set(this.vwapParams, code, {
               k_long: num(s.k_long, 1.0), k_short: num(s.k_short, -1.5),
               rr: num(s.rr, 1.5), days: num(s.days, 30),
+              am_k: num(s.am_k, 0.40), am_rr: num(s.am_rr, 2.0),
             });
           });
         })
@@ -1659,7 +1729,7 @@ new Vue({
       for (let i = 0; i < list.length; i++) {
         const c = list[i];
         if (!c || this.vwapParams[c]) continue;
-        this.$set(this.vwapParams, c, { k_long: 1.0, k_short: -1.5, rr: 1.5, days: 30 });
+        this.$set(this.vwapParams, c, { k_long: 1.0, k_short: -1.5, rr: 1.5, days: 30, am_k: 0.40, am_rr: 2.0 });
         added = true;
       }
       if (added) this._saveVwapParams();
@@ -1672,7 +1742,7 @@ new Vue({
     setVwapParam(key, val) {
       const code = this.vwapActiveCode;
       if (!code || !key) return;
-      const cp = Object.assign({ k_long: 1.0, k_short: -1.5, rr: 1.5, days: 30 }, this.vwapParams[code] || {});
+      const cp = Object.assign({ k_long: 1.0, k_short: -1.5, rr: 1.5, days: 30, am_k: 0.40, am_rr: 2.0 }, this.vwapParams[code] || {});
       cp[key] = val;
       this.$set(this.vwapParams, code, cp);
       this._saveVwapParams();
@@ -1680,14 +1750,17 @@ new Vue({
     },
     onParamsChange(e) {
       if (!e || !e.code) return;
-      const old = this.vwapParams && this.vwapParams[e.code];
-      const kLong = e.k_long != null ? e.k_long : 1.0;
-      const kShort = e.k_short != null ? e.k_short : -1.5;
-      const rr = e.rr != null ? e.rr : 1.5;
-      const days = e.days != null ? e.days : 30;
+      const cur = (this.vwapParams && this.vwapParams[e.code]) || {};
+      const kLong = e.k_long != null ? e.k_long : (cur.k_long != null ? cur.k_long : 1.0);
+      const kShort = e.k_short != null ? e.k_short : (cur.k_short != null ? cur.k_short : -1.5);
+      const rr = e.rr != null ? e.rr : (cur.rr != null ? cur.rr : 1.5);
+      const days = e.days != null ? e.days : (cur.days != null ? cur.days : 30);
       // 数值未变则不写回：避免与子组件的 params 回写形成渲染死循环
-      if (old && old.k_long === kLong && old.k_short === kShort && old.rr === rr && old.days === days) return;
+      if (cur.k_long === kLong && cur.k_short === kShort && cur.rr === rr && cur.days === days) return;
       const cp = { k_long: kLong, k_short: kShort, rr: rr, days: days };
+      // 保留上午腿(ret1545)参数，不被下午腿的回写覆盖
+      if (cur.am_k != null) cp.am_k = cur.am_k;
+      if (cur.am_rr != null) cp.am_rr = cur.am_rr;
       this.$set(this.vwapParams || (this.vwapParams = {}), e.code, cp);
       this._saveVwapParams();
       this._pushVwapParams(e.code);
@@ -1702,14 +1775,28 @@ new Vue({
     vw(code) { return this.vwapInfo && this.vwapInfo[code] ? this.vwapInfo[code] : null; },
     getVwapParams(code) {
       const p = this.vwapParams && this.vwapParams[code];
-      if (!p) return { k_long: 1.0, k_short: -1.5, rr: 1.5, days: 30 };
-      // 用 isFinite 而非 ||，避免阈值取 0 这类合法值被吞成默认值
       const num = function(v, d){ const n = Number(v); return isFinite(n) ? n : d; };
-      return { k_long: num(p.k_long, 1.0), k_short: num(p.k_short, -1.5), rr: num(p.rr, 1.5), days: num(p.days, 30) };
+      const full = {
+        k_long: num(p && p.k_long, 1.0), k_short: num(p && p.k_short, -1.5),
+        rr: num(p && p.rr, 1.5), days: num(p && p.days, 30),
+        am_k: num(p && p.am_k, 0.40), am_rr: num(p && p.am_rr, 2.0),
+      };
+      return full;
     },
-    vwZcls(z) {
+    // 按腿返回参数子集（工具栏 / 子组件下单用）。am=上午开盘驱动(ret1545 单阈值+2.0R)，pm=下午 VWAP 动量(dev_z 双阈值+1.5R)
+    getVwapLegParams(code, leg) {
+      const full = this.getVwapParams(code);
+      if (leg === 'am') return { am_k: full.am_k, am_rr: full.am_rr, days: full.days };
+      if (leg === 'pm') return { k_long: full.k_long, k_short: full.k_short, rr: full.rr, days: full.days };
+      return full;
+    },
+    vwZcls(z, leg) {
       const n = Number(z);
       if (!isFinite(n)) return '';
+      if (leg === 'am') {
+        // ret1545 方向：≥ +0.40% 偏多 / ≤ −0.40% 偏空（默认门槛；仅作芯片配色）
+        return n >= 0.40 ? 'pdi' : (n <= -0.40 ? 'mdi' : 'adx');
+      }
       // dev_z 越高（价格越高于 VWAP）越偏多 -> 红；越低 -> 绿
       return n >= 1.0 ? 'pdi' : (n <= -1.5 ? 'mdi' : 'adx');
     },

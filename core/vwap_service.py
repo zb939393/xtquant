@@ -63,6 +63,24 @@ DEFAULT_PARAMS = {
     "baseline_days": 30,  # 基线窗口（交易日）
 }
 
+# 上午腿（开盘驱动 drive）默认参数。
+#   方向依据 ret1545 = (9:45 收 ÷ 9:30 开 − 1) × 100%，全品种统一门槛 k_pct（默认 40bp）。
+#   入场 09:46 开盘；止损 = 1.5 × ATR(5min)（报告 §②③ 两腿共用同一止损基准：IFL9 ATR≈8.5 → 12.76 点；
+#       报告正文把该 ATR 标作"1 分钟 ATR 8.51"，但数值等于 5 分钟口径，故实现统一用 5min ATR）。
+#   止盈 = 2.0R（rr=2）；时间止损到 11:30（≈105 根）尾盘强平，绝不过夜。
+#   与下午腿不同：阈值对称、持仓窗口在上午；止损 ATR 口径与下午腿一致（5min）。
+AM_DEFAULT_PARAMS = {
+    "k_pct": 0.40,        # ret1545 门槛（%），≥ +k_pct 做多 / ≤ −k_pct 做空
+    "rr": 2.0,            # 止盈风险回报比 2.0R
+    "atr_mult": 1.5,      # 止损 = 1.5 x ATR(5min)
+    "atr_period": 14,     # ATR 周期
+    "time_stop": 105,     # 持有满 105 根 1 分钟强制平仓（≈到 11:30）
+    "session_start": "09:46",   # 09:46 开盘入场
+    "session_end": "11:30",     # 11:30 强制平仓（上午了结，不与下午腿抢仓位）
+    "baseline_days": 30,  # 基线窗口（交易日，仅下午腿 dev_z 用到）
+    "atr_mode": "5min",   # 上午腿止损 ATR 与下午腿统一用 5 分钟（报告标注 8.51 实为 5min 口径）
+}
+
 # 磁盘缓存目录（1 分钟历史，用于构建 dev_z 基线）
 _CACHE_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "vwap_cache")
 _PAGE = 700               # 单次分页拉取根数（实测服务端上限 700）
@@ -398,20 +416,38 @@ def _atr5_map(hist, period=14):
 
 # ============================ 当日序列 + 信号模拟 ============================
 
-def _simulate_day(day_bars, feats, params):
+def _simulate_day(day_bars, feats, params, leg='pm'):
     """按报告规则在当日 1 分钟序列上模拟开平仓。
 
+    leg='pm'（下午动量）: dev_z 向上突破 +k_long 做多 / 向下跌破 k_short 做空。
+    leg='am'（上午开盘驱动）: ret1545 = 9:45 收 ÷ 9:30 开 − 1，≥ +k_pct 做多 / ≤ −k_pct 做空，
+        09:46 开盘入场、上午 11:30 前了结。
+
     feats: [{'t','pos','close','open','high','low','vwap','dev','dev_atr','dev_z','vol'}, ...]
-    params: DEFAULT_PARAMS 兼容 dict
+    params: DEFAULT_PARAMS / AM_DEFAULT_PARAMS 兼容 dict
     返回 (signals, last_state)
     """
     k_long = float(params.get("k_long", 1.0))
     k_short = float(params.get("k_short", -1.5))
+    k_pct = float(params.get("k_pct", 0.40))   # 上午腿：ret1545 门槛（%）
     rr = float(params.get("rr", 1.5))
     atr_mult = float(params.get("atr_mult", 1.5))
     time_stop = int(params.get("time_stop", 60))
-    s_start = _minute_of(params.get("session_start", "13:00"))
-    s_end = _minute_of(params.get("session_end", "14:55"))
+    s_start = _minute_of(params.get("session_start", "13:00" if leg != 'am' else "09:46"))
+    s_end = _minute_of(params.get("session_end", "14:55" if leg != 'am' else "11:30"))
+
+    # 上午腿：开盘 15 分钟的方向 ret1545 = 9:45 收 ÷ 9:30 开 − 1
+    # （open[0]=09:31 那根的开盘价即 9:30 开盘价；close[14]=09:45 收盘）
+    ret1545 = None
+    if leg == 'am':
+        o0 = c14 = None
+        for f in feats:
+            if f.get("pos") == 0:
+                o0 = f.get("open")
+            elif f.get("pos") == 14:
+                c14 = f.get("close")
+        if o0 and o0 != 0 and c14 is not None:
+            ret1545 = (c14 / o0 - 1.0) * 100.0   # 百分号口径，与 k_pct 一致（build_vwap_view 显示值同口径）
 
     signals = []
     state = 0            # 0 flat / 1 long / -1 short
@@ -481,14 +517,23 @@ def _simulate_day(day_bars, feats, params):
                 close(i, f["close"], "eod")
 
         # 3) 本根收盘确认信号 -> 下一根开盘成交
-        #    触发口径：突破阈值。仅当上一根有效 dev_z 在阈值内侧、本根穿到外侧时触发，
-        #    而非每根都超过阈值即触发（避免持续超阈期间反复挂单）。
-        if state == 0 and pending is None and i >= warmup and s_start <= t < s_end:
-            if z is not None and prev_z is not None:
-                if prev_z < k_long <= z:           # 向上突破做多阈值
+        if leg == 'am':
+            # 上午腿：仅 9:45（pos 14）那一根收盘后确认方向（ret1545 单点触发），
+            # 下一根（09:46）开盘成交，与「开盘 15 分钟定方向、09:46 跟进」完全一致。
+            if state == 0 and pending is None and f.get("pos") == 14 and ret1545 is not None:
+                if ret1545 >= k_pct:
                     pending = 1
-                elif prev_z > k_short >= z:         # 向下突破做空阈值
+                elif ret1545 <= -k_pct:
                     pending = -1
+        else:
+            # 下午腿：突破阈值口径。仅当上一根有效 dev_z 在阈值内侧、本根穿到外侧时触发，
+            # 而非每根都超过阈值即触发（避免持续超阈期间反复挂单）。
+            if state == 0 and pending is None and i >= warmup and s_start <= t < s_end:
+                if z is not None and prev_z is not None:
+                    if prev_z < k_long <= z:           # 向上突破做多阈值
+                        pending = 1
+                    elif prev_z > k_short >= z:         # 向下突破做空阈值
+                        pending = -1
 
         # 更新 last_z（仅有效值参与突破判定）
         if z is not None:
@@ -504,26 +549,37 @@ def _simulate_day(day_bars, feats, params):
     return signals, last_state
 
 
-def build_vwap_view(code, params=None, days=30):
+def build_vwap_view(code, params=None, days=30, leg='pm'):
     """构建 VWAP 模式的完整视图数据（供前端绘图）。
 
+    leg='pm'（下午动量）：dev_z 偏离度策略，需历史基线（mu/sd by pos）+ ATR(5min)。
+    leg='am'（上午开盘驱动）：ret1545 定方向，仅需 ATR(1min)，不依赖 dev_z 基线。
+
     返回 dict：
-      ok/code/date/params/baseline/atr5/series/signals/last/meta
+      ok/code/date/leg/params/baseline/atr5/ret1545/series/signals/last/meta
     """
-    p = dict(DEFAULT_PARAMS)
+    leg = 'am' if str(leg or 'pm').lower() == 'am' else 'pm'
+    base_defaults = AM_DEFAULT_PARAMS if leg == 'am' else DEFAULT_PARAMS
+    p = dict(base_defaults)
     if params:
         for k, v in params.items():
             if k in p:
                 try:
-                    p[k] = float(v) if k not in ("session_start", "session_end") else str(v)
+                    p[k] = float(v) if k not in ("session_start", "session_end", "atr_mode", "leg") else str(v)
                 except Exception:
                     pass
     p["warmup"] = WARMUP_BARS
 
     with _LOCK:
         hist, meta = get_history_1min(code, days=int(days))
-        atr5_map = _atr5_map(hist, period=int(p["atr_period"]))
-        base = _build_baseline(hist, atr5_map, days=int(days))
+        if leg == 'am':
+            # 上午腿：止损 ATR 与下午腿统一用 5 分钟口径（报告 §②③ 两腿共用同一止损基准 ≈8.5→12.76）
+            atr_map = _atr5_map(hist, period=int(p["atr_period"]))
+            base = {"mu": [None] * BARS_PER_DAY, "sd": [None] * BARS_PER_DAY, "days": 0}
+        else:
+            atr5_map = _atr5_map(hist, period=int(p["atr_period"]))
+            atr_map = atr5_map
+            base = _build_baseline(hist, atr5_map, days=int(days))
 
     if not hist:
         return {"ok": False, "code": code, "error": "no history bars", "series": [], "signals": []}
@@ -545,6 +601,7 @@ def build_vwap_view(code, params=None, days=30):
     cum_pv = 0.0
     cum_v = 0.0
     atr_prev = None
+    open0 = None          # 9:30 开盘价（pos 0 的 open），上午腿算 ret1545 / ret_open 用
     mu, sd = base["mu"], base["sd"]
     for b in day_bars:
         _, hm = _hms(b["date"])
@@ -556,7 +613,9 @@ def build_vwap_view(code, params=None, days=30):
             # 权重价用 close：实测精确复现通达信分时均价线（见模块文档修正 1）
             cum_pv += b["close"] * v
             cum_v += v
-        a = (atr5_map.get(day) or {}).get(hm)
+        if pos == 0:
+            open0 = b["open"]
+        a = (atr_map.get(day) or {}).get(hm)
         if a is not None:
             atr_prev = a
         vwap = (cum_pv / cum_v) if cum_v > 0 else None
@@ -567,15 +626,29 @@ def build_vwap_view(code, params=None, days=30):
         dev_z = None
         if dev_atr is not None and m is not None and s is not None and s > 1e-9:
             dev_z = (dev_atr - m) / s
+        # 上午腿：开盘以来收益率 ret_open = close / 9:30开 − 1（%），9:45 处即 ret1545
+        r_pct = None
+        if leg == 'am' and open0 and open0 != 0:
+            r_pct = (b["close"] / open0 - 1.0) * 100.0
         feats.append({
             "t": hm, "pos": pos,
             "open": b["open"], "high": b["high"], "low": b["low"], "close": b["close"],
             "vol": v,
             "vwap": vwap, "dev": dev, "dev_atr": dev_atr, "dev_z": dev_z,
-            "atr": atr_prev,
+            "atr": atr_prev, "r": r_pct,
         })
 
-    signals, last_state = _simulate_day(day_bars, feats, p)
+    # 上午腿 ret1545（= 9:45 收 ÷ 9:30 开 − 1），供前端标题/信号条展示
+    ret1545 = None
+    if leg == 'am':
+        c14 = None
+        for f in feats:
+            if f.get("pos") == 14:
+                c14 = f.get("close")
+        if open0 and open0 != 0 and c14 is not None:
+            ret1545 = (c14 / open0 - 1.0) * 100.0
+
+    signals, last_state = _simulate_day(day_bars, feats, p, leg=leg)
 
     # 精简当日序列（只保留前端绘图所需字段，控制响应体积）
     series = [{
@@ -584,23 +657,33 @@ def build_vwap_view(code, params=None, days=30):
         "d": None if f["dev"] is None else round(f["dev"], 3),
         "da": None if f["dev_atr"] is None else round(f["dev_atr"], 4),
         "z": None if f["dev_z"] is None else round(f["dev_z"], 3),
+        "r": None if f["r"] is None else round(f["r"], 3),
         "a": None if f["atr"] is None else round(f["atr"], 2),
     } for f in feats]
 
     last = series[-1] if series else None
+    params_out = {
+        "leg": leg,
+        "rr": p["rr"],
+        "atr_mult": p["atr_mult"], "atr_period": int(p["atr_period"]),
+        "time_stop": int(p["time_stop"]),
+        "session_start": p["session_start"], "session_end": p["session_end"],
+        "warmup": WARMUP_BARS,
+    }
+    if leg == 'am':
+        params_out["k_pct"] = p["k_pct"]
+    else:
+        params_out["k_long"] = p["k_long"]
+        params_out["k_short"] = p["k_short"]
     return {
         "ok": True,
         "code": code,
         "date": day,
-        "params": {
-            "k_long": p["k_long"], "k_short": p["k_short"], "rr": p["rr"],
-            "atr_mult": p["atr_mult"], "atr_period": int(p["atr_period"]),
-            "time_stop": int(p["time_stop"]),
-            "session_start": p["session_start"], "session_end": p["session_end"],
-            "warmup": WARMUP_BARS,
-        },
+        "leg": leg,
+        "params": params_out,
         "baseline": {"days": base["days"], "ok_days": sum(1 for x in mu if x is not None)},
-        "atr5": None if not atr_prev else round(atr_prev, 2),
+        "atr5": round(atr_prev, 2) if atr_prev else None,
+        "ret1545": None if ret1545 is None else round(ret1545, 3),
         "series": series,
         "signals": signals,
         "last": last_state,

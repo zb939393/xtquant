@@ -55,15 +55,27 @@ def _exq_unavailable():
 
 # ---- VWAP 策略参数：URL 参数优先，缺失则回退服务端保存的 per-code 参数 ----
 # 这样独立弹窗 / iframe 即使不传参、也不与主页面共享 localStorage，仍能拿到同一套阈值。
-_VWAP_FIELDS = ("k_long", "k_short", "rr", "days")
+# 上午腿（am）用 am_k / am_rr（ret1545 单阈值 + 2.0R）；下午腿（pm）用 k_long / k_short / rr（dev_z）。
+_VWAP_FIELDS = ("k_long", "k_short", "rr", "days", "am_k", "am_rr")
 
 
 def _vwap_eff_params(code, args):
-    """合并 URL 参数与服务端持久化的参数，返回 dict（含 days，默认 30）。"""
+    """合并 URL 参数与服务端持久化的参数，返回 dict（含 days，默认 30）。
+
+    按 leg 选择字段集：am -> (am_k, am_rr, days)；pm -> (k_long, k_short, rr, days)。
+    URL 上的 am_k 与 k_pct 视为同一含义（上午腿门槛）。
+    """
     saved = vstore.get(code) if vstore else {}
+    leg = (args.get("leg") or "").strip().lower() or "pm"
+    if leg == "am":
+        fields = ("am_k", "am_rr", "days")
+    else:
+        fields = ("k_long", "k_short", "rr", "days")
     out = {}
-    for k in _VWAP_FIELDS:
+    for k in fields:
         v = args.get(k)
+        if v is None and k == "am_k":
+            v = args.get("k_pct")   # URL 别名
         if v is not None and v != "":
             try:
                 out[k] = float(v)
@@ -83,7 +95,7 @@ def _vwap_eff_params(code, args):
 
 
 def _vwap_cache_key(prefix, code, p):
-    tail = "_".join("%s%s" % (k, p[k]) for k in _VWAP_FIELDS if k in p)
+    tail = "_".join("%s%s" % (k, p[k]) for k in ("leg", "k_long", "k_short", "am_k", "rr", "days") if k in p)
     return "%s%s_%s" % (prefix, code, tail)
 
 
@@ -214,8 +226,9 @@ def futures_vwap(code):
             ttl = int(request.args.get("ttl", "3"))
         except Exception:
             ttl = 15
+        leg = (request.args.get("leg") or "").strip().lower() or "pm"
         params = {}
-        for k in ("k_long", "k_short", "rr", "atr_mult", "atr_period", "time_stop"):
+        for k in ("k_long", "k_short", "rr", "atr_mult", "atr_period", "time_stop", "k_pct"):
             v = request.args.get(k)
             if v is not None and v != "":
                 try:
@@ -224,23 +237,26 @@ def futures_vwap(code):
                     pass
         # URL 未显式指定的，用服务端保存的 per-code 参数补齐（days 也走同一套）
         p = _vwap_eff_params(code, request.args)
-        for k in ("k_long", "k_short", "rr"):
+        for k in ("k_long", "k_short", "rr", "am_k"):
             if k not in params and k in p:
                 params[k] = p[k]
+        # 上午腿：把 am_k 映射成服务层约定的 k_pct（门槛 %）
+        if leg == "am" and "am_k" in params and "k_pct" not in params:
+            params["k_pct"] = params.pop("am_k")
         try:
             days = int(float(request.args.get("days", "") or p.get("days", 30)))
         except Exception:
             days = 30
         if days < 1:
             days = 30
-        key = _vwap_cache_key("fut_vwap_", code, dict(params, days=days))
+        key = _vwap_cache_key("fut_vwap_", code, dict(params, days=days, leg=leg))
         cached = _EXQ_CACHE.get(key)
         if cached and (time.time() - cached[1]) < ttl:
             body = cached[0]
             body["cached"] = True
             return jsonify(body)
         try:
-            data = vws.build_vwap_view(code, params=params or None, days=days)
+            data = vws.build_vwap_view(code, params=params or None, days=days, leg=leg)
         except Exception as e:
             return jsonify({"ok": False, "data": None, "error": "calc failed: %s" % e})
         data["cached"] = False

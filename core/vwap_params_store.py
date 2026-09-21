@@ -20,8 +20,9 @@ _BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _PATH = os.path.join(_BASE, "data", "vwap_params.json")
 
 _LOCK = threading.Lock()
-DEFAULTS = {"k_long": 1.0, "k_short": -1.5, "rr": 1.5, "days": 30}
-FIELDS = ("k_long", "k_short", "rr", "days")
+DEFAULTS = {"k_long": 1.0, "k_short": -1.5, "rr": 1.5, "days": 30,
+            "am_k": 0.40, "am_rr": 2.0}
+FIELDS = ("k_long", "k_short", "rr", "days", "am_k", "am_rr")
 
 
 def _read():
