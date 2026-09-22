@@ -178,7 +178,7 @@
                   <el-option label="2.0R" :value="2.0" data-page-node-id="ytHkNy8LORa7ePMNPLPdtl"></el-option>
                   <el-option label="3.0R" :value="3.0" data-page-node-id="Gb66Pb6oLGVwJZbI6gRfMF"></el-option>
                 </el-select>
-                <span class="muted" style="margin-left:6px;" data-page-node-id="d5KNs2Ol2sOvLAB8p6mNs4">基线 ${getVwapLegParams(vwapActiveCode,'pm').days || 30} 日</span>
+                <span class="muted" style="margin-left:6px;" data-page-node-id="d5KNs2Ol2sOvLAB8p6mNs4">基线 ${vwapBaseLabel(vwapActiveCode)}</span>
               </template>
               <!-- 阈值同步失败必须可见：静默退回本地旧阈值会让信号莫名跳变（13:41 <-> 13:02） -->
               <span v-if="vwapSyncErr" style="margin-left:10px;color:#f56c6c;font-weight:600;" data-page-node-id="VwSyncErrHint">⚠ ${vwapSyncErr}</span>
@@ -2095,6 +2095,15 @@ new Vue({
       if (leg === 'am') return { am_k: full.am_k, am_rr: full.am_rr, days: full.days };
       if (leg === 'pm') return { k_long: full.k_long, k_short: full.k_short, rr: full.rr, days: full.days };
       return full;
+    },
+    // 「基线」标签：expanding 口径下 days 已不是窗口，改显「实际累积交易日数」
+    // （取自图数据 payload.baseline.days，含 mode）；未拿到图数据时回退固定窗口 days。
+    vwapBaseLabel(code) {
+      const info = this.vwapInfo && this.vwapInfo[code];
+      const b = info && info.baseline;
+      if (b && b.mode === 'expanding' && b.days) return b.days + ' 日(累积)';
+      const d = (this.getVwapLegParams(code, 'pm') || {}).days || 30;
+      return d + ' 日';
     },
     vwZcls(z, leg) {
       const n = Number(z);

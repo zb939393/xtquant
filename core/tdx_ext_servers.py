@@ -44,15 +44,22 @@ IFL9/IHL9/ICL9 全部正常**，但深/沪期权恒返回 `0.0`。与川财西�
 以便 futures_service / option_exquote_service 可在不触发 ak_service 全量导入的前提下引用本池。
 """
 _TDX_EXT_SERVERS = [
-    ("长城扩展行情深圳电信", "219.133.95.102", 7721),
-    ("长城扩展行情深圳联通", "210.21.198.233", 7721),
-    ("长城扩展行情苏州电信", "58.210.106.10", 7721),
-    ("长城扩展行情苏州移动", "223.112.100.140", 7721),
+    # ==================== 主源：国元证券合肥 ×5（唯一默认取数源）====================
+    # 同券商、同机房、不同运营商（电信/联通×2/移动×2）；2026-09-22 复验：期指 + 沪/深期权
+    # 五通道全通，延迟 78~187ms，深历史 2020-07 级（全池最深）。取数源策略见 core/ext_source.py：
+    # 默认**只用这 5 台**，连续失败达阈值才熔断切下面的备用池；历史深拉固定走其中 1 台锚点。
     ("国元扩展行情合肥电信1", "61.191.48.15", 7721),
     ("国元扩展行情合肥联通1", "220.248.233.5", 7721),
     ("国元扩展行情合肥联通2", "218.106.80.15", 7721),
     ("国元扩展行情合肥移动1", "120.210.144.2", 7721),
     ("国元扩展行情合肥移动2", "221.130.121.45", 7721),
+    # ==================== 备用池：仅在主源熔断时启用（拉增量）====================
+    # 与主源的历史页存在高/低/量微差、且深度略不同（联通2/移动2 至 2020-07-17、
+    # 其余至 2020-07-20），故**不得与主源混用于历史深拉**，只可兜底拉增量。
+    ("长城扩展行情深圳电信", "219.133.95.102", 7721),
+    ("长城扩展行情深圳联通", "210.21.198.233", 7721),
+    ("长城扩展行情苏州电信", "58.210.106.10", 7721),
+    ("长城扩展行情苏州移动", "223.112.100.140", 7721),
     ("国信扩展行情腾讯云华东信创", "109.244.35.23", 7721),
     ("国信扩展行情阿里云华南", "120.79.210.76", 7721),
     ("国信扩展行情阿里云华东", "139.224.201.59", 7721),
@@ -85,3 +92,19 @@ _PYTDX_EXT_SERVERS = [(ip, port) for (_n, ip, port) in _TDX_EXT_SERVERS]
 
 # tdx_exhq.connect_exhq / get_option_codes 需要 (host, port, name) 三元组顺序
 _TDX_EXT_SERVERS_FOR_TDX_EXHQ = [(ip, port, name) for (name, ip, port) in _TDX_EXT_SERVERS]
+
+# ---- 两层拆分（取数源策略，见 core/ext_source.py）----
+# 主源 = 国元合肥 5 台（唯一默认源）；备用池 = 其余，仅主源熔断时启用。
+# 注意：这里只是"分组视图"，真正决定用哪组的是 ext_source.active_pairs()，
+# 业务代码请一律经由 ext_source 取候选，不要直接展开整个 _TDX_EXT_SERVERS。
+try:
+    from ext_source import PRIMARY_SERVERS as _PRIMARY_SERVERS
+except Exception:
+    try:
+        from core.ext_source import PRIMARY_SERVERS as _PRIMARY_SERVERS
+    except Exception:
+        _PRIMARY_SERVERS = []
+
+_PRIMARY_KEYS = set((ip, port) for (_n, ip, port) in _PRIMARY_SERVERS)
+_TDX_EXT_SERVERS_PRIMARY = [t for t in _TDX_EXT_SERVERS if (t[1], t[2]) in _PRIMARY_KEYS]
+_TDX_EXT_SERVERS_BACKUP = [t for t in _TDX_EXT_SERVERS if (t[1], t[2]) not in _PRIMARY_KEYS]

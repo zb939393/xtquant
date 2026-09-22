@@ -147,6 +147,11 @@ def create_app():
         # 股指期货监控看板：独立前端模板（复用同一 Vue2/Element-UI/ECharts 技术栈）
         return render_template("futures.html")
 
+    @app.route("/ops")
+    def ops_board():
+        # 运维面板：聚合 /health /futures/ext/source /futures/pool/stats /futures/vwap/backup
+        return render_template("ops.html")
+
     @app.route("/popup-setup")
     def popup_setup():
         """B 机器配置助手：说明如何在本机注册 xtquant-popup:// 协议。

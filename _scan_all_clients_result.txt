@@ -1,0 +1,357 @@
+corp,cfg,name,ip,status
+川财证券,D:/new_cczq_v6\connect.cfg,HQHOST/川财证券_西信电信站点,182.140.139.191,EMPTY_MIRROR
+川财证券,D:/new_cczq_v6\connect.cfg,HQHOST/川财证券_西信联通站点,119.6.200.40,TCP_FAIL
+川财证券,D:/new_cczq_v6\connect.cfg,HQHOST/川财证券_中海移动站点,218.200.222.134,EMPTY_MIRROR
+川财证券,D:/new_cczq_v6\connect.cfg,HQHOST/川财证券_中海电信站点,182.150.28.166,TCP_FAIL
+通达信网站,D:/new_tdx\connect.cfg,HQHOST/深圳双线主站1,120.79.60.82,TCP_FAIL
+通达信网站,D:/new_tdx\connect.cfg,HQHOST/深圳双线主站2,8.129.13.54,TCP_FAIL
+通达信网站,D:/new_tdx\connect.cfg,HQHOST/深圳双线主站3,120.24.149.49,TCP_FAIL
+通达信网站,D:/new_tdx\connect.cfg,HQHOST/深圳双线主站4,47.113.94.204,TCP_FAIL
+通达信网站,D:/new_tdx\connect.cfg,HQHOST/深圳双线主站5,8.129.174.169,TCP_FAIL
+通达信网站,D:/new_tdx\connect.cfg,HQHOST/深圳双线主站6,47.113.123.248,TCP_FAIL
+通达信网站,D:/new_tdx\connect.cfg,HQHOST/上海双线主站1,47.103.48.45,TCP_FAIL
+通达信网站,D:/new_tdx\connect.cfg,HQHOST/上海双线主站2,47.100.236.28,TCP_FAIL
+通达信网站,D:/new_tdx\connect.cfg,HQHOST/上海双线主站3,101.133.214.242,TCP_FAIL
+通达信网站,D:/new_tdx\connect.cfg,HQHOST/上海双线主站4,47.116.21.80,TCP_FAIL
+通达信网站,D:/new_tdx\connect.cfg,HQHOST/上海双线主站5,47.116.105.28,TCP_FAIL
+通达信网站,D:/new_tdx\connect.cfg,HQHOST/上海双线主站6,47.116.10.29,TCP_FAIL
+通达信网站,D:/new_tdx\connect.cfg,HQHOST/北京双线主站1,39.98.234.173,TCP_FAIL
+通达信网站,D:/new_tdx\connect.cfg,HQHOST/北京双线主站2,39.98.198.249,TCP_FAIL
+通达信网站,D:/new_tdx\connect.cfg,HQHOST/北京双线主站3,39.100.68.59,TCP_FAIL
+通达信网站,D:/new_tdx\connect.cfg,HQHOST/广州双线主站1,124.71.85.110,TCP_FAIL
+通达信网站,D:/new_tdx\connect.cfg,HQHOST/广州双线主站2,139.9.51.18,TCP_FAIL
+通达信网站,D:/new_tdx\connect.cfg,HQHOST/广州双线主站3,139.159.239.163,TCP_FAIL
+通达信网站,D:/new_tdx\connect.cfg,HQHOST/上海双线主站7,106.14.201.131,TCP_FAIL
+通达信网站,D:/new_tdx\connect.cfg,HQHOST/上海双线主站8,106.14.190.242,TCP_FAIL
+通达信网站,D:/new_tdx\connect.cfg,HQHOST/上海双线主站9,121.36.225.169,EMPTY_MIRROR
+通达信网站,D:/new_tdx\connect.cfg,HQHOST/上海双线主站10,123.60.70.228,EMPTY_MIRROR
+通达信网站,D:/new_tdx\connect.cfg,HQHOST/上海双线主站11,123.60.73.44,EMPTY_MIRROR
+通达信网站,D:/new_tdx\connect.cfg,HQHOST/上海双线主站12,124.70.133.119,EMPTY_MIRROR
+通达信网站,D:/new_tdx\connect.cfg,HQHOST/上海双线主站13,124.71.187.72,EMPTY_MIRROR
+通达信网站,D:/new_tdx\connect.cfg,HQHOST/上海双线主站14,124.71.187.122,EMPTY_MIRROR
+通达信网站,D:/new_tdx\connect.cfg,HQHOST/武汉电信主站1,119.97.185.59,EMPTY_MIRROR
+通达信网站,D:/new_tdx\connect.cfg,HQHOST/深圳双线主站7,47.107.64.168,TCP_FAIL
+通达信网站,D:/new_tdx\connect.cfg,HQHOST/北京双线主站4,8.142.137.74,TCP_FAIL
+通达信网站,D:/new_tdx\connect.cfg,HQHOST/广州双线主站4,124.71.9.153,EMPTY_MIRROR
+通达信网站,D:/new_tdx\connect.cfg,HQHOST/上海双线主站15,123.60.84.66,EMPTY_MIRROR
+通达信网站,D:/new_tdx_mock\connect.cfg,HQHOST/通达信深圳双线主站1,110.41.147.114,EMPTY_MIRROR
+通达信网站,D:/new_tdx_mock\connect.cfg,HQHOST/通达信深圳双线主站2,110.41.2.72,EMPTY_MIRROR
+通达信网站,D:/new_tdx_mock\connect.cfg,HQHOST/通达信深圳双线主站3,101.33.225.16,EMPTY_MIRROR
+通达信网站,D:/new_tdx_mock\connect.cfg,HQHOST/通达信深圳双线主站4,175.178.112.197,EMPTY_MIRROR
+通达信网站,D:/new_tdx_mock\connect.cfg,HQHOST/通达信深圳双线主站5,175.178.128.227,EMPTY_MIRROR
+通达信网站,D:/new_tdx_mock\connect.cfg,HQHOST/通达信深圳双线主站6,43.139.95.83,EMPTY_MIRROR
+通达信网站,D:/new_tdx_mock\connect.cfg,HQHOST/通达信上海双线主站1,124.223.163.242,EMPTY_MIRROR
+通达信网站,D:/new_tdx_mock\connect.cfg,HQHOST/通达信上海双线主站2,122.51.120.217,EMPTY_MIRROR
+通达信网站,D:/new_tdx_mock\connect.cfg,HQHOST/通达信上海双线主站3,150.158.160.2,EMPTY_MIRROR
+通达信网站,D:/new_tdx_mock\connect.cfg,HQHOST/通达信上海双线主站4,123.60.164.122,EMPTY_MIRROR
+通达信网站,D:/new_tdx_mock\connect.cfg,HQHOST/通达信上海双线主站5,111.229.247.189,EMPTY_MIRROR
+通达信网站,D:/new_tdx_mock\connect.cfg,HQHOST/通达信上海双线主站6,124.70.199.56,EMPTY_MIRROR
+通达信网站,D:/new_tdx_mock\connect.cfg,HQHOST/通达信北京双线主站1,62.234.50.143,EMPTY_MIRROR
+通达信网站,D:/new_tdx_mock\connect.cfg,HQHOST/通达信北京双线主站2,81.70.151.186,EMPTY_MIRROR
+通达信网站,D:/new_tdx_mock\connect.cfg,HQHOST/通达信北京双线主站3,82.156.214.79,EMPTY_MIRROR
+通达信网站,D:/new_tdx_mock\connect.cfg,HQHOST/通达信广州双线主站1,159.75.29.111,EMPTY_MIRROR
+通达信网站,D:/new_tdx_mock\connect.cfg,HQHOST/通达信广州双线主站2,43.139.18.171,EMPTY_MIRROR
+通达信网站,D:/new_tdx_mock\connect.cfg,HQHOST/通达信广州双线主站3,81.71.32.47,EMPTY_MIRROR
+通达信网站,D:/new_tdx_mock\connect.cfg,HQHOST/通达信上海双线主站7,122.51.232.182,EMPTY_MIRROR
+通达信网站,D:/new_tdx_mock\connect.cfg,HQHOST/通达信上海双线主站8,118.25.98.114,EMPTY_MIRROR
+通达信网站,D:/new_tdx_mock\connect.cfg,HQHOST/通达信上海双线主站9,121.36.225.169,EMPTY_MIRROR
+通达信网站,D:/new_tdx_mock\connect.cfg,HQHOST/通达信上海双线主站10,123.60.70.228,EMPTY_MIRROR
+通达信网站,D:/new_tdx_mock\connect.cfg,HQHOST/通达信上海双线主站11,123.60.73.44,EMPTY_MIRROR
+通达信网站,D:/new_tdx_mock\connect.cfg,HQHOST/通达信上海双线主站12,124.70.133.119,EMPTY_MIRROR
+通达信网站,D:/new_tdx_mock\connect.cfg,HQHOST/通达信上海双线主站13,124.71.187.72,EMPTY_MIRROR
+通达信网站,D:/new_tdx_mock\connect.cfg,HQHOST/通达信上海双线主站14,124.71.187.122,EMPTY_MIRROR
+通达信网站,D:/new_tdx_mock\connect.cfg,HQHOST/通达信武汉电信主站1,119.97.185.59,EMPTY_MIRROR
+通达信网站,D:/new_tdx_mock\connect.cfg,HQHOST/通达信深圳双线主站7,129.204.230.128,EMPTY_MIRROR
+通达信网站,D:/new_tdx_mock\connect.cfg,HQHOST/通达信北京双线主站4,101.42.240.54,EMPTY_MIRROR
+通达信网站,D:/new_tdx_mock\connect.cfg,HQHOST/通达信广州双线主站4,124.71.9.153,EMPTY_MIRROR
+通达信网站,D:/new_tdx_mock\connect.cfg,HQHOST/通达信上海双线主站15,123.60.84.66,EMPTY_MIRROR
+通达信网站,D:/new_tdx_mock\connect.cfg,HQHOST/通达信深圳双线主站8,111.230.186.52,EMPTY_MIRROR
+通达信网站,D:/new_tdx_mock\connect.cfg,HQHOST/通达信北京双线主站5,101.43.159.194,ERR:TimeoutError
+通达信网站,D:/new_tdx_mock\connect.cfg,HQHOST/通达信北京双线主站6,120.53.8.251,EMPTY_MIRROR
+通达信网站,D:/new_tdx_mock\connect.cfg,HQHOST/通达信北京双线主站7,152.136.191.169,EMPTY_MIRROR
+通达信网站,D:/new_tdx_mock\connect.cfg,HQHOST/通达信广州双线主站5,116.205.163.254,EMPTY_MIRROR
+通达信网站,D:/new_tdx_mock\connect.cfg,HQHOST/通达信广州双线主站6,116.205.171.132,EMPTY_MIRROR
+通达信网站,D:/new_tdx_mock\connect.cfg,HQHOST/通达信广州双线主站7,116.205.183.150,EMPTY_MIRROR
+通达信网站,D:/new_tdx_mock\connect.cfg,HQHOST/通达信北京双线主站8,49.232.15.141,EMPTY_MIRROR
+通达信网站,D:/new_tdx_mock\connect.cfg,HQHOST/通达信北京双线主站9,82.156.174.84,EMPTY_MIRROR
+通达信网站,D:/new_tdx_mock\connect.cfg,HQHOST/通达信北京双线主站10,101.42.164.241,EMPTY_MIRROR
+通达信网站,D:/new_tdx_mock\connect.cfg,HQHOST/通达信上海双线主站17,101.35.121.35,EMPTY_MIRROR
+通达信网站,D:/new_tdx_mock\connect.cfg,HQHOST/通达信上海双线主站18,111.231.113.208,EMPTY_MIRROR
+通达信网站,D:/new_tdx_mock\connect.cfg,HFHost/上海双线主站16,129.211.70.79,EMPTY_MIRROR
+通达信网站,D:/new_tdx_mock\connect.cfg,HFHost/深圳双线主站9,159.75.55.232,INDEX_OK
+通达信网站,D:/new_tdx_mock\_SYNCAPP\Versioning\2026-07-13 15-47\connect.cfg,HQHOST/通达信深圳双线主站1,110.41.147.114,EMPTY_MIRROR
+通达信网站,D:/new_tdx_mock\_SYNCAPP\Versioning\2026-07-13 15-47\connect.cfg,HQHOST/通达信深圳双线主站2,110.41.2.72,EMPTY_MIRROR
+通达信网站,D:/new_tdx_mock\_SYNCAPP\Versioning\2026-07-13 15-47\connect.cfg,HQHOST/通达信深圳双线主站3,101.33.225.16,EMPTY_MIRROR
+通达信网站,D:/new_tdx_mock\_SYNCAPP\Versioning\2026-07-13 15-47\connect.cfg,HQHOST/通达信深圳双线主站4,175.178.112.197,EMPTY_MIRROR
+通达信网站,D:/new_tdx_mock\_SYNCAPP\Versioning\2026-07-13 15-47\connect.cfg,HQHOST/通达信深圳双线主站5,175.178.128.227,EMPTY_MIRROR
+通达信网站,D:/new_tdx_mock\_SYNCAPP\Versioning\2026-07-13 15-47\connect.cfg,HQHOST/通达信深圳双线主站6,43.139.95.83,EMPTY_MIRROR
+通达信网站,D:/new_tdx_mock\_SYNCAPP\Versioning\2026-07-13 15-47\connect.cfg,HQHOST/通达信上海双线主站1,124.223.163.242,EMPTY_MIRROR
+通达信网站,D:/new_tdx_mock\_SYNCAPP\Versioning\2026-07-13 15-47\connect.cfg,HQHOST/通达信上海双线主站2,122.51.120.217,EMPTY_MIRROR
+通达信网站,D:/new_tdx_mock\_SYNCAPP\Versioning\2026-07-13 15-47\connect.cfg,HQHOST/通达信上海双线主站3,150.158.160.2,EMPTY_MIRROR
+通达信网站,D:/new_tdx_mock\_SYNCAPP\Versioning\2026-07-13 15-47\connect.cfg,HQHOST/通达信上海双线主站4,123.60.164.122,EMPTY_MIRROR
+通达信网站,D:/new_tdx_mock\_SYNCAPP\Versioning\2026-07-13 15-47\connect.cfg,HQHOST/通达信上海双线主站5,111.229.247.189,EMPTY_MIRROR
+通达信网站,D:/new_tdx_mock\_SYNCAPP\Versioning\2026-07-13 15-47\connect.cfg,HQHOST/通达信上海双线主站6,124.70.199.56,EMPTY_MIRROR
+通达信网站,D:/new_tdx_mock\_SYNCAPP\Versioning\2026-07-13 15-47\connect.cfg,HQHOST/通达信北京双线主站1,62.234.50.143,EMPTY_MIRROR
+通达信网站,D:/new_tdx_mock\_SYNCAPP\Versioning\2026-07-13 15-47\connect.cfg,HQHOST/通达信北京双线主站2,81.70.151.186,EMPTY_MIRROR
+通达信网站,D:/new_tdx_mock\_SYNCAPP\Versioning\2026-07-13 15-47\connect.cfg,HQHOST/通达信北京双线主站3,82.156.214.79,EMPTY_MIRROR
+通达信网站,D:/new_tdx_mock\_SYNCAPP\Versioning\2026-07-13 15-47\connect.cfg,HQHOST/通达信广州双线主站1,159.75.29.111,EMPTY_MIRROR
+通达信网站,D:/new_tdx_mock\_SYNCAPP\Versioning\2026-07-13 15-47\connect.cfg,HQHOST/通达信广州双线主站2,43.139.18.171,EMPTY_MIRROR
+通达信网站,D:/new_tdx_mock\_SYNCAPP\Versioning\2026-07-13 15-47\connect.cfg,HQHOST/通达信广州双线主站3,81.71.32.47,EMPTY_MIRROR
+通达信网站,D:/new_tdx_mock\_SYNCAPP\Versioning\2026-07-13 15-47\connect.cfg,HQHOST/通达信上海双线主站7,122.51.232.182,EMPTY_MIRROR
+通达信网站,D:/new_tdx_mock\_SYNCAPP\Versioning\2026-07-13 15-47\connect.cfg,HQHOST/通达信上海双线主站8,118.25.98.114,EMPTY_MIRROR
+通达信网站,D:/new_tdx_mock\_SYNCAPP\Versioning\2026-07-13 15-47\connect.cfg,HQHOST/通达信上海双线主站9,121.36.225.169,EMPTY_MIRROR
+通达信网站,D:/new_tdx_mock\_SYNCAPP\Versioning\2026-07-13 15-47\connect.cfg,HQHOST/通达信上海双线主站10,123.60.70.228,EMPTY_MIRROR
+通达信网站,D:/new_tdx_mock\_SYNCAPP\Versioning\2026-07-13 15-47\connect.cfg,HQHOST/通达信上海双线主站11,123.60.73.44,EMPTY_MIRROR
+通达信网站,D:/new_tdx_mock\_SYNCAPP\Versioning\2026-07-13 15-47\connect.cfg,HQHOST/通达信上海双线主站12,124.70.133.119,EMPTY_MIRROR
+通达信网站,D:/new_tdx_mock\_SYNCAPP\Versioning\2026-07-13 15-47\connect.cfg,HQHOST/通达信上海双线主站13,124.71.187.72,EMPTY_MIRROR
+通达信网站,D:/new_tdx_mock\_SYNCAPP\Versioning\2026-07-13 15-47\connect.cfg,HQHOST/通达信上海双线主站14,124.71.187.122,EMPTY_MIRROR
+通达信网站,D:/new_tdx_mock\_SYNCAPP\Versioning\2026-07-13 15-47\connect.cfg,HQHOST/通达信武汉电信主站1,119.97.185.59,EMPTY_MIRROR
+通达信网站,D:/new_tdx_mock\_SYNCAPP\Versioning\2026-07-13 15-47\connect.cfg,HQHOST/通达信深圳双线主站7,129.204.230.128,EMPTY_MIRROR
+通达信网站,D:/new_tdx_mock\_SYNCAPP\Versioning\2026-07-13 15-47\connect.cfg,HQHOST/通达信北京双线主站4,101.42.240.54,EMPTY_MIRROR
+通达信网站,D:/new_tdx_mock\_SYNCAPP\Versioning\2026-07-13 15-47\connect.cfg,HQHOST/通达信广州双线主站4,124.71.9.153,EMPTY_MIRROR
+通达信网站,D:/new_tdx_mock\_SYNCAPP\Versioning\2026-07-13 15-47\connect.cfg,HQHOST/通达信上海双线主站15,123.60.84.66,EMPTY_MIRROR
+通达信网站,D:/new_tdx_mock\_SYNCAPP\Versioning\2026-07-13 15-47\connect.cfg,HQHOST/通达信深圳双线主站8,111.230.186.52,EMPTY_MIRROR
+通达信网站,D:/new_tdx_mock\_SYNCAPP\Versioning\2026-07-13 15-47\connect.cfg,HQHOST/通达信北京双线主站5,101.43.159.194,EMPTY_MIRROR
+通达信网站,D:/new_tdx_mock\_SYNCAPP\Versioning\2026-07-13 15-47\connect.cfg,HQHOST/通达信北京双线主站6,120.53.8.251,EMPTY_MIRROR
+通达信网站,D:/new_tdx_mock\_SYNCAPP\Versioning\2026-07-13 15-47\connect.cfg,HQHOST/通达信北京双线主站7,152.136.191.169,EMPTY_MIRROR
+通达信网站,D:/new_tdx_mock\_SYNCAPP\Versioning\2026-07-13 15-47\connect.cfg,HQHOST/通达信广州双线主站5,116.205.163.254,EMPTY_MIRROR
+通达信网站,D:/new_tdx_mock\_SYNCAPP\Versioning\2026-07-13 15-47\connect.cfg,HQHOST/通达信广州双线主站6,116.205.171.132,EMPTY_MIRROR
+通达信网站,D:/new_tdx_mock\_SYNCAPP\Versioning\2026-07-13 15-47\connect.cfg,HQHOST/通达信广州双线主站7,116.205.183.150,EMPTY_MIRROR
+通达信网站,D:/new_tdx_mock\_SYNCAPP\Versioning\2026-07-13 15-47\connect.cfg,HQHOST/通达信北京双线主站8,49.232.15.141,EMPTY_MIRROR
+通达信网站,D:/new_tdx_mock\_SYNCAPP\Versioning\2026-07-13 15-47\connect.cfg,HQHOST/通达信北京双线主站9,82.156.174.84,EMPTY_MIRROR
+通达信网站,D:/new_tdx_mock\_SYNCAPP\Versioning\2026-07-13 15-47\connect.cfg,HQHOST/通达信北京双线主站10,101.42.164.241,EMPTY_MIRROR
+通达信网站,D:/new_tdx_mock\_SYNCAPP\Versioning\2026-07-13 15-47\connect.cfg,HQHOST/通达信上海双线主站17,101.35.121.35,EMPTY_MIRROR
+通达信网站,D:/new_tdx_mock\_SYNCAPP\Versioning\2026-07-13 15-47\connect.cfg,HQHOST/通达信上海双线主站18,111.231.113.208,EMPTY_MIRROR
+通达信网站,D:/new_tdx_mock\_SYNCAPP\Versioning\2026-07-13 15-47\connect.cfg,HFHost/上海双线主站16,129.211.70.79,EMPTY_MIRROR
+通达信网站,D:/new_tdx_mock\_SYNCAPP\Versioning\2026-07-13 15-47\connect.cfg,HFHost/深圳双线主站9,159.75.55.232,INDEX_OK
+川财证券,D:/trader\new_cczq_v6\connect.cfg,HQHOST/川财证券_西信电信站点,182.140.139.191,EMPTY_MIRROR
+川财证券,D:/trader\new_cczq_v6\connect.cfg,HQHOST/川财证券_西信联通站点,119.6.200.40,TCP_FAIL
+川财证券,D:/trader\new_cczq_v6\connect.cfg,HQHOST/川财证券_中海移动站点,218.200.222.134,EMPTY_MIRROR
+川财证券,D:/trader\new_cczq_v6\connect.cfg,HQHOST/川财证券_中海电信站点,182.150.28.166,TCP_FAIL
+川财证券,D:/trader\new_cczq_v6\connect.cfg,HQHOST/川财证券_上证云广州主站,58.63.254.223,TCP_FAIL
+川财证券,D:/trader\new_cczq_v6\connect.cfg,HQHOST/川财证券_西信new,182.140.139.191,EMPTY_MIRROR
+川财证券,D:/trader\new_cczq_v6\Update\2023031923_bak\connect.cfg,HQHOST/川财证券_华南行情主站,59.38.101.157,TCP_FAIL
+川财证券,D:/trader\new_cczq_v6\Update\2023031923_bak\connect.cfg,HQHOST/川财证券_华东行情主站,58.210.106.105,TCP_FAIL
+川财证券,D:/trader\new_cczq_v6\Update\2023031923_bak\connect.cfg,HQHOST/川财证券_上证云成都主站,218.6.170.48,TCP_FAIL
+川财证券,D:/trader\new_cczq_v6\Update\2023031923_bak\connect.cfg,HQHOST/川财证券_上证云北京主站,123.125.108.7,TCP_FAIL
+川财证券,D:/trader\new_cczq_v6\Update\2023031923_bak\connect.cfg,HQHOST/川财证券_上证云上海主站,61.152.102.24,TCP_FAIL
+川财证券,D:/trader\new_cczq_v6\Update\2023031923_bak\connect.cfg,HQHOST/川财证券_上证云广州主站,58.63.254.223,TCP_FAIL
+川财证券,D:/trader\new_cczq_v6\Update\2023031923_bak\connect.cfg,HQHOST/川财证券_西信new,182.140.139.191,EMPTY_MIRROR
+川财证券,D:/trader\new_cczq_v6\Update\2023060808_bak\connect.cfg,HQHOST/川财证券_华南行情主站,59.38.101.157,TCP_FAIL
+川财证券,D:/trader\new_cczq_v6\Update\2023060808_bak\connect.cfg,HQHOST/川财证券_华东行情主站,58.210.106.105,TCP_FAIL
+川财证券,D:/trader\new_cczq_v6\Update\2023060808_bak\connect.cfg,HQHOST/川财证券_上证云成都主站,218.6.170.48,TCP_FAIL
+川财证券,D:/trader\new_cczq_v6\Update\2023060808_bak\connect.cfg,HQHOST/川财证券_上证云北京主站,123.125.108.7,TCP_FAIL
+川财证券,D:/trader\new_cczq_v6\Update\2023060808_bak\connect.cfg,HQHOST/川财证券_上证云上海主站,61.152.102.24,TCP_FAIL
+川财证券,D:/trader\new_cczq_v6\Update\2023060808_bak\connect.cfg,HQHOST/川财证券_上证云广州主站,58.63.254.223,TCP_FAIL
+川财证券,D:/trader\new_cczq_v6\Update\2023060808_bak\connect.cfg,HQHOST/川财证券_西信new,182.140.139.191,EMPTY_MIRROR
+川财证券,D:/trader\new_cczq_v6\Update\2023070617_bak\connect.cfg,HQHOST/川财证券_华南行情主站,59.38.101.157,TCP_FAIL
+川财证券,D:/trader\new_cczq_v6\Update\2023070617_bak\connect.cfg,HQHOST/川财证券_华东行情主站,58.210.106.105,TCP_FAIL
+川财证券,D:/trader\new_cczq_v6\Update\2023070617_bak\connect.cfg,HQHOST/川财证券_上证云成都主站,218.6.170.48,TCP_FAIL
+川财证券,D:/trader\new_cczq_v6\Update\2023070617_bak\connect.cfg,HQHOST/川财证券_上证云北京主站,123.125.108.7,TCP_FAIL
+川财证券,D:/trader\new_cczq_v6\Update\2023070617_bak\connect.cfg,HQHOST/川财证券_上证云上海主站,61.152.102.24,TCP_FAIL
+川财证券,D:/trader\new_cczq_v6\Update\2023070617_bak\connect.cfg,HQHOST/川财证券_上证云广州主站,58.63.254.223,TCP_FAIL
+川财证券,D:/trader\new_cczq_v6\Update\2023070617_bak\connect.cfg,HQHOST/川财证券_西信new,182.140.139.191,EMPTY_MIRROR
+国元证券,D:/trader\tc_gyzq_v6\connect.cfg,HQHOST/国元证券-合肥电信,61.191.48.10,TCP_FAIL
+国元证券,D:/trader\tc_gyzq_v6\connect.cfg,HQHOST/国元证券-合肥电信1,60.173.222.50,EMPTY_MIRROR
+国元证券,D:/trader\tc_gyzq_v6\connect.cfg,HQHOST/国元证券-合肥电信2,60.166.4.226,TCP_FAIL
+国元证券,D:/trader\tc_gyzq_v6\connect.cfg,HQHOST/国元证券-芜湖电信,61.191.138.100,TCP_FAIL
+国元证券,D:/trader\tc_gyzq_v6\connect.cfg,HQHOST/国元证券-上海电信,116.236.238.90,TCP_FAIL
+国元证券,D:/trader\tc_gyzq_v6\connect.cfg,HQHOST/国元证券-深圳电信,218.17.57.120,TCP_FAIL
+国元证券,D:/trader\tc_gyzq_v6\connect.cfg,HQHOST/国元证券-广州电信,183.6.138.218,TCP_FAIL
+国元证券,D:/trader\tc_gyzq_v6\connect.cfg,HQHOST/国元证券-合肥联通,220.248.233.5,EMPTY_MIRROR
+国元证券,D:/trader\tc_gyzq_v6\connect.cfg,HQHOST/国元证券-合肥联通1,218.104.73.2,TCP_FAIL
+国元证券,D:/trader\tc_gyzq_v6\connect.cfg,HQHOST/国元证券-芜湖联通,58.243.182.90,TCP_FAIL
+国元证券,D:/trader\tc_gyzq_v6\connect.cfg,HQHOST/国元证券-青岛联通,123.234.72.130,TCP_FAIL
+国元证券,D:/trader\tc_gyzq_v6\connect.cfg,HQHOST/国元证券-广州联通,211.97.4.58,TCP_FAIL
+国元证券,D:/trader\tc_gyzq_v6\connect.cfg,HQHOST/国元证券-合肥移动,120.210.144.2,EMPTY_MIRROR
+国元证券,D:/trader\tc_gyzq_v6\connect.cfg,HQHOST/国元证券-合肥移动1,221.130.130.4,TCP_FAIL
+中国银河证券海王星,D:/trader\tc_yhzq_v6\connect.cfg,HQHOST/银河证券杭州电信,218.75.75.20,TCP_FAIL
+中国银河证券海王星,D:/trader\tc_yhzq_v6\connect.cfg,HQHOST/银河证券杭州联通,101.71.255.135,TCP_FAIL
+中国银河证券海王星,D:/trader\tc_yhzq_v6\connect.cfg,HQHOST/银河证券武汉电信,58.49.110.76,TCP_FAIL
+中国银河证券海王星,D:/trader\tc_yhzq_v6\connect.cfg,HQHOST/银河证券宁波信息港,221.136.93.19,TCP_FAIL
+中国银河证券海王星,D:/trader\tc_yhzq_v6\connect.cfg,HQHOST/银河证券宁波联通,221.12.53.53,TCP_FAIL
+中国银河证券海王星,D:/trader\tc_yhzq_v6\connect.cfg,HQHOST/银河证券宁波电信,115.238.180.19,TCP_FAIL
+中国银河证券海王星,D:/trader\tc_yhzq_v6\connect.cfg,HQHOST/银河证券济南联通,60.217.192.168,TCP_FAIL
+中国银河证券海王星,D:/trader\tc_yhzq_v6\connect.cfg,HQHOST/银河证券新疆电信,124.117.244.243,TCP_FAIL
+中国银河证券海王星,D:/trader\tc_yhzq_v6\connect.cfg,HQHOST/银河证券上证云行情,222.73.48.27,TCP_FAIL
+中国银河证券海王星,D:/trader\tc_yhzq_v6\connect.cfg,HQHOST/银河证券深证东莞云行情,121.12.106.154,TCP_FAIL
+中国银河证券海王星,D:/trader\tc_yhzq_v6\connect.cfg,HQHOST/银河证券深证廊坊云行情,221.194.181.43,TCP_FAIL
+中国银河证券海王星,D:/trader\tc_yhzq_v6\connect.cfg,HQHOST/银河证券阿里云行情,120.76.1.198,TCP_FAIL
+中国银河证券海王星,D:/trader\tc_yhzq_v6\Update\2020070809_bak\connect.cfg,HQHOST/银河证券杭州电信,218.75.75.20,TCP_FAIL
+中国银河证券海王星,D:/trader\tc_yhzq_v6\Update\2020070809_bak\connect.cfg,HQHOST/银河证券杭州联通,101.71.255.135,TCP_FAIL
+中国银河证券海王星,D:/trader\tc_yhzq_v6\Update\2020070809_bak\connect.cfg,HQHOST/银河证券武汉电信,58.49.110.76,TCP_FAIL
+中国银河证券海王星,D:/trader\tc_yhzq_v6\Update\2020070809_bak\connect.cfg,HQHOST/银河证券宁波信息港,221.136.93.19,TCP_FAIL
+中国银河证券海王星,D:/trader\tc_yhzq_v6\Update\2020070809_bak\connect.cfg,HQHOST/银河证券宁波联通,221.12.53.53,TCP_FAIL
+中国银河证券海王星,D:/trader\tc_yhzq_v6\Update\2020070809_bak\connect.cfg,HQHOST/银河证券宁波电信,115.238.180.19,TCP_FAIL
+中国银河证券海王星,D:/trader\tc_yhzq_v6\Update\2020070809_bak\connect.cfg,HQHOST/银河证券济南联通,60.217.192.168,TCP_FAIL
+中国银河证券海王星,D:/trader\tc_yhzq_v6\Update\2020070809_bak\connect.cfg,HQHOST/银河证券新疆电信,124.117.244.243,TCP_FAIL
+中国银河证券海王星,D:/trader\tc_yhzq_v6\Update\2020070809_bak\connect.cfg,HQHOST/银河证券上证云行情,222.73.48.27,TCP_FAIL
+中国银河证券海王星,D:/trader\tc_yhzq_v6\Update\2020070809_bak\connect.cfg,HQHOST/银河证券深证东莞云行情,121.12.106.154,TCP_FAIL
+中国银河证券海王星,D:/trader\tc_yhzq_v6\Update\2020070809_bak\connect.cfg,HQHOST/银河证券深证廊坊云行情,221.194.181.43,TCP_FAIL
+中国银河证券海王星,D:/trader\tc_yhzq_v6\Update\2020070809_bak\connect.cfg,HQHOST/银河证券阿里云行情,121.43.74.129,TCP_FAIL
+中国银河证券海王星,D:/trader\tc_yhzq_v6\Update\2020082009_bak\connect.cfg,HQHOST/银河证券杭州电信,218.75.75.20,TCP_FAIL
+中国银河证券海王星,D:/trader\tc_yhzq_v6\Update\2020082009_bak\connect.cfg,HQHOST/银河证券杭州联通,101.71.255.135,TCP_FAIL
+中国银河证券海王星,D:/trader\tc_yhzq_v6\Update\2020082009_bak\connect.cfg,HQHOST/银河证券武汉电信,58.49.110.76,TCP_FAIL
+中国银河证券海王星,D:/trader\tc_yhzq_v6\Update\2020082009_bak\connect.cfg,HQHOST/银河证券宁波信息港,221.136.93.19,TCP_FAIL
+中国银河证券海王星,D:/trader\tc_yhzq_v6\Update\2020082009_bak\connect.cfg,HQHOST/银河证券宁波联通,221.12.53.53,TCP_FAIL
+中国银河证券海王星,D:/trader\tc_yhzq_v6\Update\2020082009_bak\connect.cfg,HQHOST/银河证券宁波电信,115.238.180.19,TCP_FAIL
+中国银河证券海王星,D:/trader\tc_yhzq_v6\Update\2020082009_bak\connect.cfg,HQHOST/银河证券济南联通,60.217.192.168,TCP_FAIL
+中国银河证券海王星,D:/trader\tc_yhzq_v6\Update\2020082009_bak\connect.cfg,HQHOST/银河证券新疆电信,124.117.244.243,TCP_FAIL
+中国银河证券海王星,D:/trader\tc_yhzq_v6\Update\2020082009_bak\connect.cfg,HQHOST/银河证券上证云行情,222.73.48.27,TCP_FAIL
+中国银河证券海王星,D:/trader\tc_yhzq_v6\Update\2020082009_bak\connect.cfg,HQHOST/银河证券深证东莞云行情,121.12.106.154,TCP_FAIL
+中国银河证券海王星,D:/trader\tc_yhzq_v6\Update\2020082009_bak\connect.cfg,HQHOST/银河证券深证廊坊云行情,221.194.181.43,TCP_FAIL
+中国银河证券海王星,D:/trader\tc_yhzq_v6\Update\2020082009_bak\connect.cfg,HQHOST/银河证券阿里云行情,121.43.74.129,TCP_FAIL
+华泰证券网站,D:/trader\zd_huatai\connect.cfg,HQHOST/华泰证券(南京电信一),180.101.48.170,SKIP_IN_POOL
+华泰证券网站,D:/trader\zd_huatai\connect.cfg,HQHOST/华泰证券(南京电信二),180.101.48.171,SKIP_IN_POOL
+华泰证券网站,D:/trader\zd_huatai\connect.cfg,HQHOST/华泰证券(南京移动一),120.195.71.155,SKIP_IN_POOL
+华泰证券网站,D:/trader\zd_huatai\connect.cfg,HQHOST/华泰证券(南京移动二),120.195.71.156,SKIP_IN_POOL
+华泰证券网站,D:/trader\zd_huatai\connect.cfg,HQHOST/华泰证券(南京联通一),122.96.107.242,SKIP_IN_POOL
+华泰证券网站,D:/trader\zd_huatai\connect.cfg,HQHOST/华泰证券(南京联通二),122.96.107.243,SKIP_IN_POOL
+华泰证券网站,D:/trader\zd_huatai\connect.cfg,HQHOST/华泰证券(亚马逊一),52.83.39.241,TCP_FAIL
+华泰证券网站,D:/trader\zd_huatai\connect.cfg,HQHOST/华泰证券(亚马逊二),52.83.199.101,TCP_FAIL
+华泰证券网站,D:/trader\zd_huatai\connect.cfg,HQHOST/华泰证券(华南阿里云一),8.135.57.58,TCP_FAIL
+华泰证券网站,D:/trader\zd_huatai\connect.cfg,HQHOST/华泰证券(华南阿里云二),8.135.62.177,TCP_FAIL
+华泰证券网站,D:/trader\zd_huatai\connect.cfg,HQHOST/华泰证券(华东华为云一),124.70.183.173,SKIP_IN_POOL
+华泰证券网站,D:/trader\zd_huatai\connect.cfg,HQHOST/华泰证券(华东华为云二),124.71.163.106,SKIP_IN_POOL
+华泰证券网站,D:/trader\zd_huatai\Update\2020111809_bak\connect.cfg,HQHOST/华泰证券(云行情),139.219.103.190,TCP_FAIL
+华泰证券网站,D:/trader\zd_huatai\Update\2020111809_bak\connect.cfg,HQHOST/华泰证券(深圳电信一),14.215.128.58,TCP_FAIL
+华泰证券网站,D:/trader\zd_huatai\Update\2020111809_bak\connect.cfg,HQHOST/华泰证券(深圳电信二),14.215.128.59,TCP_FAIL
+华泰证券网站,D:/trader\zd_huatai\Update\2020111809_bak\connect.cfg,HQHOST/华泰证券(南京电信一),180.101.48.170,SKIP_IN_POOL
+华泰证券网站,D:/trader\zd_huatai\Update\2020111809_bak\connect.cfg,HQHOST/华泰证券(南京电信二),180.101.48.171,SKIP_IN_POOL
+华泰证券网站,D:/trader\zd_huatai\Update\2020111809_bak\connect.cfg,HQHOST/华泰证券(南京移动一),120.195.71.155,SKIP_IN_POOL
+华泰证券网站,D:/trader\zd_huatai\Update\2020111809_bak\connect.cfg,HQHOST/华泰证券(南京移动二),120.195.71.156,SKIP_IN_POOL
+华泰证券网站,D:/trader\zd_huatai\Update\2020111809_bak\connect.cfg,HQHOST/华泰证券(南京联通一),122.96.107.242,SKIP_IN_POOL
+华泰证券网站,D:/trader\zd_huatai\Update\2020111809_bak\connect.cfg,HQHOST/华泰证券(南京联通二),122.96.107.243,SKIP_IN_POOL
+华泰证券网站,D:/trader\zd_huatai\Update\2020111809_bak\connect.cfg,HQHOST/华泰证券(亚马逊一),52.83.39.241,TCP_FAIL
+华泰证券网站,D:/trader\zd_huatai\Update\2020111809_bak\connect.cfg,HQHOST/华泰证券(亚马逊二),52.83.199.101,TCP_FAIL
+华泰证券网站,D:/trader\zd_huatai\Update\2023031923_bak\connect.cfg,HQHOST/华泰证券(云行情),139.219.103.190,TCP_FAIL
+华泰证券网站,D:/trader\zd_huatai\Update\2023031923_bak\connect.cfg,HQHOST/华泰证券(深圳电信一),14.215.128.58,TCP_FAIL
+华泰证券网站,D:/trader\zd_huatai\Update\2023031923_bak\connect.cfg,HQHOST/华泰证券(深圳电信二),14.215.128.59,TCP_FAIL
+华泰证券网站,D:/trader\zd_huatai\Update\2023031923_bak\connect.cfg,HQHOST/华泰证券(南京电信一),180.101.48.170,SKIP_IN_POOL
+华泰证券网站,D:/trader\zd_huatai\Update\2023031923_bak\connect.cfg,HQHOST/华泰证券(南京电信二),180.101.48.171,SKIP_IN_POOL
+华泰证券网站,D:/trader\zd_huatai\Update\2023031923_bak\connect.cfg,HQHOST/华泰证券(南京移动一),120.195.71.155,SKIP_IN_POOL
+华泰证券网站,D:/trader\zd_huatai\Update\2023031923_bak\connect.cfg,HQHOST/华泰证券(南京移动二),120.195.71.156,SKIP_IN_POOL
+华泰证券网站,D:/trader\zd_huatai\Update\2023031923_bak\connect.cfg,HQHOST/华泰证券(南京联通一),122.96.107.242,SKIP_IN_POOL
+华泰证券网站,D:/trader\zd_huatai\Update\2023031923_bak\connect.cfg,HQHOST/华泰证券(南京联通二),122.96.107.243,SKIP_IN_POOL
+华泰证券网站,D:/trader\zd_huatai\Update\2023031923_bak\connect.cfg,HQHOST/华泰证券(亚马逊一),52.83.39.241,TCP_FAIL
+华泰证券网站,D:/trader\zd_huatai\Update\2023031923_bak\connect.cfg,HQHOST/华泰证券(亚马逊二),52.83.199.101,TCP_FAIL
+华泰证券网站,D:/trader\zd_huatai\Update\2023031923_bak\connect.cfg,HQHOST/华泰证券(华南阿里云一),8.135.57.58,TCP_FAIL
+华泰证券网站,D:/trader\zd_huatai\Update\2023031923_bak\connect.cfg,HQHOST/华泰证券(华南阿里云二),8.135.62.177,TCP_FAIL
+华泰证券网站,D:/trader\zd_huatai\Update\2023031923_bak\connect.cfg,HQHOST/华泰证券(华东华为云一),124.70.183.173,SKIP_IN_POOL
+华泰证券网站,D:/trader\zd_huatai\Update\2023031923_bak\connect.cfg,HQHOST/华泰证券(华东华为云二),124.71.163.106,SKIP_IN_POOL
+中国银河证券海王星,D:/trader\双子星新一代行情交易终端\TransactionEx\neptune\connect.cfg,HQHOST/银河证券杭州电信,218.75.75.20,TCP_FAIL
+中国银河证券海王星,D:/trader\双子星新一代行情交易终端\TransactionEx\neptune\connect.cfg,HQHOST/银河证券杭州联通,101.71.255.135,TCP_FAIL
+中国银河证券海王星,D:/trader\双子星新一代行情交易终端\TransactionEx\neptune\connect.cfg,HQHOST/银河证券武汉电信,58.49.110.76,TCP_FAIL
+中国银河证券海王星,D:/trader\双子星新一代行情交易终端\TransactionEx\neptune\connect.cfg,HQHOST/银河证券宁波信息港,221.136.93.19,TCP_FAIL
+中国银河证券海王星,D:/trader\双子星新一代行情交易终端\TransactionEx\neptune\connect.cfg,HQHOST/银河证券宁波联通,221.12.53.53,TCP_FAIL
+中国银河证券海王星,D:/trader\双子星新一代行情交易终端\TransactionEx\neptune\connect.cfg,HQHOST/银河证券宁波电信,115.238.180.19,TCP_FAIL
+中国银河证券海王星,D:/trader\双子星新一代行情交易终端\TransactionEx\neptune\connect.cfg,HQHOST/银河证券济南联通,60.217.192.168,TCP_FAIL
+中国银河证券海王星,D:/trader\双子星新一代行情交易终端\TransactionEx\neptune\connect.cfg,HQHOST/银河证券新疆电信,124.117.244.243,TCP_FAIL
+中国银河证券海王星,D:/trader\双子星新一代行情交易终端\TransactionEx\neptune\connect.cfg,HQHOST/银河证券上证云行情,222.73.48.27,TCP_FAIL
+中国银河证券海王星,D:/trader\双子星新一代行情交易终端\TransactionEx\neptune\connect.cfg,HQHOST/银河证券深证东莞云行情,121.12.106.154,TCP_FAIL
+中国银河证券海王星,D:/trader\双子星新一代行情交易终端\TransactionEx\neptune\connect.cfg,HQHOST/银河证券深证廊坊云行情,221.194.181.43,TCP_FAIL
+中国银河证券海王星,D:/trader\双子星新一代行情交易终端\TransactionEx\neptune\connect.cfg,HQHOST/银河证券阿里云行情,120.76.1.198,TCP_FAIL
+国元证券,D:/trader\国元证券股票期权交易系统\hdcf\国元证券通达信\领航独立交易\connect.cfg,HQHOST/国元证券-合肥电信,61.191.48.10,TCP_FAIL
+国元证券,D:/trader\国元证券股票期权交易系统\hdcf\国元证券通达信\领航独立交易\connect.cfg,HQHOST/国元证券-合肥电信1,60.173.222.50,EMPTY_MIRROR
+国元证券,D:/trader\国元证券股票期权交易系统\hdcf\国元证券通达信\领航独立交易\connect.cfg,HQHOST/国元证券-合肥电信2,60.166.4.226,TCP_FAIL
+国元证券,D:/trader\国元证券股票期权交易系统\hdcf\国元证券通达信\领航独立交易\connect.cfg,HQHOST/国元证券-芜湖电信,61.191.138.100,TCP_FAIL
+国元证券,D:/trader\国元证券股票期权交易系统\hdcf\国元证券通达信\领航独立交易\connect.cfg,HQHOST/国元证券-上海电信,116.236.238.90,TCP_FAIL
+国元证券,D:/trader\国元证券股票期权交易系统\hdcf\国元证券通达信\领航独立交易\connect.cfg,HQHOST/国元证券-深圳电信,218.17.57.120,TCP_FAIL
+国元证券,D:/trader\国元证券股票期权交易系统\hdcf\国元证券通达信\领航独立交易\connect.cfg,HQHOST/国元证券-广州电信,183.6.138.218,TCP_FAIL
+国元证券,D:/trader\国元证券股票期权交易系统\hdcf\国元证券通达信\领航独立交易\connect.cfg,HQHOST/国元证券-合肥联通,220.248.233.5,EMPTY_MIRROR
+国元证券,D:/trader\国元证券股票期权交易系统\hdcf\国元证券通达信\领航独立交易\connect.cfg,HQHOST/国元证券-合肥联通1,218.104.73.2,TCP_FAIL
+国元证券,D:/trader\国元证券股票期权交易系统\hdcf\国元证券通达信\领航独立交易\connect.cfg,HQHOST/国元证券-芜湖联通,58.243.182.90,TCP_FAIL
+国元证券,D:/trader\国元证券股票期权交易系统\hdcf\国元证券通达信\领航独立交易\connect.cfg,HQHOST/国元证券-青岛联通,123.234.72.130,TCP_FAIL
+国元证券,D:/trader\国元证券股票期权交易系统\hdcf\国元证券通达信\领航独立交易\connect.cfg,HQHOST/国元证券-广州联通,211.97.4.58,TCP_FAIL
+国元证券,D:/trader\国元证券股票期权交易系统\hdcf\国元证券通达信\领航独立交易\connect.cfg,HQHOST/国元证券-合肥移动,120.210.144.2,EMPTY_MIRROR
+国元证券,D:/trader\国元证券股票期权交易系统\hdcf\国元证券通达信\领航独立交易\connect.cfg,HQHOST/国元证券-合肥移动1,221.130.130.4,TCP_FAIL
+海王星金融终端v3.0-中国银河证券,D:/trader\海王星金融终端-中国银河证券\connect.cfg,HQHOST/银河证券阿里云行情,120.76.1.198,TCP_FAIL
+海王星金融终端v3.0-中国银河证券,D:/trader\海王星金融终端-中国银河证券\connect.cfg,HQHOST/银河证券杭州电信,218.75.75.20,TCP_FAIL
+海王星金融终端v3.0-中国银河证券,D:/trader\海王星金融终端-中国银河证券\connect.cfg,HQHOST/银河证券杭州联通,101.71.255.135,TCP_FAIL
+海王星金融终端v3.0-中国银河证券,D:/trader\海王星金融终端-中国银河证券\connect.cfg,HQHOST/银河证券武汉电信,58.49.110.76,TCP_FAIL
+海王星金融终端v3.0-中国银河证券,D:/trader\海王星金融终端-中国银河证券\connect.cfg,HQHOST/银河证券济南联通,60.217.192.168,TCP_FAIL
+海王星金融终端v3.0-中国银河证券,D:/trader\海王星金融终端-中国银河证券\connect.cfg,HQHOST/银河证券上证云行情,222.73.48.27,TCP_FAIL
+海王星金融终端v3.0-中国银河证券,D:/trader\海王星金融终端-中国银河证券\Update\2021120208_bak\connect.cfg,HQHOST/银河证券阿里云行情,120.76.1.198,TCP_FAIL
+海王星金融终端v3.0-中国银河证券,D:/trader\海王星金融终端-中国银河证券\Update\2021120208_bak\connect.cfg,HQHOST/银河证券杭州电信,218.75.75.20,TCP_FAIL
+海王星金融终端v3.0-中国银河证券,D:/trader\海王星金融终端-中国银河证券\Update\2021120208_bak\connect.cfg,HQHOST/银河证券杭州联通,101.71.255.135,TCP_FAIL
+海王星金融终端v3.0-中国银河证券,D:/trader\海王星金融终端-中国银河证券\Update\2021120208_bak\connect.cfg,HQHOST/银河证券武汉电信,58.49.110.76,TCP_FAIL
+海王星金融终端v3.0-中国银河证券,D:/trader\海王星金融终端-中国银河证券\Update\2021120208_bak\connect.cfg,HQHOST/银河证券济南联通,60.217.192.168,TCP_FAIL
+海王星金融终端v3.0-中国银河证券,D:/trader\海王星金融终端-中国银河证券\Update\2021120208_bak\connect.cfg,HQHOST/银河证券上证云行情,222.73.48.27,TCP_FAIL
+海王星金融终端v3.0-中国银河证券,D:/trader\海王星金融终端-中国银河证券\Update\2022041309_bak\connect.cfg,HQHOST/银河证券阿里云行情,120.76.1.198,TCP_FAIL
+海王星金融终端v3.0-中国银河证券,D:/trader\海王星金融终端-中国银河证券\Update\2022041309_bak\connect.cfg,HQHOST/银河证券杭州电信,218.75.75.20,TCP_FAIL
+海王星金融终端v3.0-中国银河证券,D:/trader\海王星金融终端-中国银河证券\Update\2022041309_bak\connect.cfg,HQHOST/银河证券杭州联通,101.71.255.135,TCP_FAIL
+海王星金融终端v3.0-中国银河证券,D:/trader\海王星金融终端-中国银河证券\Update\2022041309_bak\connect.cfg,HQHOST/银河证券武汉电信,58.49.110.76,TCP_FAIL
+海王星金融终端v3.0-中国银河证券,D:/trader\海王星金融终端-中国银河证券\Update\2022041309_bak\connect.cfg,HQHOST/银河证券济南联通,60.217.192.168,TCP_FAIL
+海王星金融终端v3.0-中国银河证券,D:/trader\海王星金融终端-中国银河证券\Update\2022041309_bak\connect.cfg,HQHOST/银河证券上证云行情,222.73.48.27,TCP_FAIL
+海王星金融终端v3.0-中国银河证券,D:/trader\海王星金融终端-中国银河证券\Update\2022061309_bak\connect.cfg,HQHOST/银河证券阿里云行情,120.76.1.198,TCP_FAIL
+海王星金融终端v3.0-中国银河证券,D:/trader\海王星金融终端-中国银河证券\Update\2022061309_bak\connect.cfg,HQHOST/银河证券杭州电信,218.75.75.20,TCP_FAIL
+海王星金融终端v3.0-中国银河证券,D:/trader\海王星金融终端-中国银河证券\Update\2022061309_bak\connect.cfg,HQHOST/银河证券杭州联通,101.71.255.135,TCP_FAIL
+海王星金融终端v3.0-中国银河证券,D:/trader\海王星金融终端-中国银河证券\Update\2022061309_bak\connect.cfg,HQHOST/银河证券武汉电信,58.49.110.76,TCP_FAIL
+海王星金融终端v3.0-中国银河证券,D:/trader\海王星金融终端-中国银河证券\Update\2022061309_bak\connect.cfg,HQHOST/银河证券济南联通,60.217.192.168,TCP_FAIL
+海王星金融终端v3.0-中国银河证券,D:/trader\海王星金融终端-中国银河证券\Update\2022061309_bak\connect.cfg,HQHOST/银河证券上证云行情,222.73.48.27,TCP_FAIL
+国信证券,D:/zd_gxzq\connect.cfg,HQHOST/腾讯云华东信创,109.244.35.28,INDEX_OK
+国信证券,D:/zd_gxzq\connect.cfg,HQHOST/阿里云华东,101.133.231.193,INDEX_OK
+国信证券,D:/zd_gxzq\connect.cfg,HQHOST/阿里云华南,120.79.210.76,INDEX_OK
+国信证券,D:/zd_gxzq\connect.cfg,HQHOST/腾讯云华南,109.244.73.13,INDEX_OK
+国信证券,D:/zd_gxzq\connect.cfg,HQHOST/腾讯云华东信创2,162.14.135.116,INDEX_OK
+国信证券,D:/zd_gxzq\connect.cfg,HQHOST/腾讯云华南信创2,109.244.73.23,INDEX_OK
+国信证券,D:/zd_gxzq\connect.cfg,HQHOST/阿里云华东2,101.133.129.19,INDEX_OK
+国信证券,D:/zd_gxzq\connect.cfg,HQHOST/阿里云华南2,120.24.231.30,INDEX_OK
+国信证券,D:/zd_gxzq\connect.cfg,HQHOST/国信东莞,120.234.57.15,TCP_FAIL
+国信证券,D:/zd_gxzq\Update\2024050608_bak\connect.cfg,HQHOST/azure,40.73.76.10,TCP_FAIL
+国信证券,D:/zd_gxzq\Update\2024050608_bak\connect.cfg,HQHOST/alieast,101.133.231.193,INDEX_OK
+国信证券,D:/zd_gxzq\Update\2024050608_bak\connect.cfg,HQHOST/alisouth,120.79.210.76,INDEX_OK
+国信证券,D:/zd_gxzq\Update\2024050608_bak\connect.cfg,HQHOST/上证云上海bgp,103.251.85.23,TCP_FAIL
+国信证券,D:/zd_gxzq\Update\2024050608_bak\connect.cfg,HQHOST/上证云新金桥BGP信创,114.141.177.45,TCP_FAIL
+国信证券,D:/zd_gxzq\Update\2024050608_bak\connect.cfg,HQHOST/东莞移动,120.234.57.15,TCP_FAIL
+国信证券,D:/zd_gxzq\Update\2024050608_bak\connect.cfg,HQHOST/上证云太原移动信创,183.201.231.88,TCP_FAIL
+国信证券,D:/zd_gxzq\Update\2024050608_bak\connect.cfg,HQHOST/上证云广州移动,120.232.150.205,TCP_FAIL
+国信证券,D:/zd_gxzq\Update\2024050608_bak\connect.cfg,HQHOST/上证云广州移动2,120.232.175.76,TCP_FAIL
+国信证券,D:/zd_gxzq\Update\2024050608_bak\connect.cfg,HQHOST/上证云广州电信,58.63.254.247,TCP_FAIL
+国信证券,D:/zd_gxzq\Update\2024050608_bak\connect.cfg,HQHOST/上证云长沙电信,175.6.43.87,TCP_FAIL
+国信证券,D:/zd_gxzq\Update\2024050608_bak\connect.cfg,HQHOST/上证云成都电信,218.6.170.91,TCP_FAIL
+国信证券,D:/zd_gxzq\Update\2024050608_bak\connect.cfg,HQHOST/上证云福州电信信创,27.151.2.43,TCP_FAIL
+国信证券,D:/zd_gxzq\Update\2024050608_bak\connect.cfg,HQHOST/上证云北京联通,123.125.108.9,TCP_FAIL
+国信证券,D:/zd_gxzq\Update\2024050608_bak\connect.cfg,HQHOST/上证云郑州联通信创,182.118.8.6,TCP_FAIL
+国信证券,D:/zd_gxzq\Update\2024050608_bak\connect.cfg,HQHOST/上证云新金桥BGP信创,114.141.177.45,TCP_FAIL
+国信证券,D:/zd_gxzq\Update\2026030909_bak\connect.cfg,HQHOST/腾讯云华东信创,109.244.35.28,INDEX_OK
+国信证券,D:/zd_gxzq\Update\2026030909_bak\connect.cfg,HQHOST/alieast,101.133.231.193,INDEX_OK
+国信证券,D:/zd_gxzq\Update\2026030909_bak\connect.cfg,HQHOST/alisouth,120.79.210.76,INDEX_OK
+国信证券,D:/zd_gxzq\Update\2026030909_bak\connect.cfg,HQHOST/腾讯云华南,109.244.73.13,INDEX_OK
+国信证券,D:/zd_gxzq\Update\2026030909_bak\connect.cfg,HQHOST/上证云上海bgp,103.251.85.23,TCP_FAIL
+国信证券,D:/zd_gxzq\Update\2026030909_bak\connect.cfg,HQHOST/上证云新金桥BGP信创,114.141.177.45,TCP_FAIL
+国信证券,D:/zd_gxzq\Update\2026030909_bak\connect.cfg,HQHOST/上证云太原移动信创,183.201.231.88,TCP_FAIL
+国信证券,D:/zd_gxzq\Update\2026030909_bak\connect.cfg,HQHOST/上证云广州移动信创,120.232.154.199,TCP_FAIL
+国信证券,D:/zd_gxzq\Update\2026030909_bak\connect.cfg,HQHOST/上证云广州电信,58.63.254.247,TCP_FAIL
+国信证券,D:/zd_gxzq\Update\2026030909_bak\connect.cfg,HQHOST/上证云长沙电信,175.6.43.87,TCP_FAIL
+国信证券,D:/zd_gxzq\Update\2026030909_bak\connect.cfg,HQHOST/上证云成都电信,218.6.170.91,TCP_FAIL
+国信证券,D:/zd_gxzq\Update\2026030909_bak\connect.cfg,HQHOST/上证云福州电信信创,27.151.2.43,TCP_FAIL
+国信证券,D:/zd_gxzq\Update\2026030909_bak\connect.cfg,HQHOST/上证云北京联通,123.125.108.9,TCP_FAIL
+国信证券,D:/zd_gxzq\Update\2026030909_bak\connect.cfg,HQHOST/上证云郑州联通信创,182.118.8.6,TCP_FAIL
+国信证券,D:/zd_gxzq\Update\2026030909_bak\connect.cfg,HQHOST/国信东莞,120.234.57.15,TCP_FAIL
+国信证券,D:/zd_gxzq\Update\2026071708_bak\connect.cfg,HQHOST/腾讯云华东信创,109.244.35.28,INDEX_OK
+国信证券,D:/zd_gxzq\Update\2026071708_bak\connect.cfg,HQHOST/阿里云华东,101.133.231.193,INDEX_OK
+国信证券,D:/zd_gxzq\Update\2026071708_bak\connect.cfg,HQHOST/阿里云华南,120.79.210.76,INDEX_OK
+国信证券,D:/zd_gxzq\Update\2026071708_bak\connect.cfg,HQHOST/腾讯云华南,109.244.73.13,INDEX_OK
+国信证券,D:/zd_gxzq\Update\2026071708_bak\connect.cfg,HQHOST/腾讯云华东信创2,162.14.135.116,INDEX_OK
+国信证券,D:/zd_gxzq\Update\2026071708_bak\connect.cfg,HQHOST/腾讯云华南信创2,109.244.73.23,INDEX_OK
+国信证券,D:/zd_gxzq\Update\2026071708_bak\connect.cfg,HQHOST/阿里云华东2,101.133.129.19,INDEX_OK
+国信证券,D:/zd_gxzq\Update\2026071708_bak\connect.cfg,HQHOST/阿里云华南2,120.24.231.30,INDEX_OK
+国信证券,D:/zd_gxzq\Update\2026071708_bak\connect.cfg,HQHOST/国信东莞,120.234.57.15,TCP_FAIL
+国信证券,D:/zd_gxzq\Update\2026071708_bak\connect.cfg,HQHOST/上证云福州电信信创,27.151.2.43,TCP_FAIL
+国信证券,D:/zd_gxzq\Update\2026071708_bak\connect.cfg,HQHOST/上证云北京联通,123.125.108.9,TCP_FAIL
+国信证券,D:/zd_gxzq\Update\2026071708_bak\connect.cfg,HQHOST/上证云郑州联通信创,182.118.8.6,TCP_FAIL
+国信证券,D:/zd_gxzq\Update\2026071708_bak\connect.cfg,HQHOST/上证云成都电信信创,182.131.3.228,TCP_FAIL
+国信证券,D:/zd_gxzq\Update\2026071708_bak\connect.cfg,HQHOST/国信东莞,120.234.57.15,TCP_FAIL
+国元证券,D:/国元领航\国元领航\connect.cfg,HQHOST/国元证券-合肥电信1,60.173.222.50,EMPTY_MIRROR
+国元证券,D:/国元领航\国元领航\connect.cfg,HQHOST/国元证券-合肥电信2,61.191.48.15,INDEX_OK
+国元证券,D:/国元领航\国元领航\connect.cfg,HQHOST/广州云电信,58.63.252.107,INDEX_OK
+国元证券,D:/国元领航\国元领航\connect.cfg,HQHOST/上海云电信,101.226.180.156,TCP_FAIL
+国元证券,D:/国元领航\国元领航\connect.cfg,HQHOST/成都云电信,61.188.177.227,INDEX_OK
+国元证券,D:/国元领航\国元领航\connect.cfg,HQHOST/国元证券-合肥联通1,220.248.233.5,EMPTY_MIRROR
+国元证券,D:/国元领航\国元领航\connect.cfg,HQHOST/国元证券-合肥联通2,218.106.80.15,EMPTY_MIRROR
+国元证券,D:/国元领航\国元领航\connect.cfg,HQHOST/北京云联通,123.125.108.187,SKIP_IN_POOL
+国元证券,D:/国元领航\国元领航\connect.cfg,HQHOST/国元证券-合肥移动1,120.210.144.2,EMPTY_MIRROR
+国元证券,D:/国元领航\国元领航\connect.cfg,HQHOST/国元证券-合肥移动2,221.130.121.45,INDEX_OK
+国元证券,D:/国元领航\国元领航\connect.cfg,HQHOST/广州云移动,120.232.150.204,INDEX_OK
+国元证券,D:/国元领航\国元领航\connect.cfg,HQHOST/上海云移动,103.251.85.87,SKIP_IN_POOL

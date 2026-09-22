@@ -363,21 +363,112 @@ def futures_pool_stats():
 
     返回每台节点的 {ip, port, ema_ms, fails, ok, fail, cooldown_left}，
     按当前选路优先级排序；`order` 为下一次选路的实际顺序。只读，无副作用。
+
+    注意：候选集不再是整个池，而是**当前生效的源**（默认国元合肥 5 台主源；
+    主源熔断时自动变备用池），见 core/ext_source。`source_mode` 字段标出当前模式。
     """
     try:
         router = getattr(fut, "_router", None)
-        if router is None:
-            return jsonify({"ok": False, "error": "pool router unavailable", "data": []})
-        pairs = list(getattr(fut, "_PYTDX_EXT_SERVERS", []) or [])
-        order = router.select(pairs) if pairs else []
+        es = getattr(fut, "_ext_src", None)
+        if es is not None:
+            active = es.active_pairs()
+            src_mode = es.mode()
+        else:
+            active = list(getattr(fut, "_PYTDX_EXT_SERVERS", []) or [])
+            src_mode = "unknown"
+        order = router.select(active) if (router and active) else active
+        stats = router.snapshot() if router else []
         return jsonify({
             "ok": True,
-            "total": len(pairs),
+            "source_mode": src_mode,
+            "total": len(active),
+            "pool_total": len(getattr(fut, "_PYTDX_EXT_SERVERS", []) or []),
             "order": [{"ip": ip, "port": port} for (ip, port) in order],
-            "data": router.snapshot(),
+            "data": stats,
         })
     except Exception as e:
         return jsonify({"ok": False, "error": str(e), "data": []})
+
+
+@futures_bp.route("/ext/source")
+def futures_ext_source():
+    """取数源状态：当前模式（国元合肥主源 / 备用池）、锚点、熔断计数、各台延迟、最近事件。
+
+    只读。主源连续失败达阈值会自动切备用池（120s 后自动回切），也可用
+    POST /futures/ext/source 手动切换（运维用）。
+    """
+    try:
+        return jsonify({"ok": True, "data": fut.ext_source_state()})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e), "data": None})
+
+
+@futures_bp.route("/ext/source", methods=["POST"])
+def futures_ext_source_ctl():
+    """手动切换取数源（运维用）：body/query 传 mode=primary|failover。"""
+    try:
+        es = getattr(fut, "_ext_src", None)
+        if es is None:
+            return jsonify({"ok": False, "error": "ext_source unavailable"})
+        m = (request.args.get("mode") or (request.get_json(silent=True) or {}).get("mode") or "").lower()
+        if m == "failover":
+            es.force_failover()
+        elif m == "primary":
+            es.force_primary()
+        else:
+            return jsonify({"ok": False, "error": "mode must be primary|failover"})
+        return jsonify({"ok": True, "data": es.state()})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)})
+
+
+@futures_bp.route("/vwap/backup", methods=["GET", "POST"])
+def futures_vwap_backup():
+    """VWAP 历史备份的查看（GET）/ 触发（POST）。
+
+    GET  → 备份清单 + 备份 vs 历史的校验摘要（只读，不读全量 bar，秒回）。
+    POST → 立即做一次备份（并集合并、天数只增不减），body/query 可传 codes=IFL9,IML9。
+    备份与恢复的完整语义见 core/vwap_backup.py。灾备恢复请用 CLI（tools/vwap_backup.py）。
+
+    注意：备份会读写 20~30MB/品种的 pkl，POST 为同步阻塞（约 5~10 秒/品种）。
+    """
+    try:
+        try:
+            from core import vwap_backup as vb
+        except Exception:
+            import vwap_backup as vb
+    except Exception as e:
+        return jsonify({"ok": False, "error": "vwap_backup unavailable: %r" % (e,)})
+
+    if request.method == "POST":
+        raw = (request.args.get("codes")
+               or (request.get_json(silent=True) or {}).get("codes") or "")
+        codes = [c.strip().upper() for c in str(raw).split(",") if c.strip()] or list(vb.CODES)
+        try:
+            res = vb.backup_all(codes, source="api")
+            return jsonify({"ok": True, "data": res})
+        except Exception as e:
+            return jsonify({"ok": False, "error": str(e)})
+
+    try:
+        m = vb.manifest()
+        items = []
+        for c in vb.CODES:
+            e = m.get(c) or {}
+            v = vb.verify(c)
+            items.append({
+                "code": c,
+                "backup": v["backup"], "hist": v["hist"],
+                "ok": v["ok"],
+                "missing_days": v["missing_days"],
+                "extra_days": v["extra_days"],
+                "hist_incomplete_days": v["hist_incomplete_days"],
+                "advice": v.get("advice"),
+                "manifest": e,
+            })
+        return jsonify({"ok": True, "dir": vb.BACKUP_DIR, "data": items})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)})
 
 
 @futures_bp.route("/popup")

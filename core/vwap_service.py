@@ -58,10 +58,16 @@ DEFAULT_PARAMS = {
     "rr": 1.5,            # 止盈风险回报比 1.5R
     "atr_mult": 1.5,      # 止损 = 1.5 x ATR(5min)
     "atr_period": 14,     # ATR 周期
-    "time_stop": 60,      # 持有满 60 根 1 分钟强制平仓
+    "time_stop": 0,       # 0 = 取消下午腿时间止损（与保姆版报告对齐：已开仓持有至尾盘强平，不再 60 根强平）
     "session_start": "13:00",   # 仅此时段内允许开新仓
     "session_end": "14:55",     # 14:55 强制平仓，绝不过夜
-    "baseline_days": 30,  # 基线窗口（交易日）
+    "open_end": "14:45",        # 14:45 后禁止开新仓（已在场仓位仍持有至 14:55 强平）
+    "baseline_days": 30,  # 基线窗口（交易日，仅 baseline_mode='fixed' 时生效）
+    # 基线口径（2026-09-22 起）：'expanding' = 用全部可得历史按 pos 统计 mu/sd，
+    #   排除最新一个交易日（无前视），与报告引擎 vwap_study.build_features 同口径；
+    #   'fixed' = 旧行为（最近 baseline_days 个交易日，含当日）。
+    "baseline_mode": "expanding",
+    "baseline_min_days": 277,   # expanding 最少要求的交易日数（不足则退回固定窗口）
 }
 
 # 上午腿（开盘驱动 drive）默认参数。
@@ -86,6 +92,16 @@ AM_DEFAULT_PARAMS = {
 _CACHE_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "vwap_cache")
 _PAGE = 700               # 单次分页拉取根数（实测服务端上限 700）
 _LOCK = threading.Lock()
+
+# 最大量历史（离线回补，见 tools/backfill_vwap_history.py）+ expanding 基线缓存。
+# 为什么必须缓存：在 36.8 万根上 _atr5_map ≈ 2.0s、_build_baseline ≈ 1.8s，合计 3.8s；
+# 看板 3 秒轮询一次，逐次重算会拖垮响应。基线只随「最新交易日」变化（一天一次），
+# 故按 (code, last_day, atr_period) 缓存，日内命中直接返回。
+_HIST_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                         "data", "vwap_hist")
+_FULL_HIST = {}           # code -> bars（进程内只读缓存，源自 data/vwap_hist）
+_FULL_HIST_META = {}      # code -> {'last_day','days'}（预存，供廉价缓存 key）
+_BASE_CACHE = {}          # (code, last_day, atr_period) -> {'mu','sd','days'}
 
 
 # ============================ 工具函数 ============================
@@ -359,10 +375,12 @@ def _day_dev_atr(day_bars, atr_by_time):
     return out
 
 
-def _build_baseline(hist, atr5_map, days=30):
+def _build_baseline(hist, atr5_map, days=30, exclude_last=False):
     """对最近 days 个交易日，按 pos 统计 dev_atr 的 mu / sd。
 
     atr5_map: {'YYYY-MM-DD': {'HH:MM': atr, ...}, ...}
+    exclude_last=True 时剔除最新一个交易日（expanding / shift(1) 口径：当天不得用当天）。
+
     返回 {'mu':[240], 'sd':[240], 'days':int}
     """
     # 按日期分组
@@ -373,6 +391,8 @@ def _build_baseline(hist, atr5_map, days=30):
             continue
         by_day.setdefault(d, []).append(b)
     days_list = sorted(by_day.keys())[-days:]
+    if exclude_last and days_list:
+        days_list = days_list[:-1]
 
     samples = [[] for _ in range(BARS_PER_DAY)]
     for d in days_list:
@@ -392,6 +412,145 @@ def _build_baseline(hist, atr5_map, days=30):
             mu[pos] = m
             sd[pos] = (var ** 0.5) if var > 1e-12 else 0.0
     return {"mu": mu, "sd": sd, "days": len(days_list)}
+
+
+def _load_hist_full(code):
+    """读 data/vwap_hist/<code>_1min.pkl（最大量 1 分钟历史，离线回补，进程内只读缓存）。
+
+    由 tools/backfill_vwap_history.py 从扩展行情最深站（国元合肥主源，IFL9 可回溯 2020-05）
+    回补而来；文件缺失时返回 []，调用方退回实时缓存口径。
+
+    **灾备兜底（2026-09-22）**：主文件缺失/为空时，自动从最大天数备份
+    data/vwap_backup/<code>_max.pkl 读到内存（只读，不覆盖磁盘），保证 dev_z 基线
+    不会因为一次误删就退化成 30 日口径。恢复磁盘文件请用 tools/vwap_backup.py restore。
+    """
+    if code in _FULL_HIST:
+        return _FULL_HIST[code]
+    bars = []
+    p = os.path.join(_HIST_DIR, "%s_1min.pkl" % code.replace("/", "_").replace("\\", "_"))
+    try:
+        with open(p, "rb") as f:
+            bars = (pickle.load(f) or {}).get("bars") or []
+    except Exception:
+        bars = []
+    src = "hist"
+    if not bars:
+        # 主文件没了 → 读备份接住（灾备）
+        try:
+            from core import vwap_backup as _vb
+        except Exception:
+            try:
+                import vwap_backup as _vb
+            except Exception:
+                _vb = None
+        if _vb is not None:
+            try:
+                bars = _vb._read_bars(_vb.backup_path(code))
+                if bars:
+                    src = "backup"
+            except Exception:
+                pass
+    _FULL_HIST[code] = bars
+    # 预存元信息：让 expanding 基线的缓存命中路径**无需再遍历 36.8 万根**
+    days = set()
+    for b in bars:
+        d, hm = _hms(b["date"])
+        if _pos_of(hm) is not None:
+            days.add(d)
+    _FULL_HIST_META[code] = {"last_day": (max(days) if days else None), "days": len(days),
+                             "src": src}
+    if src == "backup":
+        print("[vwap] WARN: %s 的 vwap_hist 缺失，已从备份读到 %d 根（%d 日）"
+              % (code, len(bars), len(days)), flush=True)
+    # 顺带触发一次节流自动备份（后台线程，不阻塞请求）
+    maybe_auto_backup(code)
+    return bars
+
+
+# ---------------------------------------------------------------- 自动备份（节流）
+_BACKUP_MIN_INTERVAL = 6 * 3600.0     # 两次自动备份的最小间隔（秒）
+_LAST_AUTO_BACKUP = {}
+
+
+def maybe_auto_backup(code):
+    """后台触发一次备份（节流：同一品种 6 小时内只做一次）。非阻塞，失败静默。
+
+    备份口径见 core/vwap_backup：并集合并、**天数只增不减**，只收已完整收盘的交易日。
+    """
+    now = time.time()
+    if now - _LAST_AUTO_BACKUP.get(code, 0.0) < _BACKUP_MIN_INTERVAL:
+        return False
+    _LAST_AUTO_BACKUP[code] = now
+
+    def _work():
+        try:
+            try:
+                from core import vwap_backup as _vb
+            except Exception:
+                import vwap_backup as _vb
+            r = _vb.backup_code(code, source="auto:engine")
+            if r.get("snapshot"):
+                print("[vwap] 自动备份 %s: %d 日 (+%d 根, 最大天数记录 %d)"
+                      % (code, r["days"], r["added_bars"], r["max_days"]), flush=True)
+        except Exception:
+            pass
+
+    try:
+        threading.Thread(target=_work, daemon=True, name="vwap-auto-backup").start()
+        return True
+    except Exception:
+        return False
+
+
+def _build_baseline_expanding(code, hist_live=None, atr_period=14):
+    """expanding 口径基线：用**全部可得历史**按 pos 统计 mu / sd，并**排除最新交易日**。
+
+    与报告引擎 vwap_study.build_features(norm_window='expanding') 逐日口径一致：
+    每个交易日的 dev_z 只用「该日之前」的历史（等价 pandas ``.expanding().mean().shift(1)``）。
+
+    数据源：data/vwap_hist/<code>_1min.pkl（≥277 交易日）优先，缺失则退回实时缓存 hist_live。
+    缓存的 key 含「历史中最新交易日」，故一天只重算一次（~3.8s），日内命中即返回。
+    """
+    hist_deep = _load_hist_full(code)
+    deep_last = (_FULL_HIST_META.get(code) or {}).get("last_day")
+
+    # 实时缓存里最新那个交易日（只扫尾部，避免整段遍历）
+    live_last = None
+    if hist_live:
+        for b in reversed(hist_live):
+            d, hm = _hms(b["date"])
+            if _pos_of(hm) is not None:
+                live_last = d
+                break
+
+    cand = [d for d in (deep_last, live_last) if d]
+    if not cand:
+        return {"mu": [None] * BARS_PER_DAY, "sd": [None] * BARS_PER_DAY,
+                "days": 0, "mode": "expanding"}
+    # 缓存 key 只用「最新交易日」——命中时不做任何重活
+    key = (code, max(cand), int(atr_period))
+    cached = _BASE_CACHE.get(key)
+    if cached is not None:
+        return {"mu": cached["mu"], "sd": cached["sd"], "days": cached["days"],
+                "mode": "expanding"}
+
+    hist = hist_deep if hist_deep else list(hist_live or [])
+    if hist_deep and hist_live:
+        # 用实时缓存把最新交易日补进来（离线快照之后新增的日子靠这里）
+        hist = _merge_bars(hist_deep, hist_live)
+    days = sorted(set(_hms(b["date"])[0] for b in hist
+                      if _pos_of(_hms(b["date"])[1]) is not None))
+    if not days:
+        return {"mu": [None] * BARS_PER_DAY, "sd": [None] * BARS_PER_DAY,
+                "days": 0, "mode": "expanding"}
+
+    atr_map = _atr5_map(hist, period=int(atr_period))
+    base = _build_baseline(hist, atr_map, days=len(days), exclude_last=True)
+    _BASE_CACHE[key] = {"mu": base["mu"], "sd": base["sd"], "days": base["days"]}
+    if len(_BASE_CACHE) > 8:                      # 控制内存：只留最近几个
+        for k in list(_BASE_CACHE.keys())[:-8]:
+            _BASE_CACHE.pop(k, None)
+    return {"mu": base["mu"], "sd": base["sd"], "days": base["days"], "mode": "expanding"}
 
 
 def _agg_5min(hist):
@@ -474,6 +633,8 @@ def _simulate_day(day_bars, feats, params, leg='pm'):
     time_stop = int(params.get("time_stop", 60))
     s_start = _minute_of(params.get("session_start", "13:00" if leg != 'am' else "09:46"))
     s_end = _minute_of(params.get("session_end", "14:55" if leg != 'am' else "11:30"))
+    # 禁止开仓时间（仅下午腿有效）：到达该时点后不再开新仓；已在场仓位仍持有至 session_end 强平
+    open_end = _minute_of(params.get("open_end", "14:45" if leg != 'am' else "11:30"))
 
     # 上午腿：开盘 15 分钟的方向 ret1545 = 9:45 收 ÷ 9:30 开 − 1
     # （open[0]=09:31 那根的开盘价即 9:30 开盘价；close[14]=09:45 收盘）
@@ -538,7 +699,7 @@ def _simulate_day(day_bars, feats, params, leg='pm'):
             })
             pending = None
 
-        # 2) 持仓中：止损 / 止盈 / 时间止损 / 尾盘强平
+        # 2) 持仓中：止损 / 止盈 / 时间止损（time_stop>0 才生效）/ 尾盘强平
         if state != 0:
             if state == 1:
                 if f["low"] <= stop:
@@ -550,7 +711,7 @@ def _simulate_day(day_bars, feats, params, leg='pm'):
                     close(i, stop, "stop")
                 elif f["low"] <= target:
                     close(i, target, "target")
-            if state != 0 and (i - entry_i) >= time_stop:
+            if state != 0 and time_stop > 0 and (i - entry_i) >= time_stop:
                 close(i, f["close"], "time")
             elif state != 0 and t >= s_end:
                 close(i, f["close"], "eod")
@@ -576,10 +737,11 @@ def _simulate_day(day_bars, feats, params, leg='pm'):
             #   判穿越，而 .lc1 里午休段没有行，13:01 的上一行恰好就是 11:30。
             #   实证 2026-09-21 ICL9：13:02 空单正是靠 z(11:30)=-0.696 > k_short=-0.75
             #   >= z(13:01)=-0.981 成立；若改成「只在下午时段内判穿越」，该笔会消失。
-            #   注意下面 s_start <= t < s_end 是必须的：它保证 11:30 那根（以及上午任何
+            #   注意下面 s_start <= t < open_end 是必须的：它保证 11:30 那根（以及上午任何
             #   一根）只能充当基准、不能开出下午腿仓位——去掉它 11:30 就会自己触发。
+            #   open_end=14:45（默认）：14:45 后不再新开仓，但已在场仓位持有至 session_end=14:55 强平。
             #   回归测试：skills/xtquant-vwap-board-legs/assets/vwap_lunch_baseline_test.py
-            if state == 0 and pending is None and i >= warmup and s_start <= t < s_end:
+            if state == 0 and pending is None and i >= warmup and s_start <= t < open_end:
                 if z is not None and prev_z is not None:
                     if prev_z < k_long <= z:                  # 向上突破做多阈值
                         pending = 1
@@ -663,13 +825,27 @@ def build_vwap_view(code, params=None, days=30, leg='pm'):
     need_am = mode in ('am', 'both')
     need_pm = mode in ('pm', 'both')
 
+    # 基线口径：默认 expanding（用 data/vwap_hist 的最大量历史，≥baseline_min_days 交易日，
+    # 排除最新交易日，与报告引擎 vwap_study.build_features 同口径 / shift(1) 无前视）。
+    bmode = str(p_pm.get("baseline_mode", "expanding")).lower()
+    # expanding 下 days 已不是「基线窗口」、可能被前端回写成大数；实时拉取只服务当日 feats
+    # 与本地 ATR（Wilder 收敛，30 日足够），封顶以免退化成几十页慢拉。
+    live_days = min(int(days), 30) if bmode == "expanding" else int(days)
+
     with _LOCK:
-        hist, meta = get_history_1min(code, days=int(days))
+        hist, meta = get_history_1min(code, days=live_days)
         # 两腿止损统一 5 分钟口径（报告 §②③ 共用同一止损基准 ≈8.5→12.76）
         atr_map = _atr5_map(hist, period=int(p_pm["atr_period"])) if hist else {}
         if need_pm:
             # dev_z 基线只有下午腿需要；上午腿不依赖，省一次基线计算
-            base = _build_baseline(hist, atr_map, days=int(days))
+            base = None
+            if bmode == "expanding":
+                base = _build_baseline_expanding(code, hist,
+                                                 atr_period=int(p_pm["atr_period"]))
+                if base["days"] < int(p_pm.get("baseline_min_days", 0)):
+                    base = None          # 深历史缺失/不足 → 安全退回固定窗口
+            if base is None:
+                base = _build_baseline(hist, atr_map, days=live_days)
         else:
             base = {"mu": [None] * BARS_PER_DAY, "sd": [None] * BARS_PER_DAY, "days": 0}
 
@@ -742,7 +918,7 @@ def build_vwap_view(code, params=None, days=30, leg='pm'):
             ret1545 = (c14 / open0 - 1.0) * 100.0
 
     # 两条腿分别模拟：am 用 p_am（ret1545 单阈值 + 2.0R + 上午窗口 09:46–11:30），
-    # pm 用 p_pm（dev_z 双阈值 + 1.5R + 下午窗口 13:00–14:55）。
+    # pm 用 p_pm（dev_z 双阈值 + 1.5R + 下午窗口 13:00 开仓、14:45 后禁开、14:55 强平）。
     # both 时合并信号并给每条打上 leg 标记（前端据此分色/分窗绘制）。
     signals = []
     last_am = None
@@ -782,6 +958,9 @@ def build_vwap_view(code, params=None, days=30, leg='pm'):
         "session_start": p_pm["session_start"], "session_end": p_pm["session_end"],
         "session_start_am": p_am["session_start"], "session_end_am": p_am["session_end"],
         "warmup": WARMUP_BARS,
+        # 基线口径与「实际使用的交易日数」回显（前端据此显示 expanding 真实窗口）
+        "baseline_mode": bmode,
+        "baseline_window": int(base["days"]) if need_pm else 0,
     }
     return {
         "ok": True,
@@ -789,7 +968,8 @@ def build_vwap_view(code, params=None, days=30, leg='pm'):
         "date": day,
         "leg": mode,
         "params": params_out,
-        "baseline": {"days": base["days"], "ok_days": sum(1 for x in mu if x is not None)},
+        "baseline": {"days": base["days"], "ok_days": sum(1 for x in mu if x is not None),
+                     "mode": bmode if need_pm else "none"},
         "atr5": round(atr_prev, 2) if atr_prev else None,
         "ret1545": None if ret1545 is None else round(ret1545, 3),
         "series": series,

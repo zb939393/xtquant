@@ -2,8 +2,10 @@
 """股指期货(中金所 CFFEX)扩展行情(ExHq) 盘口 / 分时 / 逐笔服务。
 
 数据源：
-  - core/tdx_ext_servers._TDX_EXT_SERVERS：扩展行情主站池（端口 7721，当前 4 台长城证券），
-    由 _get_api() 随机优选试连、失败自动换下一台。取数用 pytdx.exhq.TdxExHq_API。
+  - core/ext_source.PRIMARY_SERVERS：**主源 = 国元证券合肥 ×5（唯一默认取数源）**，
+    由 _get_api() 逐台试连、失败换下一台；主源连续失败熔断后才切备用池（其余 27 台）。
+    取数用 pytdx.exhq.TdxExHq_API。
+  - core/tdx_ext_servers._TDX_EXT_SERVERS：全部可用站（主源 5 + 备用 27），仅作分组视图。
   - 旧 pip 包 tdx_exhq 已不再参与取数（仅为向后兼容保留导入与 _EXHQ_OK 标记，
     可用性判据请用 ext_available()）。
 
@@ -69,6 +71,18 @@ except Exception:
         import tdx_pool_router as _router
     except Exception:
         _router = None
+
+# 取数源策略：默认**只用国元证券合肥 ×5 主源**，连续失败熔断后切备用池（见 core/ext_source.py）。
+# 为什么要收敛单一主源：多站的历史页存在高/低/量微差与深度差异，混用会让 ATR→dev_z 漂移，
+# 已发生的信号随之翻转（2026-09-21 实测事故）。实时增量本可多站，但统一到主源后
+# 「同一根 bar 的数据来源」恒定，是 dev_z 可复现的前提。
+try:
+    from core import ext_source as _ext_src
+except Exception:
+    try:
+        import ext_source as _ext_src
+    except Exception:
+        _ext_src = None
 
 
 def ext_available():
@@ -182,15 +196,27 @@ def _probe_latency(host, port, timeout=3.0):
 
 
 def _get_api():
-    """新建一个扩展行情连接（池内按「延迟排序优先 + 故障降权」选路，失败换下一台）；失败返回 None。
-    每次查询都新建，避免长连接被服务端丢弃后 recv 挂死。
+    """新建一个扩展行情连接（**主源 = 国元合肥 5 台**，池内按「延迟排序优先 + 故障降权」选路，
+    失败换下一台）；失败返回 None。每次查询都新建，避免长连接被服务端丢弃后 recv 挂死。
 
-    选路由 core/tdx_pool_router 统一负责：优先挑 EMA 延迟低的节点，连续失败的节点会被
-    临时冷却（指数退避），冷却到期自动回到候选池。若 router 不可用则退化为随机洗牌。"""
+    源选择由 core/ext_source 统一负责：
+      - primary 模式（默认）→ 候选只有国元合肥 5 台；
+      - 主源连续失败达阈值 → 熔断进 failover，候选换成备用池（其余 27 台）拉增量，
+        到期自动回切主源。整轮成败回传 ext_source.report_round()。
+    池内排序由 core/tdx_pool_router 负责（EMA 延迟低的优先，连续失败的临时冷却）。"""
     if not ext_available():
         return None
     import random
-    pairs = list(_PYTDX_EXT_SERVERS)
+    used_primary = True
+    pairs = None
+    if _ext_src is not None:
+        try:
+            pairs = list(_ext_src.active_pairs())
+            used_primary = (_ext_src.mode() == "primary")
+        except Exception:
+            pairs = None
+    if not pairs:
+        pairs = list(_PYTDX_EXT_SERVERS)
     if not pairs:
         return None
     if _router is not None:
@@ -223,9 +249,16 @@ def _get_api():
                 pass
             if _router:
                 _router.report_success(host, port, (time.time() - t0) * 1000.0)
+            # 整轮成功上报（用于主源熔断/恢复判定）
+            if _ext_src is not None:
+                try:
+                    _ext_src.report_round(True, used_primary)
+                except Exception:
+                    pass
             # 记住实际连上的节点，供取数失败时精确定位降权
             try:
                 api._pool_addr = (host, port)
+                api._pool_primary = used_primary
             except Exception:
                 pass
             return api
@@ -238,7 +271,23 @@ def _get_api():
             if _router:
                 _router.report_failure(host, port)
             continue
+    # 本轮候选全部失败：主源态下累计失败（达阈值即熔断切备用池）
+    if _ext_src is not None:
+        try:
+            _ext_src.report_round(False, used_primary)
+        except Exception:
+            pass
     return None
+
+
+def ext_source_state():
+    """取数源运维视图：当前模式（国元合肥主源 / 备用池）、熔断计数、各台延迟、最近事件。"""
+    if _ext_src is None:
+        return {"mode": "unknown", "reason": "ext_source 模块不可用"}
+    try:
+        return _ext_src.state()
+    except Exception as e:
+        return {"mode": "unknown", "reason": repr(e)}
 
 
 def _report_api_failure(api):
