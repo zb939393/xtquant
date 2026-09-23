@@ -2,6 +2,8 @@ __pycache__/
 *.pyc
 logs/
 data/
+!data/option_watchlist.json
+!data/vwap_params.json
 .venv/
 .env
 

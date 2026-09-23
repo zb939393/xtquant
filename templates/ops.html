@@ -190,6 +190,7 @@
     <table v-if="backup.data && backup.data.length">
       <thead><tr>
         <th>合约</th><th>备份天数</th><th>历史天数</th><th>最大天数</th>
+        <th>首日<br/>备份/历史</th><th>最后日<br/>备份/历史</th>
         <th>备份根数</th><th>历史根数</th><th>缺失日</th><th>多余日</th><th>残缺日</th><th>状态</th><th>建议</th>
       </tr></thead>
       <tbody>
@@ -198,6 +199,8 @@
           <td>${b.backup ? b.backup.days : '—'}</td>
           <td>${b.hist ? b.hist.days : '—'}</td>
           <td>${b.manifest ? b.manifest.max_days : '—'}</td>
+          <td class="mono">${b.backup ? b.backup.first_day : '—'} <span class="muted">/ ${b.hist ? b.hist.first_day : '—'}</span></td>
+          <td class="mono">${b.backup ? b.backup.last_day : '—'} <span class="muted">/ ${b.hist ? b.hist.last_day : '—'}</span></td>
           <td class="mono">${b.backup ? b.backup.n : '—'}</td>
           <td class="mono">${b.hist ? b.hist.n : '—'}</td>
           <td><span :class="b.missing_days>0?'tag bad':'tag grey'">${b.missing_days||0}</span></td>
