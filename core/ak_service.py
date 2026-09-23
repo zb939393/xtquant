@@ -3028,23 +3028,23 @@ def _two_market_turnover_text(per_day, labels, milestones, bar_series):
         infos.append(_day_info(pd_, bar_data))
 
     lines = []
-    # endtime 块（今日 + 4 历史，历史按 前三天→昨天 顺序，与参考一致）
+    # endtime 块（今日 + 4 历史，按日期降序：今日 → 昨天 → 前天 → … → 前三天）
     today = infos[0].get("endtime")
     if today:
         lines.append("endtime:")
         lines.append("%s 成交 %s 亿，上海占 %s%%" % (today[0], today[1], today[2]))
-        for i in range(len(infos) - 1, 0, -1):
+        for i in range(1, len(infos)):
             d = infos[i].get("endtime")
             if d:
                 lines.append("%s 成交 %s 亿，上海占 %s%%" % (d[0], d[1], d[2]))
-    # 里程碑块，从大到小
+    # 里程碑块，里程碑从大到小，每日同样按日期降序
     for m in sorted(milestones, reverse=True):
         block = infos[0].get(m)
         if not block:
             continue
         lines.append("%d亿:" % m)
         lines.append("%s 成交,每千亿用时%s 分钟，上海占 %s%%" % (block[0], block[1], block[2]))
-        for i in range(len(infos) - 1, 0, -1):
+        for i in range(1, len(infos)):
             d = infos[i].get(m)
             if d:
                 lines.append("%s 成交,每千亿用时 %s 分钟，上海占 %s%%" % (d[0], d[1], d[2]))

@@ -63,6 +63,11 @@ var timer = null;
 var chartS = null;   // 期指行情 图表实例
 var chartF = null;   // 资金 图表实例
 
+// 资金图数据缓存：东方财富 fflow 接口偶发返回空（限流/超时/502），
+// 若空数据直接重绘会把线条清空 → 表现为「一会有一会无」。
+// 缓存最近一次成功的四条合约分时序列，遇到空数据时用缓存兜底，保持线条稳定。
+var _capCache = { day: "", p: [null, null, null, null], names: [null, null, null, null], codes: [null, null, null, null] };
+
 // ===== 内容大小缩放 =====
 var zoom = 100;
 try { var _zs = parseInt(localStorage.getItem("zoom_capital") || "100", 10); if(isFinite(_zs) && _zs >= 50 && _zs <= 150) zoom = _zs; } catch(e){}
@@ -257,7 +262,15 @@ function chart_s(cb){
 
   _waitSina(seq, Date.now() + 8000, function (ok, missing) {
     if (seq !== _sinaSeq) return;            // 已有更新的一轮在跑，本次作废
-    if (!ok) { if (cb) cb(false, missing); return; }
+    if (!ok) {
+      console.warn("期指分时数据未就绪，缺失:", missing);
+      // 新浪失败不影响资金图：仍独立重绘资金图
+      try { updatechart(); } catch (e) {}
+      var _el = document.getElementById("updated");
+      if (_el) _el.textContent = "行情未就绪，点「刷新」重试";
+      if (cb) cb(false, missing);
+      return;
+    }
     var data = {};
     data.bb = ['8:30', '10:30', '11:30', '14:00', '15:00'];
     data.x = ['09:30', '09:31', '09:32', '09:33', '09:34', '09:35', '09:36', '09:37', '09:38', '09:39', '09:40', '09:41',
@@ -303,6 +316,7 @@ function readdata(nid) {
   $.ajax({
     type: "get",
     async: false,
+    timeout: 8000,
     url: url,
     success: function (json) {
       jdata = json;
@@ -336,32 +350,48 @@ function chartdata(dic){
   var data4 = dic.data4.data;
 
   var chartdata = {};
-  var stock1 = data1.klines;
-  var stock2 = data2.klines;
-  var stock3 = data3.klines;
-  var stock4 = data4.klines;
-
-  var stock1dict = hq_deal(stock1);
-  var stock2dict = hq_deal(stock2);
-  var stock3dict = hq_deal(stock3);
-  var stock4dict = hq_deal(stock4);
+  var raw = [data1, data2, data3, data4];
+  // 同日内复用缓存：空数据（限流/超时/502）时回退到最近一次成功序列，避免线条被清空
+  var today = (new Date()).toISOString().slice(0, 10);
+  if (_capCache.day !== today) {
+    _capCache.day = today;
+    _capCache.p = [null, null, null, null];
+    _capCache.names = [null, null, null, null];
+    _capCache.codes = [null, null, null, null];
+  }
+  var price = [];
+  for (var k = 0; k < 4; k++) {
+    var kl = (raw[k] && raw[k].klines) || [];
+    var d = kl.length ? hq_deal(kl) : null;
+    if (d && d.price.length > 1) {
+      // 仅当本次更长（更完整）时才覆盖缓存，保住"最完整"的那条线
+      if (!_capCache.p[k] || d.price.length >= _capCache.p[k].length) _capCache.p[k] = d.price;
+      if (raw[k].name) _capCache.names[k] = raw[k].name;
+      if (raw[k].code) _capCache.codes[k] = raw[k].code;
+      price.push(d.price);
+    } else if (_capCache.p[k]) {
+      price.push(_capCache.p[k]);   // 空数据 → 用缓存兜底，线条不消失
+    } else {
+      price.push([0]);              // 首次且无任何数据，避免异常
+    }
+  }
   var todaydate = ['09:30', '09:31', '09:32', '09:33', '09:34', '09:35', '09:36', '09:37', '09:38', '09:39', '09:40', '09:41', '09:42', '09:43', '09:44', '09:45', '09:46', '09:47', '09:48', '09:49', '09:50', '09:51', '09:52', '09:53', '09:54', '09:55', '09:56', '09:57', '09:58', '09:59', '10:00', '10:01', '10:02', '10:03', '10:04', '10:05', '10:06', '10:07', '10:08', '10:09', '10:10', '10:11', '10:12', '10:13', '10:14', '10:15', '10:16', '10:17', '10:18', '10:19', '10:20', '10:21', '10:22', '10:23', '10:24', '10:25', '10:26', '10:27', '10:28', '10:29', '10:30', '10:31', '10:32', '10:33', '10:34', '10:35', '10:36', '10:37', '10:38', '10:39', '10:40', '10:41', '10:42', '10:43', '10:44', '10:45', '10:46', '10:47', '10:48', '10:49', '10:50', '10:51', '10:52', '10:53', '10:54', '10:55', '10:56', '10:57', '10:58', '10:59', '11:00', '11:01', '11:02', '11:03', '11:04', '11:05', '11:06', '11:07', '11:08', '11:09', '11:10', '11:11', '11:12', '11:13', '11:14', '11:15', '11:16', '11:17', '11:18', '11:19', '11:20', '11:21', '11:22', '11:23', '11:24', '11:25', '11:26', '11:27', '11:28', '11:29', '11:30', '13:01', '13:02', '13:03', '13:04', '13:05', '13:06', '13:07', '13:08', '13:09', '13:10', '13:11', '13:12', '13:13', '13:14', '13:15', '13:16', '13:17', '13:18', '13:19', '13:20', '13:21', '13:22', '13:23', '13:24', '13:25', '13:26', '13:27', '13:28', '13:29', '13:30', '13:31', '13:32', '13:33', '13:34', '13:35', '13:36', '13:37', '13:38', '13:39', '13:40', '13:41', '13:42', '13:43', '13:44', '13:45', '13:46', '13:47', '13:48', '13:49', '13:50', '13:51', '13:52', '13:53', '13:54', '13:55', '13:56', '13:57', '13:58', '13:59', '14:00', '14:01', '14:02', '14:03', '14:04', '14:05', '14:06', '14:07', '14:08', '14:09', '14:10', '14:11', '14:12', '14:13', '14:14', '14:15', '14:16', '14:17', '14:18', '14:19', '14:20', '14:21', '14:22', '14:23', '14:24', '14:25', '14:26', '14:27', '14:28', '14:29', '14:30', '14:31', '14:32', '14:33', '14:34', '14:35', '14:36', '14:37', '14:38', '14:39', '14:40', '14:41', '14:42', '14:43', '14:44', '14:45', '14:46', '14:47', '14:48', '14:49', '14:50', '14:51', '14:52', '14:53', '14:54', '14:55', '14:56', '14:57', '14:58', '14:59', '15:00'];
 
   chartdata.date = todaydate;
-  chartdata.stock1price = stock1dict.price;
-  chartdata.stock2price = stock2dict.price;
-  chartdata.stock3price = stock3dict.price;
-  chartdata.stock4price = stock4dict.price;
+  chartdata.stock1price = price[0];
+  chartdata.stock2price = price[1];
+  chartdata.stock3price = price[2];
+  chartdata.stock4price = price[3];
 
-  chartdata.stock1name = data1.name;
-  chartdata.stock2name = data2.name;
-  chartdata.stock3name = data3.name;
-  chartdata.stock4name = data4.name;
+  chartdata.stock1name = _capCache.names[0] || data1.name || "";
+  chartdata.stock2name = _capCache.names[1] || data2.name || "";
+  chartdata.stock3name = _capCache.names[2] || data3.name || "";
+  chartdata.stock4name = _capCache.names[3] || data4.name || "";
 
-  chartdata.stock1code = data1.code;
-  chartdata.stock2code = data2.code;
-  chartdata.stock3code = data3.code;
-  chartdata.stock4code = data4.code;
+  chartdata.stock1code = _capCache.codes[0] || data1.code || "";
+  chartdata.stock2code = _capCache.codes[1] || data2.code || "";
+  chartdata.stock3code = _capCache.codes[2] || data3.code || "";
+  chartdata.stock4code = _capCache.codes[3] || data4.code || "";
 
   return chartdata;
 }
@@ -430,12 +460,33 @@ function updatechart(){
   return makechart(data);
 }
 
+// ===== 资金图独立绘制（修复「资金图表有时出现有时消失」）=====
+// 资金图数据源是东方财富 fflow，与期指行情（新浪 JSONP）完全无关。
+// 原先资金图只在「新浪分时加载成功」的回调里才绘制；一旦新浪脚本阻塞/超时，
+// updatechart() 不会被调用 → 资金图永远空白。现在资金图独立绘制，
+// 不受新浪成败影响，启动/刷新/每个刷新周期都会重绘。
+function drawCapital(){
+  try {
+    var f = updatechart();
+    // 若期指图已存在则联动（tooltip 同步）；期指图未就绪时不强求
+    try { if (f && chartS) echarts.connect([f, chartS]); } catch (e) {}
+    return f;
+  } catch (e) {
+    console.warn("资金图绘制失败：", e);
+    return null;
+  }
+}
+
 // ===== 启动 & 定时刷新 =====
 (function(){ var sl = document.getElementById("zoomSlider"); if(sl) sl.value = zoom; var zl = document.getElementById("zoomVal"); if(zl) zl.textContent = zoom + "%"; document.documentElement.style.setProperty("--zoom", zoom / 100); })();
+// 资金图独立启动（不依赖新浪分时）：立即 + 下一帧各一次，确保首屏与布局稳定后都能画出来
+drawCapital();
+requestAnimationFrame(function(){ requestAnimationFrame(drawCapital); });
+
 chart_s();
 setInterval(function(){
   if (checkAuditTime("9:20", "11:35") || checkAuditTime("12:55", "15:10")) {
-    chart_s();
+    chart_s();   // chart_s 的成功/失败分支都会绘制资金图，无需再单独调用（减少东方财富请求频次，避免触发限流）
   } else {
     console.log("闭市");
   }
