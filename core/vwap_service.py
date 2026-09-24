@@ -38,9 +38,11 @@ mu/sd 基线由「过去 N 个交易日、同一 pos 的 dev_atr」统计得到�
 数据源：core.futures_service（通达信扩展行情 47#，真实行情，无合成数据）。
 """
 import os
+import sys
 import time
 import threading
 import pickle
+import logging
 from datetime import datetime, timedelta
 
 from core import futures_service as fut
@@ -91,7 +93,23 @@ AM_DEFAULT_PARAMS = {
 # 磁盘缓存目录（1 分钟历史，用于构建 dev_z 基线）
 _CACHE_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "vwap_cache")
 _PAGE = 700               # 单次分页拉取根数（实测服务端上限 700）
-_LOCK = threading.Lock()
+# 原全局锁改为「按品种锁 + 单飞」：不同品种可并行计算 VWAP 基线，同一品种不重复计算，
+# 解除进入 VWAP 模式时多品种并发被一把全局锁串行化、导致 waitress 任务队列积压的问题
+# （2026-09-24 修复）。全局锁会卡住所有品种，使 N 个 VWAP 请求串行（N×3.8s），前端 3s
+# 轮询持续堆积 → Task queue depth 警告；按品种锁后不同品种并行，且回填/预热与请求互不阻塞。
+_CODE_LOCKS = {}                 # code -> threading.Lock()
+_CODE_LOCKS_META = threading.Lock()
+
+
+def _code_lock(code):
+    """取某品种的专用锁（惰性创建，受元锁保护）。同一品种串行、不同品种并行。"""
+    with _CODE_LOCKS_META:
+        lk = _CODE_LOCKS.get(code)
+        if lk is None:
+            lk = threading.Lock()
+            _CODE_LOCKS[code] = lk
+        return lk
+
 
 # 最大量历史（离线回补，见 tools/backfill_vwap_history.py）+ expanding 基线缓存。
 # 为什么必须缓存：在 36.8 万根上 _atr5_map ≈ 2.0s、_build_baseline ≈ 1.8s，合计 3.8s；
@@ -502,6 +520,203 @@ def maybe_auto_backup(code):
         return False
 
 
+# ---------------------------------------------------------------- 深历史「国元拉取 + 比对存档 + 取最长/填补 + 形成缓存」
+# 设计意图（2026-09-24）：dev_z 的基线 μ/σ 必须基于「最大量深历史」。当 data/vwap_hist
+# 缺失/不全时，不能静默退化成 30 日窗口，而应由 dev_z 计算路径主动把深历史补齐：
+#   ① 先从国元合肥锚点拉取深历史（reuse tools/backfill_vwap_history：resume + union 取最长 + 填补缺口）；
+#   ② 与本地历史存档（vwap_hist / 备份）比对，并集合并（旧值优先、已收盘 bar 冻结）；
+#   ③ 写回 data/vwap_hist（形成磁盘缓存），并刷新备份（天数只增不减）；
+#   ④ 回填进程内 _FULL_HIST 缓存，使 dev_z 不必重启即切换到深历史。
+# 全程后台守护线程执行，不阻塞看板的 3 秒轮询；同一品种正在回补时不重复派发。
+_DEEP_REFRESHING = {}      # code -> True（后台回补中）
+_DEEP_REFRESH_LOCK = threading.Lock()
+
+
+def _deep_history_complete(code, min_days):
+    """深历史是否已齐备（供缓存命中判定）。"""
+    meta = _FULL_HIST_META.get(code)
+    if not meta:
+        return False
+    return (meta.get("days") or 0) >= int(min_days) and bool(meta.get("last_day"))
+
+
+def _reload_full_hist(code):
+    """回补 / restore 完成后，从磁盘重新载入深历史到进程内缓存，并更新 META。
+
+    使 dev_z 不必重启即切换到新补齐的深历史（否则 _FULL_HIST 会一直返回首次加载的旧值）。
+    整段在【按品种锁】保护下进行：回填线程（后台）与持有同品种锁的 VWAP 请求互斥，
+    避免请求侧读到半写的 _FULL_HIST / _FULL_HIST_META。
+    """
+    with _code_lock(code):
+        return _reload_full_hist_nolock(code)
+
+
+def _reload_full_hist_nolock(code):
+    p = os.path.join(_HIST_DIR, "%s_1min.pkl" % code.replace("/", "_").replace("\\", "_"))
+    bars = []
+    try:
+        with open(p, "rb") as f:
+            bars = (pickle.load(f) or {}).get("bars") or []
+    except Exception:
+        bars = []
+    src = "hist" if bars else "backup"
+    if not bars:
+        try:
+            from core import vwap_backup as _vb
+        except Exception:
+            try:
+                import vwap_backup as _vb
+            except Exception:
+                _vb = None
+        if _vb is not None:
+            try:
+                bars = _vb._read_bars(_vb.backup_path(code))
+            except Exception:
+                bars = []
+    days = set()
+    for b in bars:
+        d, hm = _hms(b["date"])
+        if _pos_of(hm) is not None:
+            days.add(d)
+    _FULL_HIST[code] = bars
+    _FULL_HIST_META[code] = {
+        "last_day": (max(days) if days else None),
+        "days": len(days), "src": src,
+    }
+    return bars
+
+
+def _refresh_deep_history(code, min_days):
+    """后台工作：国元拉取 + 比对存档 + 取最长/填补 + 形成缓存。"""
+    log = logging.getLogger("vwap-ensure")
+    try:
+        # 1) 本地已存数据接回 / 补（保证绝不丢本地数据，与 vwap_startup._ensure_one 同口径）
+        try:
+            from core import vwap_backup as _vb
+        except Exception:
+            try:
+                import vwap_backup as _vb
+            except Exception:
+                _vb = None
+        if _vb is not None:
+            hist_bars = _vb._read_bars(_vb.hist_path(code))
+            bk_bars = _vb._read_bars(_vb.backup_path(code))
+            if bk_bars:
+                if not hist_bars:
+                    # hist 完全缺失：把备份接回 hist（union，历史冻结，绝不丢本地数据）
+                    try:
+                        _vb.restore(code)
+                        log.info("[vwap-ensure] %s 备份接回 hist", code)
+                    except Exception as e:
+                        log.exception("[vwap-ensure] %s restore 失败：%r", code, e)
+                else:
+                    # hist 存在但不齐：用备份补其缺失日（union，旧值优先）
+                    merged, added = _vb.union_bars(hist_bars, bk_bars)
+                    if added:
+                        _vb._write_pkl_atomic(_vb.hist_path(code), {
+                            "bars": merged, "ts": time.time(),
+                            "source": "ensure:merge-backup", "code": code,
+                        })
+                        log.info("[vwap-ensure] %s 备份补 hist 缺口 %d 根", code, added)
+
+        # 2) 国元合肥锚点回补：resume 现有 hist、union 取最长、填补缺口、写 hist、刷新备份
+        try:
+            _tools = os.path.join(
+                os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "tools")
+            if _tools not in sys.path:
+                sys.path.insert(0, _tools)
+            from tools import backfill_vwap_history as _bf
+        except Exception:
+            try:
+                import backfill_vwap_history as _bf
+            except Exception as e:
+                log.error("[vwap-ensure] %s 无法 import backfill（pytdx 未装？）：%r", code, e)
+                _reload_full_hist(code)
+                return
+        try:
+            _bf.backfill(code)
+            log.info("[vwap-ensure] %s 国元回补完成", code)
+        except Exception as e:
+            log.exception("[vwap-ensure] %s 国元回补异常（保留现有数据，不覆盖）：%r", code, e)
+
+        # 3) 回填进程内缓存，使 dev_z 立即切换到深历史
+        _reload_full_hist(code)
+        log.info("[vwap-ensure] %s 深历史缓存已刷新：%d 日", code,
+                 (_FULL_HIST_META.get(code) or {}).get("days"))
+    finally:
+        with _DEEP_REFRESH_LOCK:
+            _DEEP_REFRESHING.pop(code, None)
+
+
+def _ensure_deep_history(code, min_days):
+    """非阻塞：深历史不齐备时，后台触发「国元拉取 + 比对存档 + 取最长/填补 + 形成缓存」。
+
+    齐备则跳过（命中缓存，不每次都拉）；同一品种已派发则不重复。dev_z 计算路径调用——
+    保证基线最终基于最大量深历史，而非静默退化成 30 日窗口。
+    """
+    _load_hist_full(code)   # 确保 META 已载入（缓存命中，几乎零成本）
+    if _deep_history_complete(code, min_days):
+        return
+    with _DEEP_REFRESH_LOCK:
+        if _DEEP_REFRESHING.get(code):
+            return
+        _DEEP_REFRESHING[code] = True
+    try:
+        threading.Thread(target=_refresh_deep_history, args=(code, min_days),
+                        name="vwap-ensure-%s" % code, daemon=True).start()
+        logging.getLogger("vwap-ensure").info(
+            "[vwap-ensure] %s 深历史不齐备，已派发后台回补（国元拉取 + 比对存档）", code)
+    except Exception:
+        with _DEEP_REFRESH_LOCK:
+            _DEEP_REFRESHING.pop(code, None)
+
+
+def deep_history_status(code, min_days=277):
+    """dev_z 深历史缓存状态（供运维面板 / 诊断）：天数、齐备否、是否回补中、数据来源。"""
+    _load_hist_full(code)   # 确保 META 已载入
+    meta = _FULL_HIST_META.get(code) or {}
+    days = meta.get("days") or 0
+    return {
+        "code": code,
+        "days": days,
+        "last_day": meta.get("last_day"),
+        "src": meta.get("src"),
+        "min_days": int(min_days),
+        "ready": days >= int(min_days),
+        "refreshing": bool(_DEEP_REFRESHING.get(code)),
+    }
+
+
+def prewarm_baselines(codes=None, min_days=277, atr_period=14):
+    """后台预热：把各品种的 dev_z expanding 基线算进 _BASE_CACHE。
+
+    使进入 VWAP 模式首屏即命中缓存，避免首个请求在请求线程里重算全量深历史
+    （~3.8s/品种）引发 waitress 任务队列积压（2026-09-24 修复）。应在服务启动时于后台
+    线程调用，不阻塞启动；深历史不齐备时会顺带触发 _ensure_deep_history（非阻塞回填）。
+
+    codes：待预热品种；缺省取 core.vwap_startup.CODES（与运维回补同源，单一事实来源）。
+    """
+    log = logging.getLogger("vwap-prewarm")
+    if not codes:
+        try:
+            from core import vwap_startup as _vsu
+        except Exception:
+            try:
+                import vwap_startup as _vsu
+            except Exception:
+                _vsu = None
+        codes = list(getattr(_vsu, "CODES", None) or ["IFL9", "IHL9", "ICL9", "IML9"])
+    log.info("[vwap-prewarm] 开始预热 %d 个品种基线", len(codes))
+    for code in codes:
+        try:
+            _build_baseline_expanding(code, hist_live=None, atr_period=int(atr_period))
+            log.info("[vwap-prewarm] %s 基线已预热（days=%d, src=%s）", code,
+                     (_FULL_HIST_META.get(code) or {}).get("days"),
+                     (_FULL_HIST_META.get(code) or {}).get("src"))
+        except Exception:
+            log.exception("[vwap-prewarm] %s 预热失败：", code)
+
+
 def _build_baseline_expanding(code, hist_live=None, atr_period=14):
     """expanding 口径基线：用**全部可得历史**按 pos 统计 mu / sd，并**排除最新交易日**。
 
@@ -513,6 +728,13 @@ def _build_baseline_expanding(code, hist_live=None, atr_period=14):
     """
     hist_deep = _load_hist_full(code)
     deep_last = (_FULL_HIST_META.get(code) or {}).get("last_day")
+
+    # 深历史不齐备 → 后台触发「国元拉取 + 比对存档 + 取最长/填补 + 形成缓存」。
+    # dev_z 计算路径自触发，保证基线最终基于最大量深历史，而非静默退化成 30 日窗口；
+    # 本次先用最佳可用数据（hist ∪ 备份）出结果，回填完成后下次轮询即切换到深历史。
+    min_days = int(DEFAULT_PARAMS.get("baseline_min_days", 277))
+    if not _deep_history_complete(code, min_days):
+        _ensure_deep_history(code, min_days)
 
     # 实时缓存里最新那个交易日（只扫尾部，避免整段遍历）
     live_last = None
@@ -832,7 +1054,9 @@ def build_vwap_view(code, params=None, days=30, leg='pm'):
     # 与本地 ATR（Wilder 收敛，30 日足够），封顶以免退化成几十页慢拉。
     live_days = min(int(days), 30) if bmode == "expanding" else int(days)
 
-    with _LOCK:
+    # 按品种锁（非全局锁）：同一品种串行、不同品种并行——解除多品种并发被全局锁
+    # 串行化导致的 waitress 任务队列积压（2026-09-24 修复）。
+    with _code_lock(code):
         hist, meta = get_history_1min(code, days=live_days)
         # 两腿止损统一 5 分钟口径（报告 §②③ 共用同一止损基准 ≈8.5→12.76）
         atr_map = _atr5_map(hist, period=int(p_pm["atr_period"])) if hist else {}

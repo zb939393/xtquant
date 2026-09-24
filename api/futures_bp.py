@@ -513,17 +513,34 @@ def futures_vwap_backfill():
             return jsonify({"ok": False, "error": str(e)})
 
     try:
+        # 同时透出进程内缓存状态（是否回补中、数据来源），便于观察「缓存形成」进度
+        try:
+            try:
+                from core import vwap_service as _vws
+            except Exception:
+                import vwap_service as _vws
+        except Exception:
+            _vws = None
         items = []
         for c in vb.CODES:
             st = vb.bar_stats(vb._read_bars(vb.hist_path(c)))
-            items.append({
+            row = {
                 "code": c,
                 "days": st["days"],
                 "first_day": st["first_day"],
                 "last_day": st["last_day"],
                 "n": st["n"],
                 "ready": st["days"] >= _MIN_VWAP_HIST_DAYS,
-            })
+            }
+            if _vws is not None:
+                try:
+                    info = _vws.deep_history_status(c, _MIN_VWAP_HIST_DAYS)
+                    row["src"] = info.get("src")
+                    row["refreshing"] = info.get("refreshing")
+                    row["in_memory_days"] = info.get("days")
+                except Exception:
+                    pass
+            items.append(row)
         return jsonify({"ok": True, "min_days": _MIN_VWAP_HIST_DAYS, "data": items})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)})

@@ -58,6 +58,16 @@ def create_app():
     except Exception:
         pass
 
+    # ---- VWAP 基线预热（后台，不阻塞启动）----
+    # 进入 VWAP 模式首屏即命中 _BASE_CACHE，避免首个请求在请求线程重算全量深历史
+    # （~3.8s/品种）引发 waitress 任务队列积压（2026-09-24 修复：按品种锁 + 启动预热）。
+    try:
+        import threading as _th
+        from core import vwap_service as _vws
+        _th.Thread(target=_vws.prewarm_baselines, daemon=True, name="vwap-prewarm").start()
+    except Exception:
+        pass
+
     @app.route("/")
     def index():
         # 首页：A 股市场概况（市场概况作为默认首页）
