@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>A股标准行情池 · 历史K线深度扫描报告</title>
+<style>
+* { box-sizing: border-box; }
+body { font-family: -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  margin: 0; background: #f5f7fa; color: #1f2937; line-height: 1.6; }
+.wrap { max-width: 980px; margin: 0 auto; padding: 28px 20px 60px; }
+header { background: linear-gradient(135deg,#2e86ab,#17a398); color:#fff; padding: 26px 28px; border-radius: 14px; }
+header h1 { margin:0 0 6px; font-size: 24px; }
+header .sub { opacity:.92; font-size: 13px; }
+h2 { margin-top: 38px; padding-left: 11px; border-left: 5px solid #2e86ab; font-size: 19px; }
+h3 { margin: 22px 0 12px; font-size: 16px; }
+h4 { margin: 18px 0 8px; font-size: 14px; color:#374151; }
+.card { background:#fff; border:1px solid #e5e7eb; border-radius:12px; padding:18px 20px; margin:14px 0;
+  box-shadow: 0 1px 3px rgba(0,0,0,.05); }
+table { width:100%; border-collapse: collapse; font-size: 13px; margin: 8px 0; }
+th,td { text-align:left; padding: 7px 9px; border-bottom:1px solid #eef0f3; }
+th { background:#f8fafc; color:#475569; font-weight:600; }
+td.num { text-align:right; font-variant-numeric: tabular-nums; }
+td.mono, .mono { font-family: ui-monospace, Menlo, Consolas, monospace; font-size:12.5px; }
+.muted { color:#9ca3af; }
+.dot { display:inline-block; width:10px; height:10px; border-radius:50%; margin-right:7px; vertical-align:middle; }
+.tag { background:#eef2f7; color:#475569; font-size:11px; padding:2px 8px; border-radius:20px; margin-left:6px; }
+.stat-row { display:flex; flex-wrap:wrap; gap:12px; margin:12px 0; }
+.stat { background:#f8fafc; border:1px solid #eef0f3; border-radius:10px; padding:10px 14px; min-width:120px; }
+.stat .k { font-size:11px; color:#6b7280; }
+.stat .v { font-size:19px; font-weight:700; color:#111827; }
+.anchor-line { background:#fff7ed; border:1px solid #fed7aa; color:#9a3412; padding:9px 12px;
+  border-radius:9px; font-size:13.5px; }
+.chart { background:#fcfcfd; border:1px solid #eef0f3; border-radius:10px; padding:10px; margin:10px 0; }
+table.fail th { background:#fef2f2; }
+.callout { background:#ecfdf5; border:1px solid #a7f3d0; border-radius:12px; padding:14px 18px; margin:16px 0; }
+.callout b { color:#065f46; }
+.note { font-size:12.5px; color:#6b7280; }
+.foot { margin-top:34px; font-size:12px; color:#9ca3af; text-align:center; }
+ul { padding-left: 20px; }
+li { margin: 4px 0; }
+code { background:#eef2f7; padding:1px 6px; border-radius:5px; font-size:12.5px; }
+</style></head>
+<body><div class="wrap">
+
+<header>
+  <h1>A股标准行情服务器池 · 历史 K 线深度扫描报告</h1>
+  <div class="sub">样本股 600000.SH ｜ 扫描日期 2026-09-24 16:11:10 ｜ 109 台标准行情服务器（TdxHq，端口 7709）｜
+  报告生成 2026-09-24 16:49</div>
+</header>
+
+<h2>一、背景与目标</h2>
+<div class="card">
+<p>为回答「<b>股票最大历史数据能否通过服务器方法读到 1/5 分钟 K 线</b>」，本项目沿用 VWAP 期指深历史的
+「<b>服务器池 + 分页取数</b>」思路，编写 <code>tools/scan_pool_history.py</code> 遍历 A 股标准行情池，
+逐台用二分查找探测各周期 K 线的最旧端，排序找出<b>保留历史最深的服务器</b>，作为 A 股历史数据的「锚点」。</p>
+<p class="note">关键纠正：股票历史 K 线在<b>标准行情池（TdxHq）</b>，不是期指专用的扩展行情池（ExHq）。
+二者服务器清单、端口、取数接口均不同。</p>
+</div>
+
+<h2>二、方法论</h2>
+<div class="card">
+<ul>
+  <li><b>取数后端</b>：<code>pytdx.hq.TdxHq_API.get_security_bars(cat, market, code6, start, count)</code>，端口 7709。</li>
+  <li><b>start 语义（实测定论）</b>：<code>start=0</code> 取<b>最新一页</b>（距今天最近），<code>start</code> 增大向历史回退，越过总量即返回空；
+      每页<b>时间升序</b>（首根最旧、末根最新）；单次上限约 700 根。</li>
+  <li><b>深度探测算法</b>：从最新页出发，倍增找上界 → 二分定位「最后一个整页 start（最旧端）」→
+      该页首根即绝对最旧 bar，总量 = start + 该页根数。带 TCP 可达性预检 + 取数重试，避免把瞬断误判成历史末端。</li>
+  <li><b>周期类别</b>：<code>_PERIOD_CAT</code> 映射 —— 1min=7、5min=0、15min=1、30min=2。</li>
+  <li><b>扫描范围</b>：标准行情池全量 109 台，12 并发，单台超时 6s。</li>
+</ul>
+</div>
+
+<h2>三、核心发现：四周期横向对比</h2>
+<div class="card">
+<table>
+  <thead><tr><th>周期</th><th>cat</th><th>全池最深根数</th><th>最早日期</th><th>最晚日期</th><th>日历跨度</th></tr></thead>
+  <tbody><tr><td><span class='dot' style='background:#e4572e'></span>1 分钟</td><td>7</td><td class='num'>24,000</td><td>2026-05-07</td><td>2026-09-24</td><td>141 天</td></tr>
+<tr><td><span class='dot' style='background:#2e86ab'></span>5 分钟</td><td>0</td><td class='num'>24,001</td><td>2024-09-02</td><td>2026-09-24</td><td>753 天</td></tr>
+<tr><td><span class='dot' style='background:#17a398'></span>15 分钟</td><td>1</td><td class='num'>8,000</td><td>2024-09-03</td><td>2026-09-24</td><td>752 天</td></tr>
+<tr><td><span class='dot' style='background:#7b2cbf'></span>30 分钟</td><td>2</td><td class='num'>4,000</td><td>2024-09-03</td><td>2026-09-24</td><td>752 天</td></tr>
+</tbody>
+</table>
+<div class="chart"><svg viewBox="0 0 640 240" width="100%" preserveAspectRatio="xMinYMin meet" style="font-family:inherit;font-size:12px"><rect x="42" y="9" width="36" height="89" rx="3" fill="#2e86ab"/><text x="60" y="5" text-anchor="middle" fill="#2e86ab" font-weight="600">24k</text><rect x="82" y="200" width="36" height="16" rx="3" fill="#e4572e"/><text x="100" y="196" text-anchor="middle" fill="#e4572e" font-weight="600">141</text><text x="80" y="234" text-anchor="middle" fill="#333" font-weight="600">1 分钟</text><rect x="202" y="8" width="36" height="90" rx="3" fill="#2e86ab"/><text x="220" y="4" text-anchor="middle" fill="#2e86ab" font-weight="600">24k</text><rect x="242" y="126" width="36" height="90" rx="3" fill="#e4572e"/><text x="260" y="122" text-anchor="middle" fill="#e4572e" font-weight="600">753</text><text x="240" y="234" text-anchor="middle" fill="#333" font-weight="600">5 分钟</text><rect x="362" y="69" width="36" height="29" rx="3" fill="#2e86ab"/><text x="380" y="65" text-anchor="middle" fill="#2e86ab" font-weight="600">8k</text><rect x="402" y="127" width="36" height="89" rx="3" fill="#e4572e"/><text x="420" y="123" text-anchor="middle" fill="#e4572e" font-weight="600">752</text><text x="400" y="234" text-anchor="middle" fill="#333" font-weight="600">15 分钟</text><rect x="522" y="84" width="36" height="14" rx="3" fill="#2e86ab"/><text x="540" y="80" text-anchor="middle" fill="#2e86ab" font-weight="600">4k</text><rect x="562" y="127" width="36" height="89" rx="3" fill="#e4572e"/><text x="580" y="123" text-anchor="middle" fill="#e4572e" font-weight="600">752</text><text x="560" y="234" text-anchor="middle" fill="#333" font-weight="600">30 分钟</text><text x="6" y="4" fill="#2e86ab" font-size="11">■ 根数(千)</text><text x="80" y="4" fill="#e4572e" font-size="11">■ 日历天数</text></svg></div>
+<div class="callout">
+  <b>⚠️ 推翻了「根数上限固定、周期越粗回溯越久」的初步假设。</b><br>
+  实测表明标准行情主站对<b>子日线（分钟级）统一保留约 2 年的日历深度</b>，而非固定根数上限：
+  <ul style="margin:8px 0 0">
+    <li><b>1 分钟</b>：单根太密，24000 根只够 ~141 天就先撞上根数天花板 → <b>反而最短</b>；</li>
+    <li><b>5 分钟</b>：24000 根 ≈ 刚好铺满 2 年 → <b>达到「最深日历 2 年」且根数最大</b>；</li>
+    <li><b>15 / 30 分钟</b>：在 2 年窗口内根数分别降到 8000 / 4000，但<b>日历深度一样卡在 2024-09-03，再粗也穿不过 2 年</b>。</li>
+  </ul>
+  <p style="margin:8px 0 0"><b>结论</b>：bar 数随周期线性递减，<b>日历深度在 5 分钟已封顶于 ~2 年</b>。
+  想拿 A 股标准主站能给的最长历史，<b>5 分钟（cat=0）就是最优解</b>——既最长（2 年）又最密（24000 根）。</p>
+</div>
+</div>
+
+<h2>四、各周期详情（全量 109 台）</h2>
+
+        <div class="card">
+          <h3>1 分钟 <span class="tag">cat=7</span></h3>
+          <div class="stat-row">
+            <div class="stat"><div class="k">全池最深根数</div><div class="v">24,000</div></div>
+            <div class="stat"><div class="k">最早日期</div><div class="v">2026-05-07</div></div>
+            <div class="stat"><div class="k">日历跨度</div><div class="v">141 天</div></div>
+            <div class="stat"><div class="k">可达且有数据</div><div class="v">103 / 109</div></div>
+          </div>
+          <p class="anchor-line">🏆 最大历史服务器：<b>国君南京电信1</b>
+             (<span class="mono">103.221.142.65:7709</span>)</p>
+          <div class="chart"><svg viewBox="0 0 560 332" width="100%" preserveAspectRatio="xMinYMin meet" style="font-family:inherit;font-size:12px"><rect x="180" y="10" width="360" height="18" rx="3" fill="#e4572e"/><text x="176" y="19" text-anchor="end" dominant-baseline="middle" fill="#333">国君南京电信1</text><text x="546" y="19" dominant-baseline="middle" fill="#333" font-weight="600">24,000</text><rect x="180" y="36" width="360" height="18" rx="3" fill="#e4572e"/><text x="176" y="45" text-anchor="end" dominant-baseline="middle" fill="#333">国君南京电信2</text><text x="546" y="45" dominant-baseline="middle" fill="#333" font-weight="600">24,000</text><rect x="180" y="62" width="360" height="18" rx="3" fill="#e4572e"/><text x="176" y="71" text-anchor="end" dominant-baseline="middle" fill="#333">国君南京电信5</text><text x="546" y="71" dominant-baseline="middle" fill="#333" font-weight="600">24,000</text><rect x="180" y="88" width="360" height="18" rx="3" fill="#e4572e"/><text x="176" y="97" text-anchor="end" dominant-baseline="middle" fill="#333">国君南京电信4</text><text x="546" y="97" dominant-baseline="middle" fill="#333" font-weight="600">24,000</text><rect x="180" y="114" width="360" height="18" rx="3" fill="#e4572e"/><text x="176" y="123" text-anchor="end" dominant-baseline="middle" fill="#333">国君南京电信6</text><text x="546" y="123" dominant-baseline="middle" fill="#333" font-weight="600">24,000</text><rect x="180" y="140" width="360" height="18" rx="3" fill="#e4572e"/><text x="176" y="149" text-anchor="end" dominant-baseline="middle" fill="#333">国君南京电信3</text><text x="546" y="149" dominant-baseline="middle" fill="#333" font-weight="600">24,000</text><rect x="180" y="166" width="360" height="18" rx="3" fill="#e4572e"/><text x="176" y="175" text-anchor="end" dominant-baseline="middle" fill="#333">国君南京电信8</text><text x="546" y="175" dominant-baseline="middle" fill="#333" font-weight="600">24,000</text><rect x="180" y="192" width="360" height="18" rx="3" fill="#e4572e"/><text x="176" y="201" text-anchor="end" dominant-baseline="middle" fill="#333">国君江苏主站</text><text x="546" y="201" dominant-baseline="middle" fill="#333" font-weight="600">24,000</text><rect x="180" y="218" width="356" height="18" rx="3" fill="#e4572e"/><text x="176" y="227" text-anchor="end" dominant-baseline="middle" fill="#333">国元成都云电信</text><text x="542" y="227" dominant-baseline="middle" fill="#333" font-weight="600">23,760</text><rect x="180" y="244" width="356" height="18" rx="3" fill="#e4572e"/><text x="176" y="253" text-anchor="end" dominant-baseline="middle" fill="#333">国元广州云电信</text><text x="542" y="253" dominant-baseline="middle" fill="#333" font-weight="600">23,760</text><rect x="180" y="270" width="356" height="18" rx="3" fill="#e4572e"/><text x="176" y="279" text-anchor="end" dominant-baseline="middle" fill="#333">国元广州云移动</text><text x="542" y="279" dominant-baseline="middle" fill="#333" font-weight="600">23,760</text><rect x="180" y="296" width="356" height="18" rx="3" fill="#e4572e"/><text x="176" y="305" text-anchor="end" dominant-baseline="middle" fill="#333">国君北京联通1</text><text x="542" y="305" dominant-baseline="middle" fill="#333" font-weight="600">23,760</text></svg></div>
+          <h4>Top 12 排名</h4>
+          <table>
+            <thead><tr><th>#</th><th>服务器</th><th>地址</th><th>根数</th><th>最早</th><th>最晚</th><th>天数</th></tr></thead>
+            <tbody><tr><td>1</td><td>国君南京电信1</td><td class='mono'>103.221.142.65:7709</td><td class='num'>24,000</td><td>2026-05-07</td><td>2026-09-24</td><td>141</td></tr>
+<tr><td>2</td><td>国君南京电信2</td><td class='mono'>103.221.142.66:7709</td><td class='num'>24,000</td><td>2026-05-07</td><td>2026-09-24</td><td>141</td></tr>
+<tr><td>3</td><td>国君南京电信5</td><td class='mono'>103.221.142.69:7709</td><td class='num'>24,000</td><td>2026-05-07</td><td>2026-09-24</td><td>141</td></tr>
+<tr><td>4</td><td>国君南京电信4</td><td class='mono'>103.221.142.68:7709</td><td class='num'>24,000</td><td>2026-05-07</td><td>2026-09-24</td><td>141</td></tr>
+<tr><td>5</td><td>国君南京电信6</td><td class='mono'>103.221.142.70:7709</td><td class='num'>24,000</td><td>2026-05-07</td><td>2026-09-24</td><td>141</td></tr>
+<tr><td>6</td><td>国君南京电信3</td><td class='mono'>103.221.142.67:7709</td><td class='num'>24,000</td><td>2026-05-07</td><td>2026-09-24</td><td>141</td></tr>
+<tr><td>7</td><td>国君南京电信8</td><td class='mono'>103.221.142.72:7709</td><td class='num'>24,000</td><td>2026-05-07</td><td>2026-09-24</td><td>141</td></tr>
+<tr><td>8</td><td>国君江苏主站</td><td class='mono'>jstdx.gtjas.com:7709</td><td class='num'>24,000</td><td>2026-05-07</td><td>2026-09-24</td><td>141</td></tr>
+<tr><td>9</td><td>国元成都云电信</td><td class='mono'>61.188.177.227:7709</td><td class='num'>23,760</td><td>2026-05-08</td><td>2026-09-24</td><td>140</td></tr>
+<tr><td>10</td><td>国元广州云电信</td><td class='mono'>58.63.252.107:7709</td><td class='num'>23,760</td><td>2026-05-08</td><td>2026-09-24</td><td>140</td></tr>
+<tr><td>11</td><td>国元广州云移动</td><td class='mono'>120.232.150.204:7709</td><td class='num'>23,760</td><td>2026-05-08</td><td>2026-09-24</td><td>140</td></tr>
+<tr><td>12</td><td>国君北京联通1</td><td class='mono'>123.125.108.187:7709</td><td class='num'>23,760</td><td>2026-05-08</td><td>2026-09-24</td><td>140</td></tr>
+</tbody>
+          </table>
+          <h4>不可达 / 无数据（6 台）</h4>
+          <table class="fail">
+            <thead><tr><th>服务器</th><th>地址</th><th>原因</th></tr></thead>
+            <tbody><tr><td>华泰华为云2</td><td class='mono'>124.71.163.106:7709</td><td>边界空(瞬断误判)</td></tr>
+<tr><td>安信1</td><td class='mono'>59.36.5.11:7709</td><td>无数据</td></tr>
+<tr><td>国元合肥移动2</td><td class='mono'>221.130.121.45:7709</td><td>无数据</td></tr>
+<tr><td>通达信HF深圳双线9</td><td class='mono'>159.75.55.232:7709</td><td>无数据</td></tr>
+<tr><td>国君成都主站</td><td class='mono'>cdtdx.gtjas.com:7709</td><td>TCP 不可达</td></tr>
+<tr><td>国君西安1</td><td class='mono'>117.34.114.13:7709</td><td>TCP 不可达</td></tr>
+</tbody>
+          </table>
+        </div>
+        
+        <div class="card">
+          <h3>5 分钟 <span class="tag">cat=0</span></h3>
+          <div class="stat-row">
+            <div class="stat"><div class="k">全池最深根数</div><div class="v">24,001</div></div>
+            <div class="stat"><div class="k">最早日期</div><div class="v">2024-09-02</div></div>
+            <div class="stat"><div class="k">日历跨度</div><div class="v">753 天</div></div>
+            <div class="stat"><div class="k">可达且有数据</div><div class="v">104 / 109</div></div>
+          </div>
+          <p class="anchor-line">🏆 最大历史服务器：<b>国信阿里云华东2</b>
+             (<span class="mono">101.133.129.19:7709</span>)</p>
+          <div class="chart"><svg viewBox="0 0 560 332" width="100%" preserveAspectRatio="xMinYMin meet" style="font-family:inherit;font-size:12px"><rect x="180" y="10" width="360" height="18" rx="3" fill="#2e86ab"/><text x="176" y="19" text-anchor="end" dominant-baseline="middle" fill="#333">国信阿里云华东2</text><text x="546" y="19" dominant-baseline="middle" fill="#333" font-weight="600">24,001</text><rect x="180" y="36" width="360" height="18" rx="3" fill="#2e86ab"/><text x="176" y="45" text-anchor="end" dominant-baseline="middle" fill="#333">国信阿里云华南2</text><text x="546" y="45" dominant-baseline="middle" fill="#333" font-weight="600">24,001</text><rect x="180" y="62" width="359" height="18" rx="3" fill="#2e86ab"/><text x="176" y="71" text-anchor="end" dominant-baseline="middle" fill="#333">国君南京电信1</text><text x="545" y="71" dominant-baseline="middle" fill="#333" font-weight="600">24,000</text><rect x="180" y="88" width="359" height="18" rx="3" fill="#2e86ab"/><text x="176" y="97" text-anchor="end" dominant-baseline="middle" fill="#333">国君南京电信2</text><text x="545" y="97" dominant-baseline="middle" fill="#333" font-weight="600">24,000</text><rect x="180" y="114" width="359" height="18" rx="3" fill="#2e86ab"/><text x="176" y="123" text-anchor="end" dominant-baseline="middle" fill="#333">国君南京电信3</text><text x="545" y="123" dominant-baseline="middle" fill="#333" font-weight="600">24,000</text><rect x="180" y="140" width="359" height="18" rx="3" fill="#2e86ab"/><text x="176" y="149" text-anchor="end" dominant-baseline="middle" fill="#333">国君南京电信4</text><text x="545" y="149" dominant-baseline="middle" fill="#333" font-weight="600">24,000</text><rect x="180" y="166" width="359" height="18" rx="3" fill="#2e86ab"/><text x="176" y="175" text-anchor="end" dominant-baseline="middle" fill="#333">国君南京电信5</text><text x="545" y="175" dominant-baseline="middle" fill="#333" font-weight="600">24,000</text><rect x="180" y="192" width="359" height="18" rx="3" fill="#2e86ab"/><text x="176" y="201" text-anchor="end" dominant-baseline="middle" fill="#333">国君南京电信6</text><text x="545" y="201" dominant-baseline="middle" fill="#333" font-weight="600">24,000</text><rect x="180" y="218" width="359" height="18" rx="3" fill="#2e86ab"/><text x="176" y="227" text-anchor="end" dominant-baseline="middle" fill="#333">国君南京电信8</text><text x="545" y="227" dominant-baseline="middle" fill="#333" font-weight="600">24,000</text><rect x="180" y="244" width="359" height="18" rx="3" fill="#2e86ab"/><text x="176" y="253" text-anchor="end" dominant-baseline="middle" fill="#333">国君江苏主站</text><text x="545" y="253" dominant-baseline="middle" fill="#333" font-weight="600">24,000</text><rect x="180" y="270" width="359" height="18" rx="3" fill="#2e86ab"/><text x="176" y="279" text-anchor="end" dominant-baseline="middle" fill="#333">国君新疆1</text><text x="545" y="279" dominant-baseline="middle" fill="#333" font-weight="600">24,000</text><rect x="180" y="296" width="359" height="18" rx="3" fill="#2e86ab"/><text x="176" y="305" text-anchor="end" dominant-baseline="middle" fill="#333">长城深圳移动1</text><text x="545" y="305" dominant-baseline="middle" fill="#333" font-weight="600">23,952</text></svg></div>
+          <h4>Top 12 排名</h4>
+          <table>
+            <thead><tr><th>#</th><th>服务器</th><th>地址</th><th>根数</th><th>最早</th><th>最晚</th><th>天数</th></tr></thead>
+            <tbody><tr><td>1</td><td>国信阿里云华东2</td><td class='mono'>101.133.129.19:7709</td><td class='num'>24,001</td><td>2024-09-02</td><td>2026-09-24</td><td>753</td></tr>
+<tr><td>2</td><td>国信阿里云华南2</td><td class='mono'>120.24.231.30:7709</td><td class='num'>24,001</td><td>2024-09-02</td><td>2026-09-24</td><td>753</td></tr>
+<tr><td>3</td><td>国君南京电信1</td><td class='mono'>103.221.142.65:7709</td><td class='num'>24,000</td><td>2024-09-03</td><td>2026-09-24</td><td>752</td></tr>
+<tr><td>4</td><td>国君南京电信2</td><td class='mono'>103.221.142.66:7709</td><td class='num'>24,000</td><td>2024-09-03</td><td>2026-09-24</td><td>752</td></tr>
+<tr><td>5</td><td>国君南京电信3</td><td class='mono'>103.221.142.67:7709</td><td class='num'>24,000</td><td>2024-09-03</td><td>2026-09-24</td><td>752</td></tr>
+<tr><td>6</td><td>国君南京电信4</td><td class='mono'>103.221.142.68:7709</td><td class='num'>24,000</td><td>2024-09-03</td><td>2026-09-24</td><td>752</td></tr>
+<tr><td>7</td><td>国君南京电信5</td><td class='mono'>103.221.142.69:7709</td><td class='num'>24,000</td><td>2024-09-03</td><td>2026-09-24</td><td>752</td></tr>
+<tr><td>8</td><td>国君南京电信6</td><td class='mono'>103.221.142.70:7709</td><td class='num'>24,000</td><td>2024-09-03</td><td>2026-09-24</td><td>752</td></tr>
+<tr><td>9</td><td>国君南京电信8</td><td class='mono'>103.221.142.72:7709</td><td class='num'>24,000</td><td>2024-09-03</td><td>2026-09-24</td><td>752</td></tr>
+<tr><td>10</td><td>国君江苏主站</td><td class='mono'>jstdx.gtjas.com:7709</td><td class='num'>24,000</td><td>2024-09-03</td><td>2026-09-24</td><td>752</td></tr>
+<tr><td>11</td><td>国君新疆1</td><td class='mono'>202.100.166.117:7709</td><td class='num'>24,000</td><td>2024-09-03</td><td>2026-09-24</td><td>752</td></tr>
+<tr><td>12</td><td>长城深圳移动1</td><td class='mono'>221.179.18.108:7709</td><td class='num'>23,952</td><td>2024-09-04</td><td>2026-09-24</td><td>751</td></tr>
+</tbody>
+          </table>
+          <h4>不可达 / 无数据（5 台）</h4>
+          <table class="fail">
+            <thead><tr><th>服务器</th><th>地址</th><th>原因</th></tr></thead>
+            <tbody><tr><td>安信1</td><td class='mono'>59.36.5.11:7709</td><td>无数据</td></tr>
+<tr><td>国元合肥联通2</td><td class='mono'>218.106.80.15:7709</td><td>无数据</td></tr>
+<tr><td>国信阿里云华东</td><td class='mono'>101.133.231.193:7709</td><td>边界空(瞬断误判)</td></tr>
+<tr><td>通达信HF深圳双线9</td><td class='mono'>159.75.55.232:7709</td><td>无数据</td></tr>
+<tr><td>国君西安1</td><td class='mono'>117.34.114.13:7709</td><td>TCP 不可达</td></tr>
+</tbody>
+          </table>
+        </div>
+        
+        <div class="card">
+          <h3>15 分钟 <span class="tag">cat=1</span></h3>
+          <div class="stat-row">
+            <div class="stat"><div class="k">全池最深根数</div><div class="v">8,000</div></div>
+            <div class="stat"><div class="k">最早日期</div><div class="v">2024-09-03</div></div>
+            <div class="stat"><div class="k">日历跨度</div><div class="v">752 天</div></div>
+            <div class="stat"><div class="k">可达且有数据</div><div class="v">104 / 109</div></div>
+          </div>
+          <p class="anchor-line">🏆 最大历史服务器：<b>国君南京电信1</b>
+             (<span class="mono">103.221.142.65:7709</span>)</p>
+          <div class="chart"><svg viewBox="0 0 560 332" width="100%" preserveAspectRatio="xMinYMin meet" style="font-family:inherit;font-size:12px"><rect x="180" y="10" width="360" height="18" rx="3" fill="#17a398"/><text x="176" y="19" text-anchor="end" dominant-baseline="middle" fill="#333">国君南京电信1</text><text x="546" y="19" dominant-baseline="middle" fill="#333" font-weight="600">8,000</text><rect x="180" y="36" width="360" height="18" rx="3" fill="#17a398"/><text x="176" y="45" text-anchor="end" dominant-baseline="middle" fill="#333">国君南京电信3</text><text x="546" y="45" dominant-baseline="middle" fill="#333" font-weight="600">8,000</text><rect x="180" y="62" width="360" height="18" rx="3" fill="#17a398"/><text x="176" y="71" text-anchor="end" dominant-baseline="middle" fill="#333">国君南京电信2</text><text x="546" y="71" dominant-baseline="middle" fill="#333" font-weight="600">8,000</text><rect x="180" y="88" width="360" height="18" rx="3" fill="#17a398"/><text x="176" y="97" text-anchor="end" dominant-baseline="middle" fill="#333">国君南京电信4</text><text x="546" y="97" dominant-baseline="middle" fill="#333" font-weight="600">8,000</text><rect x="180" y="114" width="360" height="18" rx="3" fill="#17a398"/><text x="176" y="123" text-anchor="end" dominant-baseline="middle" fill="#333">国君南京电信6</text><text x="546" y="123" dominant-baseline="middle" fill="#333" font-weight="600">8,000</text><rect x="180" y="140" width="360" height="18" rx="3" fill="#17a398"/><text x="176" y="149" text-anchor="end" dominant-baseline="middle" fill="#333">国君南京电信8</text><text x="546" y="149" dominant-baseline="middle" fill="#333" font-weight="600">8,000</text><rect x="180" y="166" width="360" height="18" rx="3" fill="#17a398"/><text x="176" y="175" text-anchor="end" dominant-baseline="middle" fill="#333">国君南京电信5</text><text x="546" y="175" dominant-baseline="middle" fill="#333" font-weight="600">8,000</text><rect x="180" y="192" width="360" height="18" rx="3" fill="#17a398"/><text x="176" y="201" text-anchor="end" dominant-baseline="middle" fill="#333">国君江苏主站</text><text x="546" y="201" dominant-baseline="middle" fill="#333" font-weight="600">8,000</text><rect x="180" y="218" width="360" height="18" rx="3" fill="#17a398"/><text x="176" y="227" text-anchor="end" dominant-baseline="middle" fill="#333">国君新疆1</text><text x="546" y="227" dominant-baseline="middle" fill="#333" font-weight="600">8,000</text><rect x="180" y="244" width="359" height="18" rx="3" fill="#17a398"/><text x="176" y="253" text-anchor="end" dominant-baseline="middle" fill="#333">长城深圳移动1</text><text x="545" y="253" dominant-baseline="middle" fill="#333" font-weight="600">7,984</text><rect x="180" y="270" width="358" height="18" rx="3" fill="#17a398"/><text x="176" y="279" text-anchor="end" dominant-baseline="middle" fill="#333">长城深圳电信1</text><text x="544" y="279" dominant-baseline="middle" fill="#333" font-weight="600">7,968</text><rect x="180" y="296" width="358" height="18" rx="3" fill="#17a398"/><text x="176" y="305" text-anchor="end" dominant-baseline="middle" fill="#333">长城深圳联通2</text><text x="544" y="305" dominant-baseline="middle" fill="#333" font-weight="600">7,968</text></svg></div>
+          <h4>Top 12 排名</h4>
+          <table>
+            <thead><tr><th>#</th><th>服务器</th><th>地址</th><th>根数</th><th>最早</th><th>最晚</th><th>天数</th></tr></thead>
+            <tbody><tr><td>1</td><td>国君南京电信1</td><td class='mono'>103.221.142.65:7709</td><td class='num'>8,000</td><td>2024-09-03</td><td>2026-09-24</td><td>752</td></tr>
+<tr><td>2</td><td>国君南京电信3</td><td class='mono'>103.221.142.67:7709</td><td class='num'>8,000</td><td>2024-09-03</td><td>2026-09-24</td><td>752</td></tr>
+<tr><td>3</td><td>国君南京电信2</td><td class='mono'>103.221.142.66:7709</td><td class='num'>8,000</td><td>2024-09-03</td><td>2026-09-24</td><td>752</td></tr>
+<tr><td>4</td><td>国君南京电信4</td><td class='mono'>103.221.142.68:7709</td><td class='num'>8,000</td><td>2024-09-03</td><td>2026-09-24</td><td>752</td></tr>
+<tr><td>5</td><td>国君南京电信6</td><td class='mono'>103.221.142.70:7709</td><td class='num'>8,000</td><td>2024-09-03</td><td>2026-09-24</td><td>752</td></tr>
+<tr><td>6</td><td>国君南京电信8</td><td class='mono'>103.221.142.72:7709</td><td class='num'>8,000</td><td>2024-09-03</td><td>2026-09-24</td><td>752</td></tr>
+<tr><td>7</td><td>国君南京电信5</td><td class='mono'>103.221.142.69:7709</td><td class='num'>8,000</td><td>2024-09-03</td><td>2026-09-24</td><td>752</td></tr>
+<tr><td>8</td><td>国君江苏主站</td><td class='mono'>jstdx.gtjas.com:7709</td><td class='num'>8,000</td><td>2024-09-03</td><td>2026-09-24</td><td>752</td></tr>
+<tr><td>9</td><td>国君新疆1</td><td class='mono'>202.100.166.117:7709</td><td class='num'>8,000</td><td>2024-09-03</td><td>2026-09-24</td><td>752</td></tr>
+<tr><td>10</td><td>长城深圳移动1</td><td class='mono'>221.179.18.108:7709</td><td class='num'>7,984</td><td>2024-09-04</td><td>2026-09-24</td><td>751</td></tr>
+<tr><td>11</td><td>长城深圳电信1</td><td class='mono'>219.133.95.102:7709</td><td class='num'>7,968</td><td>2024-09-05</td><td>2026-09-24</td><td>750</td></tr>
+<tr><td>12</td><td>长城深圳联通2</td><td class='mono'>210.21.198.233:7709</td><td class='num'>7,968</td><td>2024-09-05</td><td>2026-09-24</td><td>750</td></tr>
+</tbody>
+          </table>
+          <h4>不可达 / 无数据（5 台）</h4>
+          <table class="fail">
+            <thead><tr><th>服务器</th><th>地址</th><th>原因</th></tr></thead>
+            <tbody><tr><td>安信1</td><td class='mono'>59.36.5.11:7709</td><td>无数据</td></tr>
+<tr><td>国元合肥联通2</td><td class='mono'>218.106.80.15:7709</td><td>无数据</td></tr>
+<tr><td>长城苏州电信1</td><td class='mono'>58.210.106.10:7709</td><td>TCP 不可达</td></tr>
+<tr><td>通达信HF深圳双线9</td><td class='mono'>159.75.55.232:7709</td><td>无数据</td></tr>
+<tr><td>国君西安1</td><td class='mono'>117.34.114.13:7709</td><td>TCP 不可达</td></tr>
+</tbody>
+          </table>
+        </div>
+        
+        <div class="card">
+          <h3>30 分钟 <span class="tag">cat=2</span></h3>
+          <div class="stat-row">
+            <div class="stat"><div class="k">全池最深根数</div><div class="v">4,000</div></div>
+            <div class="stat"><div class="k">最早日期</div><div class="v">2024-09-03</div></div>
+            <div class="stat"><div class="k">日历跨度</div><div class="v">752 天</div></div>
+            <div class="stat"><div class="k">可达且有数据</div><div class="v">102 / 109</div></div>
+          </div>
+          <p class="anchor-line">🏆 最大历史服务器：<b>国君南京电信1</b>
+             (<span class="mono">103.221.142.65:7709</span>)</p>
+          <div class="chart"><svg viewBox="0 0 560 332" width="100%" preserveAspectRatio="xMinYMin meet" style="font-family:inherit;font-size:12px"><rect x="180" y="10" width="360" height="18" rx="3" fill="#7b2cbf"/><text x="176" y="19" text-anchor="end" dominant-baseline="middle" fill="#333">国君南京电信1</text><text x="546" y="19" dominant-baseline="middle" fill="#333" font-weight="600">4,000</text><rect x="180" y="36" width="360" height="18" rx="3" fill="#7b2cbf"/><text x="176" y="45" text-anchor="end" dominant-baseline="middle" fill="#333">国君南京电信2</text><text x="546" y="45" dominant-baseline="middle" fill="#333" font-weight="600">4,000</text><rect x="180" y="62" width="360" height="18" rx="3" fill="#7b2cbf"/><text x="176" y="71" text-anchor="end" dominant-baseline="middle" fill="#333">国君南京电信3</text><text x="546" y="71" dominant-baseline="middle" fill="#333" font-weight="600">4,000</text><rect x="180" y="88" width="360" height="18" rx="3" fill="#7b2cbf"/><text x="176" y="97" text-anchor="end" dominant-baseline="middle" fill="#333">国君南京电信4</text><text x="546" y="97" dominant-baseline="middle" fill="#333" font-weight="600">4,000</text><rect x="180" y="114" width="360" height="18" rx="3" fill="#7b2cbf"/><text x="176" y="123" text-anchor="end" dominant-baseline="middle" fill="#333">国君南京电信6</text><text x="546" y="123" dominant-baseline="middle" fill="#333" font-weight="600">4,000</text><rect x="180" y="140" width="360" height="18" rx="3" fill="#7b2cbf"/><text x="176" y="149" text-anchor="end" dominant-baseline="middle" fill="#333">国君南京电信5</text><text x="546" y="149" dominant-baseline="middle" fill="#333" font-weight="600">4,000</text><rect x="180" y="166" width="360" height="18" rx="3" fill="#7b2cbf"/><text x="176" y="175" text-anchor="end" dominant-baseline="middle" fill="#333">国君南京电信8</text><text x="546" y="175" dominant-baseline="middle" fill="#333" font-weight="600">4,000</text><rect x="180" y="192" width="360" height="18" rx="3" fill="#7b2cbf"/><text x="176" y="201" text-anchor="end" dominant-baseline="middle" fill="#333">国君江苏主站</text><text x="546" y="201" dominant-baseline="middle" fill="#333" font-weight="600">4,000</text><rect x="180" y="218" width="360" height="18" rx="3" fill="#7b2cbf"/><text x="176" y="227" text-anchor="end" dominant-baseline="middle" fill="#333">国君新疆1</text><text x="546" y="227" dominant-baseline="middle" fill="#333" font-weight="600">4,000</text><rect x="180" y="244" width="359" height="18" rx="3" fill="#7b2cbf"/><text x="176" y="253" text-anchor="end" dominant-baseline="middle" fill="#333">长城深圳移动1</text><text x="545" y="253" dominant-baseline="middle" fill="#333" font-weight="600">3,992</text><rect x="180" y="270" width="358" height="18" rx="3" fill="#7b2cbf"/><text x="176" y="279" text-anchor="end" dominant-baseline="middle" fill="#333">长城深圳电信1</text><text x="544" y="279" dominant-baseline="middle" fill="#333" font-weight="600">3,984</text><rect x="180" y="296" width="358" height="18" rx="3" fill="#7b2cbf"/><text x="176" y="305" text-anchor="end" dominant-baseline="middle" fill="#333">长城深圳联通2</text><text x="544" y="305" dominant-baseline="middle" fill="#333" font-weight="600">3,984</text></svg></div>
+          <h4>Top 12 排名</h4>
+          <table>
+            <thead><tr><th>#</th><th>服务器</th><th>地址</th><th>根数</th><th>最早</th><th>最晚</th><th>天数</th></tr></thead>
+            <tbody><tr><td>1</td><td>国君南京电信1</td><td class='mono'>103.221.142.65:7709</td><td class='num'>4,000</td><td>2024-09-03</td><td>2026-09-24</td><td>752</td></tr>
+<tr><td>2</td><td>国君南京电信2</td><td class='mono'>103.221.142.66:7709</td><td class='num'>4,000</td><td>2024-09-03</td><td>2026-09-24</td><td>752</td></tr>
+<tr><td>3</td><td>国君南京电信3</td><td class='mono'>103.221.142.67:7709</td><td class='num'>4,000</td><td>2024-09-03</td><td>2026-09-24</td><td>752</td></tr>
+<tr><td>4</td><td>国君南京电信4</td><td class='mono'>103.221.142.68:7709</td><td class='num'>4,000</td><td>2024-09-03</td><td>2026-09-24</td><td>752</td></tr>
+<tr><td>5</td><td>国君南京电信6</td><td class='mono'>103.221.142.70:7709</td><td class='num'>4,000</td><td>2024-09-03</td><td>2026-09-24</td><td>752</td></tr>
+<tr><td>6</td><td>国君南京电信5</td><td class='mono'>103.221.142.69:7709</td><td class='num'>4,000</td><td>2024-09-03</td><td>2026-09-24</td><td>752</td></tr>
+<tr><td>7</td><td>国君南京电信8</td><td class='mono'>103.221.142.72:7709</td><td class='num'>4,000</td><td>2024-09-03</td><td>2026-09-24</td><td>752</td></tr>
+<tr><td>8</td><td>国君江苏主站</td><td class='mono'>jstdx.gtjas.com:7709</td><td class='num'>4,000</td><td>2024-09-03</td><td>2026-09-24</td><td>752</td></tr>
+<tr><td>9</td><td>国君新疆1</td><td class='mono'>202.100.166.117:7709</td><td class='num'>4,000</td><td>2024-09-03</td><td>2026-09-24</td><td>752</td></tr>
+<tr><td>10</td><td>长城深圳移动1</td><td class='mono'>221.179.18.108:7709</td><td class='num'>3,992</td><td>2024-09-04</td><td>2026-09-24</td><td>751</td></tr>
+<tr><td>11</td><td>长城深圳电信1</td><td class='mono'>219.133.95.102:7709</td><td class='num'>3,984</td><td>2024-09-05</td><td>2026-09-24</td><td>750</td></tr>
+<tr><td>12</td><td>长城深圳联通2</td><td class='mono'>210.21.198.233:7709</td><td class='num'>3,984</td><td>2024-09-05</td><td>2026-09-24</td><td>750</td></tr>
+</tbody>
+          </table>
+          <h4>不可达 / 无数据（7 台）</h4>
+          <table class="fail">
+            <thead><tr><th>服务器</th><th>地址</th><th>原因</th></tr></thead>
+            <tbody><tr><td>华泰华为云2</td><td class='mono'>124.71.163.106:7709</td><td>边界空(瞬断误判)</td></tr>
+<tr><td>安信1</td><td class='mono'>59.36.5.11:7709</td><td>无数据</td></tr>
+<tr><td>国元合肥移动2</td><td class='mono'>221.130.121.45:7709</td><td>边界空(瞬断误判)</td></tr>
+<tr><td>华泰华为云1</td><td class='mono'>124.70.183.173:7709</td><td>边界空(瞬断误判)</td></tr>
+<tr><td>国元合肥电信2</td><td class='mono'>61.191.48.15:7709</td><td>边界空(瞬断误判)</td></tr>
+<tr><td>通达信HF深圳双线9</td><td class='mono'>159.75.55.232:7709</td><td>无数据</td></tr>
+<tr><td>国君西安1</td><td class='mono'>117.34.114.13:7709</td><td>TCP 不可达</td></tr>
+</tbody>
+          </table>
+        </div>
+        
+
+<h2>五、最优策略与锚点配置</h2>
+<div class="card">
+<ul>
+  <li><b>最长历史锚点</b>：<code>国君南京电信 103.221.142.65:7709</code>（同机房 .66~.70 / .72 共 7 台，每个周期都拿全池最深，冗余充足）。</li>
+  <li><b>周期选择</b>：要最长历史用 <b>5 分钟（cat=0）</b>；要更高分辨率可用 1 分钟，但其日历仅 ~141 天；15/30 分钟不会更长。</li>
+  <li><b>落地建议</b>：参照 <code>tools/backfill_vwap_history.py</code> 框架编写
+      <code>backfill_stock_history.py</code>，以国君南京电信为锚点，按代码分批拉 5 分钟 K 线落盘
+      <code>data/stock_hist/</code>，带增量 delta + 断点续传 + 并发。</li>
+  <li><b>局限</b>：标准主站对任意分钟线最深仅 ~2 年；要 2 年以上 A 股历史须另寻数据商或 akshare 后复权。</li>
+</ul>
+</div>
+
+<h2>六、可复用工具</h2>
+<div class="card">
+<p><code>tools/scan_pool_history.py</code> 已支持任意周期（<code>--cat</code>）与任意股票（<code>--code</code>），
+可随时重扫验证。常用命令：</p>
+<pre style="background:#0f172a;color:#e2e8f0;padding:12px 14px;border-radius:9px;font-size:12.5px;overflow:auto"># 扫描某股票 5 分钟历史深度
+python tools/scan_pool_history.py --code 600519.SH --cat 0 --out data/pool_scan_600519_5m.json
+
+# 离线验证二分算法（不联网）
+python tools/scan_pool_history.py --selftest</pre>
+</div>
+
+<div class="foot">本报告由四轮实连扫描（1/5/15/30 分钟，共 436 台次探测）自动汇总生成 ｜ 数据见
+<code>data/pool_scan_stock_*.json</code></div>
+
+</div></body></html>
