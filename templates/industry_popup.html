@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>行业板块分布 · 独立窗口</title>
+<script src="/static/vue.min.js"></script>
+<script src="/static/echarts.min.js"></script>
+<script src="/static/js/popup-launcher.js"></script>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html, body { height:100%; }
+  body { font-family:"Microsoft YaHei",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; background:#fff; color:#303133; overflow:hidden; }
+  #app { position:relative; height:100%; }
+  .tb-hover { position:absolute; top:0; left:0; right:0; height:46px; z-index:5; }
+  .toolbar { position:absolute; top:0; left:0; right:0; z-index:10; display:flex; align-items:center; gap:12px; flex-wrap:wrap; padding:10px 16px; background:transparent; opacity:0; pointer-events:none; transition:opacity .18s ease; }
+  .tb-hover:hover + .toolbar, .toolbar:hover { opacity:1; pointer-events:auto; }
+  .toolbar .t { font-weight:600; font-size:calc(9px * var(--zoom, 1)); }
+  .toolbar .muted { font-size:calc(9px * var(--zoom, 1)); color:#909399; }
+  .type-select { padding:2px 4px; border:1px solid #dcdfe6; border-radius:6px; font-size:calc(9px * var(--zoom, 1)); color:#303133; background:#fff; cursor:pointer; }
+  .toolbar-right { margin-left:auto; display:flex; align-items:center; gap:10px; }
+  .btn { background:#409eff; color:#fff; border:none; border-radius:6px; padding:3px 8px; font-size:calc(9px * var(--zoom, 1)); cursor:pointer; }
+  .btn:hover { background:#66b1ff; }
+  .btn:disabled { opacity:.6; cursor:default; }
+  .btn.active { background:#f56c6c; }
+  .btn.active:hover { background:#f78989; }
+  .zoom-group { display:flex; align-items:center; gap:6px; }
+  .zoom-group label { font-size:9px; color:#909399; }
+  .zoom-slider { width:80px; }
+  .zoom-val { font-size:9px; color:#606266; min-width:34px; text-align:right; }
+  .chart-wrap { position:absolute; top:0; left:0; right:0; bottom:0; }
+  #chart { position:absolute; top:0; left:0; right:0; bottom:0; }
+</style>
+</head>
+<body>
+<div id="app">
+  <div class="tb-hover"></div>
+  <div class="toolbar">
+    <span class="t">行业板块分布</span>
+    <select class="type-select" v-model="industryType" @change="onIndustryType">
+      <option :value="0">56 大行业</option>
+      <option :value="1">细分行业</option>
+    </select>
+    <span class="muted" v-if="updatedAt">共 [# list.length #] 个板块 · 更新 [# updatedAt #]</span>
+    <div class="zoom-group">
+      <label>大小</label>
+      <input type="range" class="zoom-slider" min="50" max="150" step="1" v-model.number="zoom" @input="onZoomChange">
+      <span class="zoom-val">[# zoom #]%</span>
+    </div>
+    <span class="toolbar-right">
+      <button class="btn" :class="{active:onTop}" @click="toggleTop">[# onTop ? '置顶' : '未置顶' #]</button>
+      <button class="btn" id="refreshBtn" :disabled="loading" @click="refresh">[# loading ? '刷新中…' : '刷新' #]</button>
+      <button class="btn" @click="closeWin">关闭</button>
+    </span>
+  </div>
+  <div class="chart-wrap">
+    <div id="chart"></div>
+  </div>
+</div>
+
+<script>
+function num(v){ if(v===null||v===undefined||v==='') return NaN; const n=parseFloat(v); return isNaN(n)?NaN:n; }
+function reqJSON(url, opts){
+  return new Promise((resolve, reject) => {
+    fetch(url, Object.assign({}, opts||{}))
+      .then(r => { if(!r.ok) throw new Error('HTTP '+r.status); return r.json(); })
+      .then(resolve)
+      .catch(reject);
+  });
+}
+// 综合窗口「刷新全部」会带 ?force=1 重载本页 → 首屏直接绕过服务端缓存（ttl=0）；
+// 独立打开本窗口时没有该参数，首屏仍走缓存（开窗更快）。
+const FORCE_ON_LOAD = (function(){
+  try { return /[?&]force=1/.test(location.search || ''); } catch(e){ return false; }
+})();
+new Vue({
+  el: '#app',
+  delimiters: ['[#', '#]'],
+  data: {
+    industryType: 0,
+    list: [],
+    updatedAt: '',
+    loading: false,
+    chart: null,
+    onTop: true,
+    zoom: (function(){ try{ var v = parseInt(localStorage.getItem('zoom_industry') || '100', 10); return (isFinite(v) && v >= 50 && v <= 150) ? v : 100; }catch(e){ return 100; } })(),
+  },
+  created(){
+    document.documentElement.style.setProperty('--zoom', this.zoom / 100);
+    this.fetchData(FORCE_ON_LOAD);   // 首屏走 30s 缓存（被综合窗口带 force=1 重载时则强制刷新）；需要最新数据点工具栏「刷新」
+    this.timer = setInterval(() => this.fetchData(false), 30000);
+    window.addEventListener('resize', this.onWinResize);
+  },
+  beforeDestroy(){
+    if(this.timer) clearInterval(this.timer);
+    window.removeEventListener('resize', this.onWinResize);
+    if(this.chart){ try{ this.chart.dispose(); }catch(e){} this.chart = null; }
+  },
+  methods: {
+    fmt2(v){ const n=num(v); return isNaN(n) ? '--' : n.toFixed(2); },
+    fz(v){ return Math.max(1, Math.round(v * this.zoom / 100)); },
+    onZoomChange(){
+      try{ localStorage.setItem('zoom_industry', this.zoom); }catch(e){}
+      document.documentElement.style.setProperty('--zoom', this.zoom / 100);
+      this.render();
+    },
+    toggleTop(){
+      this.onTop = !this.onTop;
+      if(window.pywebview && window.pywebview.api && window.pywebview.api.set_on_top){
+        window.pywebview.api.set_on_top(this.onTop);
+      } else {
+        this.onTop = true;
+      }
+    },
+    closeWin(){ try{ window.close(); }catch(e){} },
+    openStocksWindow(board, name){
+      window.xtquantLaunchPopup({
+        url: '/futures/popup/industry/stocks/launch',
+        body: { board: board, name: name },
+        title: (name || '板块') + ' · 个股分布',
+        vm: this,
+        onEnd: () => { /* 失败消息由工具内部通过 $message 提示 */ },
+      });
+    },
+    onIndustryType(){
+      this.list = [];
+      this.updatedAt = '';
+      this.fetchData(true);
+    },
+    // 工具栏「刷新」：绕过 30s 缓存强制取数并重绘（与「股指资金」弹窗同款兜底）
+    refresh(){
+      if(this.loading) return;
+      this.fetchData(true);
+      // 数据请求即使失败，也先重算一次画布尺寸：窗口若在隐藏/零尺寸状态下初始化，
+      // ECharts 会画出空白，resize 后即可正常显示上一帧内容。
+      this.$nextTick(() => setTimeout(() => this.onWinResize(), 80));
+    },
+    fetchData(force){
+      if(this.loading) return;
+      this.loading = true;
+      const ttl = force ? 0 : 30;   // ttl=0 时后端缓存判断恒不命中 -> 强制打下游行情源
+      const url = '/futures/popup/industry?type=' + this.industryType + '&ttl=' + ttl + '&_=' + Date.now();
+      reqJSON(url, { cache:'no-store' })
+        .then(resp => {
+          if(!resp.ok) throw new Error(resp.error || 'backend error');
+          this.list = resp.data || [];
+          this.updatedAt = new Date().toLocaleTimeString('zh-CN', {hour12:false});
+          this.render();
+        })
+        .catch(err => { this.updatedAt = '加载失败：' + err.message; })
+        .finally(() => { this.loading = false; });
+    },
+    render(){
+      const el = document.getElementById('chart');
+      if(!el) return;
+      if(!this.chart){
+        this.chart = echarts.init(el);
+        this.chart.on('click', p => {
+          const d = p && p.data;
+          if(!d || !d.code) return;
+          this.openStocksWindow(d.code, d.name || '');
+        });
+      }
+      const _fmt2 = v => this.fmt2(v);
+      const points = (this.list || []).map(i => ({
+        value: [num(i.price), num(i.pct)],
+        name: i.name || i.code,
+        code: i.code,
+        pre_close: i.pre_close,
+        symbol_name: i.symbol_name,
+        symbol_price: i.symbol_price,
+      }));
+      const colorOf = pct => pct > 0 ? '#e74c3c' : (pct < 0 ? '#27ae60' : '#909399');
+      const option = {
+        backgroundColor: '#fff',
+        title: { text: '行业板块分布', left: 6, top: 2, textStyle: { fontSize: this.fz(9), fontWeight: 600, color: '#303133' } },
+        tooltip: {
+          trigger: 'item',
+          backgroundColor: 'rgba(255,255,255,.97)',
+          borderColor: '#dcdfe6',
+          textStyle: { color: '#303133', fontSize: this.fz(12) },
+          formatter: function(p) {
+            const d = p.data;
+            const c = colorOf(d.value[1]);
+            const pctTxt = (d.value[1] >= 0 ? '+' : '') + _fmt2(d.value[1]) + '%';
+            return '<div style="font-weight:600;margin-bottom:4px;">' + (d.name||'') +
+              '<span style="color:#909399;font-weight:400;margin-left:6px;">' + (d.code||'') + '</span></div>' +
+              '<div>价格：<b style="color:#303133;">' + _fmt2(d.value[0]) + '</b></div>' +
+              '<div>昨收：' + _fmt2(d.pre_close) + '</div>' +
+              '<div>涨幅：<b style="color:' + c + ';">' + pctTxt + '</b></div>' +
+              (d.symbol_name ? '<div style="margin-top:3px;color:#909399;">代表股：' + d.symbol_name + ' ' + _fmt2(d.symbol_price) + '</div>' : '');
+          },
+        },
+        grid: { left: '1%', right: '1%', top: '15%', bottom: '1%', containLabel: true },
+        xAxis: {
+          type: 'value', name: '价格(元)', nameGap: 4, nameTextStyle: { color: '#909399', fontSize: this.fz(9) },
+          axisLabel: { color: '#606266', fontSize: this.fz(9), formatter: v => _fmt2(v) },
+          splitLine: { lineStyle: { color: '#f0f2f5' } },
+        },
+        yAxis: {
+          type: 'value', name: '涨幅(%)', nameGap: 4, nameTextStyle: { color: '#909399', fontSize: this.fz(9) },
+          axisLabel: { color: '#606266', fontSize: this.fz(9), formatter: v => v + '%' },
+          splitLine: { lineStyle: { color: '#eef1f5' } },
+        },
+        series: [{
+          type: 'scatter',
+          data: points,
+          symbolSize: d => this.fz(7 + Math.min(17, Math.abs(d[1]) * 3.2)),
+          itemStyle: { color: p => colorOf(p.data.value[1]) },
+          label: { show: true, position: 'bottom', fontSize: this.fz(9), color: '#606266', formatter: p => p.data.name || '' },
+          labelLayout: { hideOverlap: true },
+          emphasis: { label: { show: true, position: 'bottom', fontSize: this.fz(11), color: '#303133', formatter: p => p.data.name || '' } },
+          markLine: {
+            symbol: 'none',
+            label: { show: false },
+            lineStyle: { color: '#c0c4cc', type: 'dashed' },
+            data: [{ yAxis: 0 }],
+          },
+        }],
+      };
+      this.chart.setOption(option, true);
+      // 每次渲染后重算画布尺寸：兜住「窗口初始化时容器尺寸为 0」导致的空白
+      if(this.chart.resize) this.chart.resize();
+    },
+    onWinResize(){ if(this.chart && this.chart.resize) this.chart.resize(); },
+  },
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<title>运维面板 · xtquant</title>
+<meta name="viewport" content="width=device-width,initial-scale=1.0" />
+<style>
+  html,body{margin:0;padding:0;height:100%;}
+  [v-cloak]{display:none;}
+  body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;background:#f5f7fa;color:#303133;}
+  #app{padding:14px 20px 40px;box-sizing:border-box;min-height:100%;}
+  .topbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:10px;}
+  .topbar h2{margin:0;font-size:20px;}
+  .topbar .right{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
+  .kpis{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:14px;}
+  .kpi{background:#fff;padding:10px 16px;border-radius:8px;box-shadow:0 1px 3px rgba(0,0,0,.06);min-width:150px;flex:1 1 150px;}
+  .kpi .label{font-size:12px;color:#909399;}
+  .kpi .val{font-size:20px;font-weight:700;margin-top:3px;}
+  .kpi.ok .val{color:#67C23A;}
+  .kpi.warn .val{color:#E6A23C;}
+  .kpi.danger .val{color:#F56C6C;}
+  .kpi .sub{font-size:12px;color:#909399;margin-top:2px;}
+  .card{background:#fff;border:1px solid #ebeef5;border-radius:10px;padding:14px 16px;margin-bottom:14px;box-shadow:0 1px 4px rgba(0,0,0,.03);}
+  .card h3{margin:0 0 12px;font-size:15px;display:flex;align-items:center;gap:8px;}
+  .card h3 .badge{font-size:12px;font-weight:600;padding:1px 9px;border-radius:10px;background:#ecf5ff;color:#409eff;}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
+  @media(max-width:980px){.grid2{grid-template-columns:1fr;}}
+  table{width:100%;border-collapse:collapse;font-size:13px;}
+  th,td{padding:7px 10px;text-align:left;border-bottom:1px solid #f0f2f5;white-space:nowrap;}
+  th{color:#909399;font-weight:600;background:#fafbfc;}
+  tr:hover td{background:#fafcff;}
+  .tag{display:inline-block;font-size:12px;font-weight:600;padding:1px 9px;border-radius:10px;}
+  .tag.primary{background:#e1f3d8;color:#67C23A;}
+  .tag.failover{background:#faecd8;color:#E6A23C;}
+  .tag.ok{background:#e1f3d8;color:#67C23A;}
+  .tag.bad{background:#fde2e2;color:#F56C6C;}
+  .tag.warn{background:#faecd8;color:#E6A23C;}
+  .tag.grey{background:#f0f2f5;color:#909399;}
+  .tag.cool{background:#fde2e2;color:#F56C6C;}
+  .stat-row{display:flex;gap:18px;flex-wrap:wrap;margin-bottom:10px;}
+  .stat{font-size:13px;}
+  .stat b{font-size:16px;}
+  .muted{color:#909399;font-size:12px;}
+  .actions{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:6px;}
+  .banner{display:flex;align-items:center;gap:8px;padding:9px 14px;border-radius:6px;margin-bottom:12px;font-size:13px;}
+  .banner-load{background:#ecf5ff;border:1px solid #d9ecff;color:#409EFF;}
+  .banner-err{background:#fef0f0;border:1px solid #fde2e2;color:#F56C6C;}
+  .events{list-style:none;padding:0;margin:0;max-height:180px;overflow:auto;font-size:12px;font-family:ui-monospace,Menlo,Consolas,monospace;color:#606266;}
+  .events li{padding:4px 0;border-bottom:1px dashed #f0f2f5;}
+  .chart{width:100%;height:300px;}
+  .bar{height:9px;border-radius:5px;background:#ebeef5;overflow:hidden;}
+  .bar>i{display:block;height:100%;border-radius:5px;}
+  .mono{font-family:ui-monospace,Menlo,Consolas,monospace;}
+  button.btn{font-size:13px;padding:6px 14px;border-radius:6px;border:1px solid #dcdfe6;background:#fff;color:#606266;cursor:pointer;transition:all .15s;}
+  button.btn:hover{border-color:#409eff;color:#409eff;}
+  button.btn.primary{background:#409eff;border-color:#409eff;color:#fff;}
+  button.btn.warn{background:#E6A23C;border-color:#E6A23C;color:#fff;}
+  button.btn:disabled{opacity:.5;cursor:not-allowed;}
+</style>
+</head>
+<body>
+{% include '_navbar.html' %}
+<div id="app" v-cloak>
+  <div class="topbar">
+    <h2>🛠 运维面板</h2>
+    <div class="right">
+      <label style="font-size:13px;color:#606266;">
+        <input type="checkbox" v-model="auto" /> 自动刷新
+      </label>
+      <select v-model="interval" style="font-size:13px;padding:5px 8px;border-radius:6px;border:1px solid #dcdfe6;">
+        <option :value="5000">5s</option>
+        <option :value="8000">8s</option>
+        <option :value="15000">15s</option>
+        <option :value="30000">30s</option>
+      </select>
+      <button class="btn primary" :disabled="busy" @click="fetchAll">🔄 刷新</button>
+      <span class="muted">最后更新：${lastUpdate || '—'}</span>
+    </div>
+  </div>
+
+  <div v-if="busy && !loaded" class="banner banner-load">⏳ 正在拉取监控数据…</div>
+  <div v-if="error" class="banner banner-err">⚠ ${error}</div>
+
+  <!-- KPI 概览 -->
+  <div class="kpis">
+    <div class="kpi" :class="health.ok ? 'ok' : 'danger'">
+      <div class="label">Flask 服务</div>
+      <div class="val">${health.ok ? '正常' : '异常'}</div>
+      <div class="sub mono">${health.service || '—'} · ${health.time || ''}</div>
+    </div>
+    <div class="kpi" :class="src.mode==='failover' ? 'warn' : 'ok'">
+      <div class="label">取数源模式</div>
+      <div class="val">${src.mode==='failover' ? '备用池' : '国元合肥主源'}</div>
+      <div class="sub" v-if="src.mode==='failover'">熔断剩余 ${src.failover_left}s</div>
+      <div class="sub" v-else>主源连续失败 ${src.primary_fails}/3</div>
+    </div>
+    <div class="kpi" :class="pool.total ? 'ok' : 'danger'">
+      <div class="label">主站池（生效 / 总）</div>
+      <div class="val">${pool.total || 0} <span class="muted" style="font-size:14px;">/ ${pool.pool_total || 0}</span></div>
+      <div class="sub">选路模式：${pool.source_mode || '—'}</div>
+    </div>
+    <div class="kpi" :class="backupOkCount===4 ? 'ok' : (backupOkCount>0 ? 'warn' : 'danger')">
+      <div class="label">VWAP 备份</div>
+      <div class="val">${backupOkCount}/4 品种一致</div>
+      <div class="sub mono" style="font-size:11px;">${backup.dir ? backup.dir.split('/').slice(-2).join('/') : ''}</div>
+    </div>
+  </div>
+
+  <div class="grid2">
+    <!-- 取数源状态 -->
+    <div class="card">
+      <h3>📡 扩展行情取数源 <span class="badge">/futures/ext/source</span></h3>
+      <div class="stat-row">
+        <div class="stat">模式 <span class="tag" :class="src.mode==='failover'?'failover':'primary'">${src.mode==='failover'?'备用池':'国元合肥主源'}</span></div>
+        <div class="stat">主源失败 <b>${src.primary_fails||0}</b> / 3</div>
+        <div class="stat">累计切换 <b>${src.switch_count||0}</b></div>
+        <div class="stat">主源轮数 <b>${src.primary_rounds||0}</b></div>
+        <div class="stat">备用轮数 <b>${src.backup_rounds||0}</b></div>
+      </div>
+      <div class="stat" style="margin-bottom:8px;">历史深拉锚点：<span class="mono">${src.anchor ? src.anchor.name + ' (' + src.anchor.ip + ':' + src.anchor.port + ')' : '—'}</span> · 备用池 <b>${src.backup_count||0}</b> 台</div>
+      <table v-if="src.primary && src.primary.length">
+        <thead><tr><th>主源节点</th><th>EMA延迟</th><th>成功</th><th>失败</th><th>冷却</th></tr></thead>
+        <tbody>
+          <tr v-for="n in src.primary" :key="n.ip+':'+n.port">
+            <td class="mono">${n.ip}:${n.port}</td>
+            <td>${n.ema_ms==null?'—':n.ema_ms+' ms'}</td>
+            <td>${n.ok||0}</td>
+            <td>${n.fail||0}</td>
+            <td><span v-if="n.cooldown_left>0" class="tag cool">${n.cooldown_left}s</span><span v-else class="tag grey">—</span></td>
+          </tr>
+        </tbody>
+      </table>
+      <div v-else class="muted">主源节点信息不可用</div>
+
+      <h3 style="margin-top:16px;">🔔 最近事件</h3>
+      <ul class="events" v-if="src.events && src.events.length">
+        <li v-for="(e,i) in src.events" :key="i">[${fmtTime(e.ts)}] <b :style="{color:evColor(e.kind)}">${e.kind}</b> · ${e.detail}</li>
+      </ul>
+      <div v-else class="muted">暂无事件</div>
+
+      <div class="actions">
+        <button class="btn primary" :disabled="busy" @click="switchSource('primary')">切回主源</button>
+        <button class="btn warn" :disabled="busy" @click="switchSource('failover')">切备用池(120s)</button>
+        <span class="muted">手动切换取数源（运维操作）</span>
+      </div>
+    </div>
+
+    <!-- 主站池健康 -->
+    <div class="card">
+      <h3>🌐 主站池健康度 <span class="badge">/futures/pool/stats</span></h3>
+      <div class="stat-row">
+        <div class="stat">生效节点 <b>${pool.total||0}</b></div>
+        <div class="stat">池总量 <b>${pool.pool_total||0}</b></div>
+        <div class="stat">选路模式 <b>${pool.source_mode||'—'}</b></div>
+      </div>
+      <div ref="poolChart" class="chart"></div>
+      <table v-if="pool.data && pool.data.length">
+        <thead><tr><th>节点</th><th>EMA延迟</th><th>连续失败</th><th>累计 成功/失败</th><th>冷却</th></tr></thead>
+        <tbody>
+          <tr v-for="d in pool.data" :key="d.ip+':'+d.port">
+            <td class="mono">${d.ip}:${d.port}</td>
+            <td>
+              <div style="display:flex;align-items:center;gap:8px;">
+                <div class="bar" style="width:90px;"><i :style="{width:latPct(d.ema_ms)+'%',background:latColor(d.ema_ms,d.cooldown_left)}"></i></div>
+                <span>${d.ema_ms==null?'—':d.ema_ms+'ms'}</span>
+              </div>
+            </td>
+            <td>${d.fails||0}</td>
+            <td>${d.ok||0} / ${d.fail||0}</td>
+            <td><span v-if="d.cooldown_left>0" class="tag cool">${d.cooldown_left}s</span><span v-else class="tag grey">—</span></td>
+          </tr>
+        </tbody>
+      </table>
+      <div v-else class="muted">暂无节点统计</div>
+      <div class="muted" style="margin-top:8px;">下轮选路顺序（前 ${Math.min(5,pool.order?pool.order.length:0)} 优先）：
+        <span v-for="(o,i) in (pool.order||[]).slice(0,8)" :key="i" class="mono">${o.ip}:${o.port}${i<pool.order.length-1?' › ':''}</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- VWAP 备份 -->
+  <div class="card">
+    <h3>💾 VWAP 历史备份 <span class="badge">/futures/vwap/backup</span></h3>
+    <div class="actions" style="margin-bottom:12px;">
+      <button class="btn primary" :disabled="busy" @click="triggerBackup()">📥 立即备份（全品种）</button>
+      <button class="btn" :disabled="busy" @click="triggerBackup(['IFL9'])">仅 IFL9</button>
+      <button class="btn" :disabled="busy" @click="triggerBackup(['IML9'])">仅 IML9</button>
+      <span class="muted">备份 = 并集合并、天数只增不减；约 5–10s/品种（同步）</span>
+    </div>
+    <table v-if="backup.data && backup.data.length">
+      <thead><tr>
+        <th>合约</th><th>备份天数</th><th>历史天数</th><th>最大天数</th>
+        <th>首日<br/>备份/历史</th><th>最后日<br/>备份/历史</th>
+        <th>备份根数</th><th>历史根数</th><th>缺失日</th><th>多余日</th><th>残缺日</th><th>状态</th><th>建议</th>
+      </tr></thead>
+      <tbody>
+        <tr v-for="b in backup.data" :key="b.code">
+          <td><b>${b.code}</b></td>
+          <td>${b.backup ? b.backup.days : '—'}</td>
+          <td>${b.hist ? b.hist.days : '—'}</td>
+          <td>${b.manifest ? b.manifest.max_days : '—'}</td>
+          <td class="mono">${b.backup ? b.backup.first_day : '—'} <span class="muted">/ ${b.hist ? b.hist.first_day : '—'}</span></td>
+          <td class="mono">${b.backup ? b.backup.last_day : '—'} <span class="muted">/ ${b.hist ? b.hist.last_day : '—'}</span></td>
+          <td class="mono">${b.backup ? b.backup.n : '—'}</td>
+          <td class="mono">${b.hist ? b.hist.n : '—'}</td>
+          <td><span :class="b.missing_days>0?'tag bad':'tag grey'">${b.missing_days||0}</span></td>
+          <td><span :class="b.extra_days>0?'tag warn':'tag grey'">${b.extra_days||0}</span></td>
+          <td><span :class="b.hist_incomplete_days>0?'tag warn':'tag grey'">${b.hist_incomplete_days||0}</span></td>
+          <td><span class="tag" :class="b.ok?'ok':'bad'">${b.ok?'一致':'异常'}</span></td>
+          <td class="muted">${b.advice || '—'}</td>
+        </tr>
+      </tbody>
+    </table>
+    <div v-else class="muted">暂无备份数据</div>
+    <div class="muted" style="margin-top:8px;">灾备恢复请用 CLI：<span class="mono">python tools/vwap_backup.py restore --yes</span> / <span class="mono">heal</span></div>
+  </div>
+
+  <!-- VWAP 深历史回补 -->
+  <div class="card">
+    <h3>🔧 VWAP 深历史回补 <span class="badge">/futures/vwap/backfill</span></h3>
+    <div class="actions" style="margin-bottom:12px;">
+      <button class="btn primary" :disabled="busy" @click="triggerBackfill()">🚀 立即回补（全品种）</button>
+      <button class="btn" :disabled="busy" @click="triggerBackfill(['IFL9'])">仅 IFL9</button>
+      <button class="btn" :disabled="busy" @click="triggerBackfill(['IML9'])">仅 IML9</button>
+      <span class="muted">回补 = 先 restore 接回本地备份，再从国元锚点补齐缺口（后台执行，约 1–2 分钟/轮）</span>
+    </div>
+    <table v-if="backfill.data && backfill.data.length">
+      <thead><tr><th>合约</th><th>深历史天数</th><th>齐备 (≥277)</th><th>首日</th><th>最后日</th><th>根数</th><th>状态</th></tr></thead>
+      <tbody>
+        <tr v-for="b in backfill.data" :key="b.code">
+          <td><b>${b.code}</b></td>
+          <td>${b.days||0}</td>
+          <td><span :class="b.ready?'tag ok':'tag warn'">${b.ready?'是':'否'}</span></td>
+          <td class="mono">${b.first_day||'—'}</td>
+          <td class="mono">${b.last_day||'—'}</td>
+          <td class="mono">${b.n||0}</td>
+          <td><span class="tag" :class="b.ready?'ok':'warn'">${b.ready?'齐备':'缺口'}</span></td>
+        </tr>
+      </tbody>
+    </table>
+    <div v-else class="muted">暂无回补数据</div>
+    <div class="muted" style="margin-top:8px;">首次部署 / 数据缺口时用；等价 CLI：<span class="mono">python tools/backfill_vwap_history.py IFL9</span></div>
+  </div>
+</div>
+
+<script src="https://unpkg.com/vue@2.7.16/dist/vue.min.js"></script>
+<script src="https://unpkg.com/echarts@5.5.0/dist/echarts.min.js"></script>
+<script>
+new Vue({
+  el: '#app',
+  delimiters: ['${', '}'],
+  data: {
+    health: {}, src: {}, pool: {}, backup: {}, backfill: {},
+    auto: true, interval: 8000, busy: false, loaded: false,
+    error: '', lastUpdate: '', _timer: null, _chart: null,
+  },
+  computed: {
+    backupOkCount() {
+      const d = (this.backup.data || []).filter(x => x.ok);
+      return d.length;
+    },
+  },
+  mounted() {
+    this.fetchAll();
+    this._startTimer();
+  },
+  beforeDestroy() { this._stopTimer(); },
+  watch: {
+    auto(v) { v ? this._startTimer() : this._stopTimer(); },
+    interval() { if (this.auto) { this._stopTimer(); this._startTimer(); } },
+    'pool.data'() { this._drawChart(); },
+  },
+  methods: {
+    _startTimer() {
+      this._stopTimer();
+      if (!this.auto) return;
+      this._timer = setInterval(() => this.fetchAll(), this.interval);
+    },
+    _stopTimer() { if (this._timer) { clearInterval(this._timer); this._timer = null; } },
+    async _get(url) {
+      const r = await fetch(url, { cache: 'no-store' });
+      if (!r.ok) throw new Error(url + ' → HTTP ' + r.status);
+      return r.json();
+    },
+    async fetchAll() {
+      if (this.busy) return;
+      this.busy = true; this.error = '';
+      try {
+        const [h, s, p, b, bf] = await Promise.all([
+          this._get('/health'),
+          this._get('/futures/ext/source'),
+          this._get('/futures/pool/stats'),
+          this._get('/futures/vwap/backup'),
+          this._get('/futures/vwap/backfill'),
+        ]);
+        this.health = h || {};
+        this.src = s && s.data ? s.data : {};
+        this.pool = p || {};
+        this.backup = b || {};
+        this.backfill = bf || {};
+        this.loaded = true;
+        this.lastUpdate = new Date().toLocaleTimeString('zh-CN');
+      } catch (e) {
+        this.error = '拉取失败：' + (e && e.message ? e.message : e);
+      } finally {
+        this.busy = false;
+        this.$nextTick(() => this._drawChart());
+      }
+    },
+    async switchSource(mode) {
+      if (!confirm('确认手动切换取数源为「' + (mode==='failover'?'备用池':'国元合肥主源') + '」？')) return;
+      this.busy = true;
+      try {
+        const r = await fetch('/futures/ext/source?mode=' + mode, { method: 'POST' });
+        const j = await r.json();
+        if (!j.ok) throw new Error(j.error || '未知错误');
+        this.error = '';
+        await this.fetchAll();
+      } catch (e) {
+        this.error = '切换失败：' + (e && e.message ? e.message : e);
+      } finally { this.busy = false; }
+    },
+    async triggerBackup(codes) {
+      this.busy = true;
+      const msg = codes ? ('备份 ' + codes.join(',') + ' …') : '备份全品种（约 20–40s）…';
+      try {
+        let url = '/futures/vwap/backup';
+        if (codes && codes.length) url += '?codes=' + codes.join(',');
+        const r = await fetch(url, { method: 'POST' });
+        const j = await r.json();
+        if (!j.ok) throw new Error(j.error || '未知错误');
+        this.error = '';
+        this.lastUpdate = new Date().toLocaleTimeString('zh-CN');
+        await this.fetchAll();
+        alert('✅ ' + msg.replace('…','完成') + (j.data ? '\n' + JSON.stringify(j.data) : ''));
+      } catch (e) {
+        this.error = '备份失败：' + (e && e.message ? e.message : e);
+      } finally { this.busy = false; }
+    },
+    _drawChart() {
+      if (!this.$refs.poolChart || !this.pool.data) return;
+      try {
+        if (!this._chart) this._chart = echarts.init(this.$refs.poolChart);
+        const rows = this.pool.data.slice().sort((a,b)=> (a.ema_ms||1e9)-(b.ema_ms||1e9));
+        this._chart.setOption({
+          title: { text: '主站池 EMA 延迟 (ms)', left: 8, top: 4, textStyle: { fontSize: 13, color: '#606266' } },
+          grid: { left: 8, right: 18, top: 36, bottom: 8, containLabel: true },
+          tooltip: { trigger: 'axis', formatter: p => p[0].name + '<br/>' + (p[0].value==null?'未测':p[0].value+' ms') },
+          xAxis: { type: 'value', name: 'ms', axisLabel: { color: '#909399' } },
+          yAxis: { type: 'category', data: rows.map(d => d.ip + ':' + d.port),
+                   axisLabel: { color: '#606266', fontSize: 11 } },
+          series: [{
+            type: 'bar', data: rows.map(d => ({
+              value: d.ema_ms==null?0:d.ema_ms,
+              itemStyle: { color: d.cooldown_left>0 ? '#F56C6C' : (d.ema_ms==null?'#C0C4CC':(d.ema_ms<100?'#67C23A':(d.ema_ms<200?'#409EFF':'#E6A23C'))) },
+            })),
+            barWidth: '55%',
+          }],
+        });
+        this._chart.resize();
+      } catch (e) { /* echarts 不可用时静默 */ }
+    },
+    latPct(ms) { if (ms==null) return 4; return Math.max(4, Math.min(100, ms/3)); },
+    latColor(ms, cd) { if (cd>0) return '#F56C6C'; if (ms==null) return '#C0C4CC'; return ms<100?'#67C23A':(ms<200?'#409EFF':'#E6A23C'); },
+    evColor(k) { if (k==='failover') return '#E6A23C'; if (k==='restore') return '#67C23A'; return '#409EFF'; },
+    fmtTime(ts) { if (!ts) return '—'; const d = new Date(ts*1000); return d.toLocaleTimeString('zh-CN'); },
+    async triggerBackfill(codes) {
+      this.busy = true;
+      const msg = codes ? ('回补 ' + codes.join(',') + ' …') : '回补全品种（后台执行）…';
+      try {
+        let url = '/futures/vwap/backfill';
+        if (codes && codes.length) url += '?codes=' + codes.join(',');
+        const r = await fetch(url, { method: 'POST' });
+        const j = await r.json();
+        if (!j.ok) throw new Error(j.error || '未知错误');
+        this.error = '';
+        this.lastUpdate = new Date().toLocaleTimeString('zh-CN');
+        alert('🚀 ' + msg.replace('…','已启动') + (j.msg ? '\n' + j.msg : ''));
+        this._pollBackfill();
+      } catch (e) {
+        this.error = '回补启动失败：' + (e && e.message ? e.message : e);
+      } finally { this.busy = false; }
+    },
+    _pollBackfill() {
+      // 回补进行中每 3s 刷新一次，直至全部齐备或超时（约 2 分钟）
+      let tries = 0;
+      const tick = async () => {
+        if (tries++ > 40) return;
+        try { await this.fetchAll(); } catch (e) {}
+        const data = this.backfill.data || [];
+        if (data.length && data.every(x => x.ready)) return;
+        setTimeout(tick, 3000);
+      };
+      setTimeout(tick, 3000);
+    },
+  },
+});
+</script>
+</body>
+</html>

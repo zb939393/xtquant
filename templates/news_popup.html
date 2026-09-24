@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>7×24 快讯</title>
+<script src="https://unpkg.com/vue@2.7.16/dist/vue.min.js"></script>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html, body { height:100%; }
+  body { font-family:"Microsoft YaHei",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; background:#f5f6f8; color:#1f2329; overflow:hidden; }
+  #app { position:relative; height:100%; }
+  .tb-hover { position:absolute; top:0; left:0; right:0; height:46px; z-index:5; }
+  .toolbar { position:absolute; top:0; left:0; right:0; z-index:10; display:flex; align-items:center; gap:12px; flex-wrap:wrap; padding:10px 16px; background:rgba(255,255,255,.92); opacity:0; pointer-events:none; transition:opacity .18s ease; border-bottom:1px solid #f2f3f5; }
+  .tb-hover:hover + .toolbar, .toolbar:hover { opacity:1; pointer-events:auto; }
+  .title { font-weight:700; font-size:calc(13px * var(--zoom, 1)); }
+  .title .sub { font-size:calc(10px * var(--zoom, 1)); font-weight:400; color:#909399; margin-left:6px; }
+  .updated { margin-left:auto; font-size:calc(10px * var(--zoom, 1)); color:#909399; font-variant-numeric:tabular-nums; }
+  .btn { background:#fff; color:#409eff; border:1px solid #409eff; border-radius:6px; padding:3px 8px; font-size:calc(10px * var(--zoom, 1)); cursor:pointer; transition:.15s; }
+  .btn:hover { background:#ecf5ff; }
+  .btn.active { background:#409eff; color:#fff; }
+  .btn:disabled { opacity:.55; cursor:default; }
+  .btn:disabled:hover { background:#fff; }
+  .btn.warn { color:#e0740c; border-color:#e0740c; }
+  .btn.warn:hover { background:#fdf2e3; }
+  .zoom-group { display:flex; align-items:center; gap:6px; }
+  .zoom-group label { font-size:12px; color:#909399; }
+  .zoom-slider { width:80px; }
+  .zoom-val { font-size:12px; color:#606266; min-width:34px; text-align:right; }
+  .list { position:absolute; top:0; left:0; right:0; bottom:0; overflow-y:auto; padding:calc(10px * var(--zoom, 1)) calc(12px * var(--zoom, 1)) calc(14px * var(--zoom, 1)); }
+  .list::-webkit-scrollbar { width:6px; }
+  .list::-webkit-scrollbar-thumb { background:#d7dae0; border-radius:3px; }
+  .empty { height:100%; display:flex; align-items:center; justify-content:center; color:#b0b3b8; font-size:calc(12px * var(--zoom, 1)); }
+  .item { position:relative; background:#fff; border-radius:10px; padding:calc(11px * var(--zoom, 1)) calc(14px * var(--zoom, 1)) calc(11px * var(--zoom, 1)) calc(16px * var(--zoom, 1)); margin-bottom:calc(9px * var(--zoom, 1)); box-shadow:0 1px 3px rgba(20,30,50,.06); border-left:3px solid #d7dae0; transition:.15s; }
+  .item.new { animation:flash 1.4s ease; }
+  .item:hover { box-shadow:0 3px 10px rgba(20,30,50,.1); }
+  @keyframes flash { 0% { background:#fff7e6; } 100% { background:#fff; } }
+  .i-top { display:flex; align-items:center; gap:8px; }
+  .i-time { font-size:calc(11px * var(--zoom, 1)); color:#9aa0a6; font-variant-numeric:tabular-nums; font-weight:600; }
+  .i-date { font-size:calc(10px * var(--zoom, 1)); color:#c0c4cc; }
+  .i-badge { font-size:calc(9px * var(--zoom, 1)); padding:1px 6px; border-radius:4px; background:#fde8e8; color:#e0533d; font-weight:700; }
+  .i-summary { margin-top:calc(5px * var(--zoom, 1)); font-size:calc(13px * var(--zoom, 1)); line-height:1.65; color:#1f2329; white-space:pre-wrap; word-break:break-word; }
+  .i-tags { display:flex; flex-wrap:wrap; gap:5px; margin-top:calc(7px * var(--zoom, 1)); }
+  .i-tag { font-size:calc(10px * var(--zoom, 1)); padding:1px 7px; border-radius:10px; background:#eef3ff; color:#3a7afe; }
+  .i-actions { display:flex; align-items:center; gap:12px; margin-top:calc(8px * var(--zoom, 1)); }
+  .speak { display:inline-flex; align-items:center; gap:4px; font-size:calc(11px * var(--zoom, 1)); color:#3a7afe; cursor:pointer; user-select:none; }
+  .speak:hover { text-decoration:underline; }
+  .more { font-size:calc(11px * var(--zoom, 1)); color:#9aa0a6; text-decoration:none; }
+  .more:hover { color:#3a7afe; }
+  .err { position:absolute; left:0; right:0; bottom:0; padding:6px 12px; font-size:calc(10px * var(--zoom, 1)); color:#e0533d; background:rgba(255,255,255,.92); text-align:center; }
+</style>
+</head>
+<body>
+<div id="app">
+  <div class="tb-hover"></div>
+  <div class="toolbar">
+    <span class="title">7×24 快讯<span class="sub">东方财富</span></span>
+    <span class="updated" v-if="updatedAt">更新 [# updatedAt #]</span>
+    <button class="btn" :class="{active:onTop}" @click="toggleTop">[# onTop ? '置顶' : '未置顶' #]</button>
+    <button class="btn" id="refreshBtn" :disabled="loading" @click="refresh">[# loading ? '刷新中…' : '刷新' #]</button>
+    <button class="btn" @click="closeWin">关闭</button>
+  </div>
+  <div class="list" ref="list">
+    <div class="empty" v-if="!loading && items.length===0">暂无快讯</div>
+    <div class="item" v-for="it in items" :key="it.code" :class="{new: it._new}" :style="{ borderLeftColor: it.color }">
+      <div class="i-top">
+        <span class="i-time">[# it.time #]</span>
+        <span class="i-date" v-if="it.date">[# it.date #]</span>
+        <span class="i-badge" v-if="it.important">重要</span>
+      </div>
+      <div class="i-summary">[# it.summary #]</div>
+      <div class="i-tags" v-if="it.stockList && it.stockList.length">
+        <span class="i-tag" v-for="s in it.stockList" :key="s">[# s #]</span>
+      </div>
+      <div class="i-actions">
+        <span class="speak" @click="speakItem(it)">🔊 朗读</span>
+        <a class="more" v-if="it.code" :href="'https://finance.eastmoney.com/a/' + it.code + '.html'" target="_blank" rel="noopener">阅读原文</a>
+      </div>
+    </div>
+  </div>
+
+  <div class="err" v-if="errMsg">[# errMsg #]</div>
+</div>
+
+<script>
+function reqJSON(url){
+  return new Promise((resolve, reject) => {
+    fetch(url, { cache:'no-store' })
+      .then(r => { if(!r.ok) throw new Error('HTTP '+r.status); return r.json(); })
+      .then(resolve)
+      .catch(reject);
+  });
+}
+function accentOf(color){
+  if(!color) return '#d7dae0';
+  if(typeof color === 'string' && color[0] === '#') return color;
+  const map = { '1':'#e0533d', '2':'#27ae60', '3':'#f0a020' };
+  return map[String(color)] || '#d7dae0';
+}
+new Vue({
+  el: '#app',
+  delimiters: ['[#', '#]'],
+  data: {
+    items: [],
+    total: 0,
+    updatedAt: '',
+    loading: false,
+    errMsg: '',
+    onTop: true,
+    autoSpeak: true,
+    zoom: (function(){ try{ var v = parseInt(localStorage.getItem('zoom_news') || '100', 10); return (isFinite(v) && v >= 50 && v <= 150) ? v : 100; }catch(e){ return 100; } })(),
+    seenCodes: {},
+    speakQueue: [],
+    speaking: false,
+    timer: null,
+  },
+  created(){
+    document.documentElement.style.setProperty('--zoom', this.zoom / 100);
+    this.timer = setInterval(() => this.fetchData(false), 60000);
+    window.addEventListener('resize', this.onResize);
+  },
+  mounted(){
+    // 首屏强制取最新（force=true → ttl=0）：快讯属「新消息」型内容，开窗就该是最新的。
+    // 综合窗口「刷新全部」会带 ?force=1 重载本页，走的也是这条路径（无需再判 FORCE_ON_LOAD）。
+    this.fetchData(true);
+  },
+  beforeDestroy(){
+    if(this.timer) clearInterval(this.timer);
+    window.removeEventListener('resize', this.onResize);
+    this.stopSpeak();
+  },
+  methods: {
+    onResize(){},
+    closeWin(){ try{ window.close(); }catch(e){} },
+    // 刷新：force=true → ttl=0，绕过服务端 20s 缓存重取（首屏/轮询仍走 ttl=20）
+    refresh(){ if(this.loading) return; this.fetchData(true); },
+    onZoomChange(){
+      try{ localStorage.setItem('zoom_news', this.zoom); }catch(e){}
+      document.documentElement.style.setProperty('--zoom', this.zoom / 100);
+    },
+    toggleTop(){
+      this.onTop = !this.onTop;
+      if(window.pywebview && window.pywebview.api && window.pywebview.api.set_on_top){
+        window.pywebview.api.set_on_top(this.onTop);
+      } else {
+        this.onTop = true;
+      }
+    },
+    toggleSpeak(){
+      this.autoSpeak = !this.autoSpeak;
+      if(!this.autoSpeak) this.stopSpeak();
+    },
+    enqueue(text){
+      if(!('speechSynthesis' in window) || !text) return;
+      this.speakQueue.push(text);
+      this.processSpeak();
+    },
+    processSpeak(){
+      if(this.speaking) return;
+      if(this.speakQueue.length === 0) return;
+      this.speaking = true;
+      const text = this.speakQueue.shift();
+      const u = new SpeechSynthesisUtterance(text);
+      u.lang = 'zh-CN';
+      u.rate = 1.0;
+      u.pitch = 1.0;
+      u.onend = () => { this.speaking = false; this.processSpeak(); };
+      u.onerror = () => { this.speaking = false; this.processSpeak(); };
+      window.speechSynthesis.speak(u);
+    },
+    stopSpeak(){
+      if('speechSynthesis' in window) window.speechSynthesis.cancel();
+      this.speakQueue = [];
+      this.speaking = false;
+    },
+    speakItem(it){
+      const t = (it.time ? it.time + '。 ' : '') + (it.summary || it.title || '');
+      this.enqueue(t);
+    },
+    bracketText(s){
+      const m = (s || '').match(/【[^】]*】/g);
+      return m ? m.join(' ') : '';
+    },
+    fetchData(force){
+      if(this.loading) return;
+      this.loading = true;
+      // force（首屏 / 综合窗口「刷新全部」带 ?force=1 重载本页）→ ttl=0 绕服务端缓存；轮询维持 ttl=20
+      const url = '/futures/news/data?ttl=' + (force ? 0 : 20) + '&size=10&_=' + Date.now();
+      reqJSON(url)
+        .then(resp => {
+          if(!resp.ok) throw new Error(resp.error || 'backend error');
+          const d = resp.data || {};
+          if(d.ok === false && d.error) throw new Error(d.error);
+          const raw = Array.isArray(d.data) ? d.data : [];
+          this.total = d.total || raw.length;
+          const norm = raw.map(x => {
+            const st = x.showTime || '';
+            return {
+              code: x.code || '',
+              title: x.title || '',
+              summary: x.summary || x.title || '',
+              showTime: st,
+              date: st.slice(0, 10),
+              time: st.slice(11) || st,
+              realSort: x.realSort || 0,
+              important: String(x.titleColor) === '1' || String(x.titleColor) === '#e0533d',
+              color: accentOf(x.titleColor),
+              stockList: x.stockList || [],
+              _new: false,
+            };
+          });
+          const fresh = [];
+          for(const it of norm){
+            if(!this.seenCodes[it.code]){
+              it._new = true;
+              fresh.push(it);
+              this.seenCodes[it.code] = 1;
+            }
+          }
+          if(fresh.length){
+            const merged = fresh.concat(this.items);
+            this.items = merged.slice(0, 10);
+            if(this.autoSpeak){
+              this.stopSpeak();
+              const shown = {};
+              for(const it of this.items) shown[it.code] = 1;
+              for(const it of fresh){
+                if(shown[it.code]){
+                  const bt = this.bracketText(it.summary || it.title || '');
+                  if(bt) this.enqueue(bt);
+                }
+              }
+            }
+          }
+          this.updatedAt = new Date().toLocaleTimeString('zh-CN', {hour12:false});
+          this.errMsg = '';
+        })
+        .catch(err => { this.errMsg = '加载失败：' + err.message; })
+        .finally(() => { this.loading = false; });
+    },
+  },
+});
+</script>
+</body>
+</html>

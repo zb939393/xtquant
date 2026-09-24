@@ -1,0 +1,43 @@
+__pycache__/
+*.pyc
+logs/
+data/
+!data/option_watchlist.json
+!data/vwap_params.json
+.venv/
+.env
+
+>>> local-aux-ignore <<<
+.workbuddy/
+backup/
+*.bak*
+.bak_*
+_probe_*.py
+_dbg.py
+_opt_cache.py
+_verify_cache2.py
+# 临时日志 / 测试脚本 / 调试输出
+*.log
+*.err.log
+*.out.log
+server_*.log
+server_*.err
+server_*.out
+flask_*.log
+flask_*.err
+flask_*.out
+_tmp_*.txt
+_tmp_*.log
+_tmp_*.err
+_test_*.py
+_opt_warm2.*
+_verify_referer.py
+edge_*.log
+kline_*.png
+perf_*.py
+-w
+.trae/
+# pyinstaller 中间产物（最终产物在 dist\popup_launcher.exe，由 tools\build_popup_launcher.py 在 A 上现场构建）
+build/
+popup_launcher.spec
+dist/

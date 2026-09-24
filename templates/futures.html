@@ -1,0 +1,2229 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-page-node-id="bHxnnNmNFgiB7THznbqTcF">
+<head data-page-node-id="kGEgHOJozsOnQwLLRLYzK4">
+<meta charset="UTF-8" data-page-node-id="t1u8GFh8T5UjTD8Zup6n5w" />
+<title>股指期货监控看板</title>
+<meta name="viewport" content="width=device-width,initial-scale=1.0" data-page-node-id="nTznM8XxRHGFiQOc66yc5H" />
+<link rel="stylesheet" href="https://unpkg.com/element-ui/lib/theme-chalk/index.css" data-page-node-id="aK6rx9USKiz0oH8KZ0YopF" />
+<style>
+  html,body{margin:0;padding:0;height:100%;}
+  body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;background:#f5f7fa;color:#303133;}
+  #app{padding:14px 20px;box-sizing:border-box;min-height:100%;}
+  .topbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:10px;}
+  .topbar h2{margin:0;font-size:20px;}
+  .kpis{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:12px;}
+  .kpi{background:#fff;padding:10px 16px;border-radius:6px;box-shadow:0 1px 3px rgba(0,0,0,.06);min-width:120px;}
+  .kpi .label{font-size:12px;color:#909399;}
+  .kpi .val{font-size:18px;font-weight:600;margin-top:2px;color:#303133;}
+  .kpi.warn .val{color:#E6A23C;}
+  .kpi.danger .val{color:#F56C6C;}
+  .kpi.ok .val{color:#67C23A;}
+  .banner{display:flex;align-items:center;gap:8px;padding:10px 16px;border-radius:6px;margin-bottom:12px;font-size:13px;box-shadow:0 1px 3px rgba(0,0,0,.06);}
+  .banner-loading{background:#ecf5ff;border:1px solid #d9ecff;color:#409EFF;}
+  .banner-error{background:#fef0f0;border:1px solid #fde2e2;color:#f56c6c;}
+  .up{color:#e74c3c !important;font-weight:600;}
+  .down{color:#27ae60 !important;font-weight:600;}
+  .flat{color:#95a5a6 !important;}
+  .legend{font-size:12px;color:#909399;margin-left:14px;}
+  .board-view{ padding:4px 0 40px; }
+  .board-toolbar{ display:flex; align-items:center; gap:12px; flex-wrap:wrap; padding:8px 12px; margin-bottom:12px; background:#fff; border:1px solid #ebeef5; border-radius:8px; }
+  .board-title{ font-size:16px; font-weight:700; color:#303133; }
+  .board-toolbar-right{ margin-left:auto; display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+  .board-rows{ display:block; }
+  .board-row-chunk{ display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:12px; margin-bottom:12px; }
+  .board-cell{ min-width:0; background:#fff; border:1px solid #ebeef5; border-radius:10px; overflow:hidden; box-shadow:0 1px 4px rgba(0,0,0,.03); }
+  .board-row-head{ display:flex; align-items:center; gap:10px; padding:8px 14px; background:#fafbfc; border-bottom:1px solid #f0f2f5; }
+  .board-badge{ font-weight:700; font-size:13px; padding:1px 8px; border-radius:10px; background:#f0f2f5; color:#606266; }
+  .board-name{ font-weight:700; font-size:13px; color:#303133; }
+  .board-chart-spacer{ flex:1 1 auto; }
+  .board-chg, .board-chg-pct{ font-weight:700; font-variant-numeric:tabular-nums; font-size:12px; }
+  .board-chg-pct{ margin-left:1px; }
+  .board-panel{ padding:10px 14px; }
+  .board-rt{ width:100%; height:360px; display:flex; flex-direction:row; gap:6px; position:relative; }
+  .board-kline-cell{ position:relative; width:100%; height:360px; }
+  .board-rt-chart{ flex:3 1 0; min-width:0; height:100%; cursor:pointer; position:relative; }
+  .board-rt-side{ flex:1 1 0; min-width:0; height:100%; display:flex; flex-direction:column; gap:4px; }
+  .board-rt-book, .board-rt-ticks{ min-width:0; border:1px solid #eef0f3; border-radius:6px; padding:1px 3px; overflow:hidden; }
+  .board-rt-book{ flex:0 0 auto; }
+  .board-rt-ticks{ flex:1 1 auto; }
+  .vw-err-overlay{ position:absolute; left:0; top:0; right:0; bottom:0; z-index:30; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; padding:16px 20px; background:linear-gradient(135deg,#fff5f5,#fff); border:2px solid #f5c6c6; border-radius:8px; margin:4px; box-sizing:border-box; color:#c0392b; font-size:14px; line-height:1.6; font-weight:700; }
+  .vw-err-overlay .vw-err-icon{ font-size:32px; margin-bottom:8px; line-height:1; }
+  .vw-err-overlay .vw-err-title{ font-size:16px; margin-bottom:4px; }
+  .vw-err-overlay .vw-err-detail{ font-size:12px; color:#e74c3c; font-weight:400; margin-top:2px; }
+  .book-head, .tick-head{ font-size:9px; color:#909399; font-weight:600; line-height:12px; border-bottom:1px solid #f2f4f7; margin-bottom:1px; }
+  .book-row{ display:flex; align-items:center; gap:1px; font-size:9px; line-height:11px; font-variant-numeric:tabular-nums; }
+  .book-tag{ flex:0 0 16px; color:#909399; }
+  .book-price{ flex:1 1 auto; text-align:right; }
+  .book-vol{ flex:0 0 34px; text-align:right; color:#909399; }
+  .book-row.ask .book-price{ color:#27ae60; }
+  .book-row.bid .book-price{ color:#e74c3c; }
+  .book-mid{ display:flex; align-items:center; justify-content:space-between; border-top:1px dashed #e9ebee; border-bottom:1px dashed #e9ebee; margin:2px 0; padding:1px 0; }
+  .book-last{ font-size:12px; font-weight:700; font-variant-numeric:tabular-nums; }
+  .book-last.up{ color:#e74c3c; } .book-last.down{ color:#27ae60; } .book-last.flat{ color:#303133; }
+  .book-time{ font-size:9px; color:#c0c4cc; }
+  .tick-row{ display:flex; align-items:center; gap:1px; font-size:9px; line-height:11px; font-variant-numeric:tabular-nums; }
+  .tick-time{ flex:0 0 36px; color:#909399; }
+  .tick-price{ flex:1 1 auto; text-align:right; }
+  .tick-price.buy{ color:#e74c3c; } .tick-price.sell{ color:#27ae60; } .tick-price.neutral{ color:#606266; }
+  .tick-vol{ flex:0 0 34px; text-align:right; color:#909399; }
+  .board-tabs{ margin-top:2px; }
+  .comp-board{ padding:4px 0 40px; }
+  .comp-row{ margin-bottom:10px; }
+  .comp-row-label{ font-size:13px; font-weight:700; color:#606266; margin:0; padding-left:2px; height:0; opacity:0; overflow:hidden; display:flex; align-items:center; gap:8px; transition:height .15s ease, opacity .15s ease, margin .15s ease; }
+  .comp-row:hover .comp-row-label{ height:21px; opacity:1; margin:4px 0 6px; }
+  .comp-row-cells{ display:grid; grid-template-columns:repeat(4, minmax(0, 1fr)); gap:10px; }
+  .comp-cell{ min-width:0; background:#fff; border:1px solid #ebeef5; border-radius:10px; overflow:hidden; box-shadow:0 1px 4px rgba(0,0,0,.03); display:flex; flex-direction:column; }
+  .comp-cell-head{ display:flex; align-items:center; flex-wrap:wrap; gap:4px 8px; padding:6px 10px; min-height:34px; background:#fafbfc; border-bottom:1px solid #f0f2f5; }
+  .cell-ind{ display:inline-flex; flex-wrap:wrap; align-items:baseline; gap:4px 7px; font-size:10px; font-variant-numeric:tabular-nums; line-height:1.2; }
+  .cell-ind .ci{ display:inline-flex; align-items:baseline; gap:2px; white-space:nowrap; }
+  .cell-ind .ci b{ font-weight:600; color:#aeb4bf; }
+  .cell-ind .ci.atr{ color:#16a085; }
+  .cell-ind .ci.adx{ color:#303133; }
+  .cell-ind .ci.pdi{ color:#e74c3c; }
+  .cell-ind .ci.mdi{ color:#27ae60; }
+  .cell-ind .ci.mfi{ color:#8e44ad; }
+  /* 综合期指看盘：代码/名称/指标显示框统一最小字号 */
+  .comp-cell-head .board-badge{ font-size:9px; padding:0 6px; line-height:16px; }
+  .comp-cell-head .board-name{ font-size:9px; }
+  .comp-cell-head .cell-ind{ font-size:9px; }
+  .comp-cell-chart{ flex:1 1 auto; height:280px; position:relative; min-height:0; }
+  .comp-rt, .comp-kline{ width:100%; height:100%; cursor:pointer; }
+  .comp-kline-wrap{ position:relative; width:100%; height:100%; }
+  @media (max-width: 1100px){
+    .comp-row-cells{ grid-template-columns:repeat(2, minmax(0, 1fr)); }
+  }
+</style>
+</head>
+<body data-page-node-id="EIMWqgZDcqZ3KGQBHuI2s1">
+{% include '_navbar.html' %}
+<div id="app" data-page-node-id="N6jRoHlhyO6OU09ZNPOlxL">
+  <div class="topbar" data-page-node-id="GWmr2RJDO3yZddoafe8Xi3">
+    <h2 data-page-node-id="iGnADVOPiWAx1JIrNuSmbP">📈 股指期货监控看板 <span class="legend" data-page-node-id="hYSc1GQDEdQcHASpXIAfaC">（中金所 CFFEX · 当月连续 · <b class="up" data-page-node-id="19JAuEQCtPgDiZxyH8kFK0">红涨</b>/<b class="down" data-page-node-id="OjlHVmS8X5ZjHfmBV3mDUz">绿跌</b>）</span></h2>
+    <div data-page-node-id="T2wlI5KLejkDzO8XFPecQz">
+      <a href="/popup-setup" target="_blank" style="margin-right:12px;font-size:12px;color:#909399;text-decoration:none;" title="B 机器配置助手：注册 xtquant-popup 协议、查看日志位置" data-page-node-id="jtl2FVRCgHOwIlDSpvbP9c">🖥 B 机器配置</a>
+      <el-button icon="el-icon-refresh" size="mini" :loading="loading" @click="reload(true)" data-page-node-id="GUpsA7aIS4JgLT2mqmYRqG">刷新</el-button>
+      <el-select v-model="refreshInterval" size="mini" style="width:138px;margin-left:10px;" clearable @change="applyRefreshInterval" data-page-node-id="skymSF79dmPhExijeQpwN7">
+        <el-option label="1秒自动刷新" :value="1000" data-page-node-id="7imY4todGG1ZBSzOy4pm14"></el-option>
+        <el-option label="3秒自动刷新" :value="3000" data-page-node-id="sgGVCULawolkII2hjGyNrd"></el-option>
+        <el-option label="5秒自动刷新" :value="5000" data-page-node-id="eqQVTeo4Tta4S7j6tjJMAz"></el-option>
+        <el-option label="10秒自动刷新" :value="10000" data-page-node-id="LS2DsrNGSnmpTYhoHGC83b"></el-option>
+        <el-option label="手动刷新" :value="0" data-page-node-id="fcHX5chohqieY3rydd3Wzp"></el-option>
+      </el-select>
+      <el-checkbox v-model="showBook" size="mini" border style="margin-left:10px;" @change="onSideChange" data-page-node-id="PNHUikqfjQUtGloxxHz8VQ">盘口</el-checkbox>
+      <el-checkbox v-model="showTicks" size="mini" border @change="onSideChange" data-page-node-id="BfFE6VRAaKVGoFVCcIGcyA">逐笔</el-checkbox>
+      <el-button icon="el-icon-back" size="mini" @click="goBack" data-page-node-id="jRcL6ZBZi9sTCIdcZYSO2H">返回</el-button>
+    </div>
+  </div>
+
+  <div class="kpis" data-page-node-id="Q92g8O19dR2XABFIqgte2f">
+    <div class="kpi" data-page-node-id="Dfd6Q7E23Vg52BYjMRRsRW"><div class="label" data-page-node-id="S9QyQECxdd5CTF5FpB0l0L">合约数</div><div class="val" data-page-node-id="fH2JhTCSmpxbmUXidlaERL">${rows.length}</div></div>
+    <div class="kpi warn" data-page-node-id="Wp8ZJSwdZg0AN8Pp0YPUqT"><div class="label" data-page-node-id="t3zZuBMMAc76RZ2C97xFWt">数据更新</div><div class="val" data-page-node-id="vKvY2WyVDCmNAUnKh1iyr1">${updatedAt}</div></div>
+    <div class="kpi" v-for="r in rows" :key="'kpi-'+r.code" :class="updownCls(r.change_pct)" data-page-node-id="T6hGojSa74WKYNsW7lWO4X">
+      <div class="label" data-page-node-id="51IKtLG9CBAEltSUyUMdUZ">${r.code} · ${r.name}</div>
+      <div class="val" data-page-node-id="b603eyEgiWcpltSonLkZVi">${fmtNum(r.price, 2)} <span style="font-size:13px;" data-page-node-id="S1SgYD9lxnn8lpQ4cxcB5v">${fmtPct(r.change_pct, 2, true)}</span></div>
+    </div>
+  </div>
+
+  <div v-if="firstLoaded && !loading && rows.length === 0" class="banner banner-loading" data-page-node-id="TLhsNofNbAzK7gxeZ5onHj">
+    <i class="el-icon-loading" data-page-node-id="0OyOQYfbgOqBwhMOumRtLO"></i> 正在拉取中金所股指期货行情…
+  </div>
+  <div v-if="statusMsg" class="banner banner-error" data-page-node-id="7uCBKnQ443ECL3qzle0XFi">
+    <i class="el-icon-warning" data-page-node-id="xe6A4Z1zFWpLEpY8FhIQ9J"></i>
+    <span data-page-node-id="rzc1vHou1nHfyPGuJbS2oH">${statusMsg}</span>
+    <el-button size="mini" type="danger" plain icon="el-icon-refresh" @click="fetchSnapshot(true)" style="margin-left:10px;" data-page-node-id="b2ps7yyO7RSWqoqV2mEfCL">重试</el-button>
+  </div>
+
+  <el-tabs v-model="activeTab" class="board-tabs" data-page-node-id="pDYkLqfDADWmGoXZR7n6w5">
+    <el-tab-pane label="分时看盘（盘口/逐笔）" name="rt" data-page-node-id="8d6YFtA8EhlZJdmjIDoUgv">
+      <div class="board-view" data-page-node-id="cfQdVjHYas2y5uVGDQzhyR">
+        <div class="board-toolbar" data-page-node-id="K3GOHpKUbVk8tMub4rNxkW">
+          <span class="board-title" data-page-node-id="rt3OlHeZMsBY4v5Qj1U6Lb">📈 期指看盘</span>
+          <span class="muted" v-if="rtMode==='rt'" data-page-node-id="rX8qpzsFwFmna4BSgTWtNH">分时图（实时）· 五档盘口 · 逐笔成交（数据来自扩展行情 pytdx · 中金所 CFFEX）</span>
+          <span class="muted" v-else-if="rtMode==='vwap'" data-page-node-id="Zu6BBQmzZbQg1xAEYIhtaI">双腿同屏 · <b style="color:#8e44ad;">上午</b>开盘驱动：ret1545 ≥ +${fmtNum(getVwapLegParams(vwapActiveCode,'am').am_k,2)}% 做多 / ≤ −${fmtNum(getVwapLegParams(vwapActiveCode,'am').am_k,2)}% 做空（09:46 入场 · 1.5ATR(5m) 止损 / ${fmtNum(getVwapLegParams(vwapActiveCode,'am').am_rr,1)}R · 11:30 强平）· <b style="color:#409EFF;">下午</b>VWAP 动量：dev_z 上破 +${fmtNum(getVwapLegParams(vwapActiveCode,'pm').k_long,2)} 做多 / 下破 −${fmtNum(Math.abs(getVwapLegParams(vwapActiveCode,'pm').k_short),2)} 做空（13:00–14:55 · 1.5ATR(5m) / ${fmtNum(getVwapLegParams(vwapActiveCode,'pm').rr,1)}R · 14:55 强平）</span>
+          <span class="muted" v-else data-page-node-id="GCAVmpkdrmcUHc8etNEtCB">K线（${periodLabel(klinePeriod)}）· 蜡烛图 + BOLL · 成交量 · ${indicator === 'mfi' ? 'MFI' : (indicator === 'adx' ? 'ADX' : 'ATR')} 指标</span>
+          <span class="board-toolbar-right" data-page-node-id="ptDJ0IepAkTF0NVRyOk3P6">
+            <el-radio-group v-model="rtMode" size="mini" data-page-node-id="KoFaHnS3RRBpwLk07jWQV9">
+              <el-radio-button label="rt" data-page-node-id="GeFFpZz0UfOAg84u3W8EdV">分时</el-radio-button>
+              <el-radio-button label="vwap" data-page-node-id="llfU2dWzI7KqU3cMLt8qGh">VWAP</el-radio-button>
+              <el-radio-button label="kline" data-page-node-id="nPZtXXYvVL0VLsy7ks71bz">K线</el-radio-button>
+            </el-radio-group>
+            <template v-if="rtMode==='vwap'" data-page-node-id="epnKLDZB5nPjX6SNZsRVTb">
+              <el-select v-model="vwapActiveCode" size="mini" style="width:110px;margin-left:10px;" placeholder="选择品种" @change="onVwapActiveCodeChange" data-page-node-id="RdELjmeoDZPYnwChyn06DZ">
+                <el-option v-for="r in rows" :key="r.code" :label="r.code" :value="r.code" data-page-node-id="DcFEvfGGakSy1XCYk7WRUK"></el-option>
+              </el-select>
+              <template v-if="vwapActiveCode" data-page-node-id="BMeSKkNhhW14hdLRPryQko">
+                <!-- 上午腿：单阈值 ±k%（ret1545）+ 2.0R -->
+                <span class="muted" style="margin-left:10px;color:#8e44ad;font-weight:600;" data-page-node-id="8cyY61ff3pKcUhpXG3yPq6">上午 ±阈值%</span>
+                <el-input-number :value="getVwapLegParams(vwapActiveCode,'am').am_k" size="mini" style="width:104px;margin-left:4px;"
+                  :precision="2" :step="0.05" :min="0.05" :max="3"
+                  @change="setVwapParam('am_k', $event)" data-page-node-id="fdhqcI51FMf2FEnB4qTmtf"></el-input-number>
+                <el-select :value="getVwapLegParams(vwapActiveCode,'am').am_rr" size="mini" style="width:80px;margin-left:6px;" placeholder="盈亏比" @change="setVwapParam('am_rr', $event)" data-page-node-id="Fn5aFZC8M9q1MZJORuxvBT">
+                  <el-option label="1.0R" :value="1.0" data-page-node-id="wJWLybd1iYyYbKuc1mZ4YY"></el-option>
+                  <el-option label="1.5R" :value="1.5" data-page-node-id="HARiprPeqBgHuz4jNJzTPz"></el-option>
+                  <el-option label="2.0R" :value="2.0" data-page-node-id="NUYOSwEH7Zv6w33k5ncV8l"></el-option>
+                  <el-option label="3.0R" :value="3.0" data-page-node-id="C3Yx8CS2TkVA8gny5zvnmv"></el-option>
+                </el-select>
+                <!-- 下午腿：dev_z 多/空阈值 + 1.5R -->
+                <span class="muted" style="margin-left:12px;color:#409EFF;font-weight:600;" data-page-node-id="xAAMf75u1alo6hWNMJOBKx">下午 多z≥</span>
+                <el-input-number :value="getVwapLegParams(vwapActiveCode,'pm').k_long" size="mini" style="width:104px;margin-left:4px;"
+                  :precision="2" :step="0.05" step-strictly :min="0.05" :max="5"
+                  @change="setVwapParam('k_long', $event)" data-page-node-id="S75sZu9hWhEXekwQubWnKM"></el-input-number>
+                <span class="muted" style="margin-left:8px;" data-page-node-id="IhqLbUwjcz7FhnR8TbnqzW">空z≤</span>
+                <el-input-number :value="getVwapLegParams(vwapActiveCode,'pm').k_short" size="mini" style="width:104px;margin-left:4px;"
+                  :precision="2" :step="0.05" step-strictly :min="-5" :max="-0.05"
+                  @change="setVwapParam('k_short', $event)" data-page-node-id="LcjVIOX5lFA7kbCgKA3MLW"></el-input-number>
+                <el-select :value="getVwapLegParams(vwapActiveCode,'pm').rr" size="mini" style="width:80px;margin-left:6px;" placeholder="盈亏比" @change="setVwapParam('rr', $event)" data-page-node-id="U0xAy0gEASMDzgOQy82sKa">
+                  <el-option label="1.0R" :value="1.0" data-page-node-id="YmLMEhz4wQzUCE6b8HNiWu"></el-option>
+                  <el-option label="1.5R" :value="1.5" data-page-node-id="652rFRMvBFcbS5CKSX7eVs"></el-option>
+                  <el-option label="2.0R" :value="2.0" data-page-node-id="ytHkNy8LORa7ePMNPLPdtl"></el-option>
+                  <el-option label="3.0R" :value="3.0" data-page-node-id="Gb66Pb6oLGVwJZbI6gRfMF"></el-option>
+                </el-select>
+                <span class="muted" style="margin-left:6px;" data-page-node-id="d5KNs2Ol2sOvLAB8p6mNs4">基线 ${vwapBaseLabel(vwapActiveCode)}</span>
+              </template>
+              <!-- 阈值同步失败必须可见：静默退回本地旧阈值会让信号莫名跳变（13:41 <-> 13:02） -->
+              <span v-if="vwapSyncErr" style="margin-left:10px;color:#f56c6c;font-weight:600;" data-page-node-id="VwSyncErrHint">⚠ ${vwapSyncErr}</span>
+            </template>
+            <template v-if="rtMode==='kline'" data-page-node-id="XPetSz9OzPiz9fCdUkmj3K">
+              <el-select v-model="klinePeriod" size="mini" style="width:96px;margin-left:10px;" placeholder="周期" data-page-node-id="EZO0lzamtLToXpK6F2Qh8Z">
+                <el-option label="1 分钟" value="1min" data-page-node-id="BTH8dQrzKVC0CzR4GQHb4F"></el-option>
+                <el-option label="5 分钟" value="5min" data-page-node-id="8HqkyZpzukzLS5MVP4LzLF"></el-option>
+                <el-option label="30 分钟" value="30min" data-page-node-id="BYl7tjJylRjqmHhTU59zHe"></el-option>
+                <el-option label="60 分钟" value="60min" data-page-node-id="O9vq7kudJVZyxy6y3HgDkd"></el-option>
+                <el-option label="日线" value="day" data-page-node-id="u0ldvYKvkCTfw3Ld5puVW7"></el-option>
+                <el-option label="周线" value="week" data-page-node-id="ufgY01aIZ8Cj4fjZUBXq78"></el-option>
+                <el-option label="月线" value="month" data-page-node-id="ZKECmxDErCFRAyQ5Cj2375"></el-option>
+              </el-select>
+              <el-select v-model="klineCount" size="mini" style="width:96px;margin-left:10px;" placeholder="K线数" data-page-node-id="uhVoGTZ6u1yCryVALy4gjU">
+                <el-option label="60" :value="60" data-page-node-id="2s9LYOV9nueNfQNTxW5ktF"></el-option>
+                <el-option label="90" :value="90" data-page-node-id="xbO75Gl13nQFy2Fbgr5Ydi"></el-option>
+                <el-option label="120" :value="120" data-page-node-id="ndwImuAS6zXnezzfrSsJpX"></el-option>
+                <el-option label="150" :value="150" data-page-node-id="7X8XJZlZN5WA2yNEcuIBcL"></el-option>
+                <el-option label="180" :value="180" data-page-node-id="TaOVGsmkNs0qGvRulkBV9W"></el-option>
+                <el-option label="240" :value="240" data-page-node-id="DOTyTEMdnIUJioBBTUtuMH"></el-option>
+                <el-option label="300" :value="300" data-page-node-id="oZntp7yjBoDLPT2V8WfJkX"></el-option>
+                <el-option label="400" :value="400" data-page-node-id="2dL04ZaOY1P4YNXwAMHYmf"></el-option>
+                <el-option label="500" :value="500" data-page-node-id="fFVmcfyMgiEubc615IgAt1"></el-option>
+                <el-option label="600" :value="600" data-page-node-id="wvhsPPmjASDhYRPGbiLI9d"></el-option>
+                <el-option label="700" :value="700" data-page-node-id="di87BpzNg9afaQ3GBoYmpV"></el-option>
+              </el-select>
+              <el-select v-model="indicator" size="mini" style="width:108px;margin-left:10px;" placeholder="指标" data-page-node-id="FFbXiD4VxVjuChPnFLtLTZ">
+                <el-option label="MFI" value="mfi" data-page-node-id="qSHQWG28zIObLk9eHTc6I3"></el-option>
+                <el-option label="ADX" value="adx" data-page-node-id="DOj4XEJy0L7zTeIGha4Bn5"></el-option>
+                <el-option label="ATR" value="atr" data-page-node-id="2ZnqoaUchJJet7flEtaKgc"></el-option>
+              </el-select>
+            </template>
+            <el-switch v-if="rtMode==='rt'" v-model="showBands" size="mini" active-text="±σ通道" style="margin-left:12px;" data-page-node-id="CKdnmhlhhBcRrkpuZCrnwV"></el-switch>
+            <span class="muted" style="margin-left:12px;" data-page-node-id="EpywSRD8T1zrcfaN9EFBqK">实时刷新：${refreshInterval ? (refreshInterval/1000) + ' 秒' : '手动'}</span>
+          </span>
+        </div>
+        <div class="board-rows" ref="boardRows" data-page-node-id="BKC82oGNPwmvHkUrWiwLLn">
+          <div class="board-row-chunk" data-page-node-id="fvqWu9eyUYEIWArP2QhjK0">
+            <div v-for="row in rows" :key="row.code" class="board-cell" data-page-node-id="eHSMyDNEGtUiX2hhYmZsPB">
+              <div class="board-row-head" data-page-node-id="21VftetwV0jF15qwBAgWHn">
+                <span class="board-badge" :class="updownCls(row.change_pct)" v-text="row.code" data-page-node-id="ruJLp6v3cfwkiANjBOq0zr"></span>
+                <span class="board-name" v-text="row.name" data-page-node-id="iQasViiHP05Y92Ky9DcPHi"></span>
+                <span class="cell-ind" v-if="rtMode==='kline' && ci(row.code, klinePeriod)" data-page-node-id="iI4z8t50piD9S4jRHQjwbC">
+                  <span class="ci atr" data-page-node-id="2l9SRlOAdn6O4HuGdyFU0h"><b data-page-node-id="TDksHHBwW5FXN8p7s5MXK9">ATR</b>${fmt2(ci(row.code, klinePeriod).atr)}</span>
+                  <span class="ci adx" data-page-node-id="CDO9zm0Roiscyc15Ik3bUX"><b data-page-node-id="zwgyKaiAWJGV6FgYpsuCev">ADX</b>${fmt2(ci(row.code, klinePeriod).adx)}</span>
+                  <span class="ci pdi" data-page-node-id="6ryaLHcGRJfGnNd86Iw0jy"><b data-page-node-id="UN3rX9D3EBOzOwNGqXtnRd">+DI</b>${fmt2(ci(row.code, klinePeriod).pdi)}</span>
+                  <span class="ci mdi" data-page-node-id="Zf2LyjLIWI3eIPC25qFoyl"><b data-page-node-id="2hWMqBivi7BYtGFUpz29pQ">-DI</b>${fmt2(ci(row.code, klinePeriod).mdi)}</span>
+                  <span class="ci mfi" data-page-node-id="snFpTGtauf39RsSs1LBB11"><b data-page-node-id="KuWtpaSFwU1EtcN4BOMt9O">MFI</b>${fmt2(ci(row.code, klinePeriod).mfi)}</span>
+                </span>
+                <span class="cell-ind" v-if="rtMode==='vwap' && vw(row.code)" data-page-node-id="7QxvyEqQV34mL6ottFkEYl">
+                  <span class="ci atr" data-page-node-id="wr05CusVH8DvpNyHpRfsyp"><b data-page-node-id="EQF9eT7uGj9RScIg8ZP2Hd">ATR5</b>${fmt2(vw(row.code).atr5)}</span>
+                  <span class="ci" :class="vwZcls(vw(row.code).ret1545, 'am')" data-page-node-id="U8V3Imt8F2X56Rvbu9XS1v"><b data-page-node-id="5Kxpr9WwDwQoDHz3xYTTCc">ret1545</b>${fmt2(vw(row.code).ret1545)}%</span>
+                  <span class="ci" :class="vwZcls(vw(row.code).dev_z, 'pm')" data-page-node-id="Kr1oGFDSREOqLcCVF4mksZ"><b data-page-node-id="qUr3dgaLs6HesTmlVdXDJH">dev_z</b>${fmt2(vw(row.code).dev_z)}</span>
+                  <span class="ci" :class="vwStateCls(vw(row.code).state_am)" data-page-node-id="mmmGp92hRfZnChNbcAwIc3"><b data-page-node-id="o8YgAuSk6WJbEgVRWVKUTk">上午</b>${vwStateText(vw(row.code).state_am)}</span>
+                  <span class="ci" :class="vwStateCls(vw(row.code).state_pm)" data-page-node-id="a3fWp9QxZ2PmLk7RtYuNbH"><b data-page-node-id="6dKq1XcV8sZnRw3JpH0tLv">下午</b>${vwStateText(vw(row.code).state_pm)}</span>
+                  <span class="ci" :class="vwPnlCls(vw(row.code).pnl_r)" data-page-node-id="xHFcQZVxZAFfcoVeiaMa1h"><b data-page-node-id="ECIjqZnBpruIHm9xyMWH8w">当日</b>${fmtPct(num(vw(row.code).pnl_r), 2, true)}R</span>
+                  <span class="ci" data-page-node-id="SynaEKFsrDQ3iDlUdOKKtY"><b data-page-node-id="bi6LT1SW7m5BtaLtaQdUC1">信号</b>${vw(row.code).n_am}/${vw(row.code).n_pm}</span>
+                </span>
+                <span class="board-chart-spacer" data-page-node-id="H7b3a1Z7ZznJFGSNLmkoDX"></span>
+                <span class="board-chg" :class="updownCls(row.change_pct)" data-page-node-id="VEswCPZuzFP4RggBpKHHql">${fmtNum(num(row.price) - num(row.prev_close), 2)}</span>
+                <span class="board-chg-pct" :class="updownCls(row.change_pct)" data-page-node-id="YStfDgh8d2qVBUvacHwE9L">${fmtPct(row.change_pct, 2, true)}</span>
+              </div>
+              <div class="board-panel board-panel-chart" data-page-node-id="7Pz5fJRX5OTT8fqJw7ofML">
+                <fut-board-rt v-if="rtMode==='rt'" :key="'rt-'+row.code" :code="row.code" :prev-close="num(row.prev_close)" :price="num(row.price)" :chg-pct="num(row.change_pct)" kind="futures" :show-book="showBook" :show-ticks="showTicks" :show-bands="showBands" :params="getVwapParams(row.code, 'pm')" data-page-node-id="3HugOfeNEMBeujBpl73KzV"></fut-board-rt>
+                <fut-board-rt v-else-if="rtMode==='vwap'" :key="'vwap-'+row.code" mode="vwap" :code="row.code" :prev-close="num(row.prev_close)" :price="num(row.price)" :chg-pct="num(row.change_pct)" kind="futures" :show-book="showBook" :show-ticks="showTicks" :params="getVwapParams(row.code)" leg="both" @vwap="onVwap" @params-change="onParamsChange" data-page-node-id="jfNPbja07pmiknFqCo0TqK"></fut-board-rt>
+                <div v-else class="board-kline-cell" data-page-node-id="29OyAzlEloQAe4YqHorpfc">
+                  <fut-kline :code="row.code" :period="klinePeriod" :count="klineCount" :indicator="indicator" kind="futures" @indicators="onIndicators" data-page-node-id="LGvDraS63AFSK3PE4Ume32"></fut-kline>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </el-tab-pane>
+    <el-tab-pane label="综合期指看盘" name="comp" lazy data-page-node-id="RlyeREOXJhR2faCYEOcvwp">
+      <div class="comp-board" data-page-node-id="7t66QyYwu9Y0kC2bAcMyjI">
+        <div class="board-toolbar" data-page-node-id="Y8Be5CwaXCsaHJXwiNyqYi">
+          <span class="board-title" data-page-node-id="QRiGJVy4YsCppaqqUBEvkB">📊 综合期指看盘</span>
+          <span class="muted" data-page-node-id="gi1Vs13Yx5vxtxMjOh33I7">4 个当月连续合约 × 分时 / 1分钟 / 5分钟 / 30分钟 K线（中金所 CFFEX · 红涨绿跌）</span>
+          <span class="board-toolbar-right" data-page-node-id="tZreIWbGSSbGTCF3reQBbj">
+            <span class="muted" data-page-node-id="kZgWHyKjD8OSmJCuVkKDVr">分时 30s / K线 15s 自动刷新</span>
+            <el-switch v-model="showBands" size="mini" active-text="±σ通道" style="margin-left:12px;margin-right:4px;" data-page-node-id="nKZfF2EICQDxR4i8r9IjCP"></el-switch>
+            <el-select v-model="klineCount" size="mini" style="width:96px;margin-left:10px;" placeholder="天数" data-page-node-id="smw33Z79hEyESbnjMt8cGX">
+              <el-option label="60" :value="60" data-page-node-id="JrGP395x4GNDNlK0OsVwie"></el-option>
+              <el-option label="90" :value="90" data-page-node-id="wOub3E20MKPGNBKjMQ4AaI"></el-option>
+              <el-option label="120" :value="120" data-page-node-id="FgoP2EBwU1CgKoqcpertZw"></el-option>
+              <el-option label="150" :value="150" data-page-node-id="nsKFfpQw8de6UDdbvfoAiR"></el-option>
+              <el-option label="180" :value="180" data-page-node-id="vTUzJ42WyMt5DGUtMixFRB"></el-option>
+              <el-option label="240" :value="240" data-page-node-id="Z3tIBHihLvYo32na2kJcw0"></el-option>
+              <el-option label="300" :value="300" data-page-node-id="izuqUW7OKGAQ7Cm57MmYab"></el-option>
+              <el-option label="400" :value="400" data-page-node-id="TbzpSqREVjwtK1lHJlOV6S"></el-option>
+              <el-option label="500" :value="500" data-page-node-id="kYiygijSQF23E4HXe06NtN"></el-option>
+              <el-option label="600" :value="600" data-page-node-id="9EV2SN6OOLqfOrBtToygdz"></el-option>
+              <el-option label="700" :value="700" data-page-node-id="uGVvSDHtS9JIYNw3YvksU7"></el-option>
+            </el-select>
+            <el-select v-model="indicator" size="mini" style="width:108px;margin-left:10px;" placeholder="指标" data-page-node-id="TmK2jfDddUyNhWptYE6Jqd">
+              <el-option label="MFI" value="mfi" data-page-node-id="Iu7Z4on7tRdraYPGSwmMra"></el-option>
+              <el-option label="ADX" value="adx" data-page-node-id="MebFQCRiXX47XBsULkgLKx"></el-option>
+              <el-option label="ATR" value="atr" data-page-node-id="J6AVcGGEG9B6WdwN7TwfeO"></el-option>
+            </el-select>
+            <el-button type="primary" size="mini" icon="el-icon-rank" :loading="popupLaunching" @click="launchPopup" style="margin-left:10px;" data-page-node-id="O8DgUxruCBNCUcu2oTtdoW">独立弹窗</el-button>
+            <el-button type="success" size="mini" icon="el-icon-view" :loading="integratedLaunching" @click="launchIntegratedPopup" title="集成行业分布/涨幅分布/新闻/成交分析/外围股市/股指资金/期权等全部子窗的综合弹窗" data-page-node-id="Rt0CA4jAB3V2PTqpbOSpko">市场概况</el-button>
+          </span>
+        </div>
+        <div class="comp-rows" data-page-node-id="Jx5mOQBRXXzjudePZOyMuO">
+          <div class="comp-row" v-for="tf in compTimeframes" :key="tf.key" data-page-node-id="fn3pFZf9TpTyN7mkmQkC5R">
+            <div class="comp-row-label" data-page-node-id="yOy7aLis0GtVTnkhNdMRpi">${tf.label}</div>
+            <div class="comp-row-cells" data-page-node-id="79JhLiykzRWnx5c3tzs3xq">
+              <div v-for="row in rows" :key="row.code" class="comp-cell" data-page-node-id="TiRVZ7tI7XlBtULAyrL7U0">
+                <div class="comp-cell-head" data-page-node-id="nUPvBehJl2fr5t0OiW8ZEY">
+                  <span class="board-badge" :class="updownCls(row.change_pct)" v-text="row.code" data-page-node-id="wN6e7PShHUT4JEIucq6Kan"></span>
+                  <span class="board-name" v-text="row.name" data-page-node-id="jAQtGybsyx7oUlrrP9ojKQ"></span>
+                  <span class="cell-ind" v-if="ci(row.code, tf.key)" data-page-node-id="Mk64iol8TByFa7jNvLkXgg">
+                    <span class="ci atr" data-page-node-id="tFXKRoYd9722VgrYIIzkS8"><b data-page-node-id="gVVu3VU7xHRuXWyzF8O2BU">ATR</b>${fmt2(ci(row.code, tf.key).atr)}</span>
+                    <span class="ci adx" data-page-node-id="WGg9sMljhm8T6kArRGvtGQ"><b data-page-node-id="CdC8famS5H9E16100p7GPW">ADX</b>${fmt2(ci(row.code, tf.key).adx)}</span>
+                    <span class="ci pdi" data-page-node-id="H521migMqAxbeFusRnkzaO"><b data-page-node-id="ZJEBw2oXrO7cWyg0bi8mG5">+DI</b>${fmt2(ci(row.code, tf.key).pdi)}</span>
+                    <span class="ci mdi" data-page-node-id="ConYBu7Yc1ENLX3ujsoIOu"><b data-page-node-id="ZeKeCN1vRhzBLwa7Trwqby">-DI</b>${fmt2(ci(row.code, tf.key).mdi)}</span>
+                    <span class="ci mfi" data-page-node-id="Ti3wXSpzhuvfQM6ioR3TzO"><b data-page-node-id="AH9MfCEHwhZWCjFcFsDj7u">MFI</b>${fmt2(ci(row.code, tf.key).mfi)}</span>
+                  </span>
+                  <span class="board-chart-spacer" v-if="tf.key==='rt'" data-page-node-id="4GU91GyX5IiK8dVGZ65QFr"></span>
+                  <span class="board-chg" v-if="tf.key==='rt'" :class="updownCls(row.change_pct)" data-page-node-id="3Dc6DtOa8LresVKWu9GA1M">${fmtNum(num(row.price) - num(row.prev_close), 2)}</span>
+                  <span class="board-chg-pct" v-if="tf.key==='rt'" :class="updownCls(row.change_pct)" data-page-node-id="YxzSJYlrJ2w5S8Oo801Cq1">${fmtPct(row.change_pct, 2, true)}</span>
+                </div>
+                <div class="comp-cell-chart" data-page-node-id="KN4oypYKTzP3ev4Udb00VK">
+                  <fut-compact-rt v-if="tf.key==='rt'" :code="row.code" :prev-close="num(row.prev_close)" :price="num(row.price)" :chg-pct="num(row.change_pct)" kind="futures" :show-bands="showBands" data-page-node-id="aeOpu9QlAfMTsDB26BEj2K"></fut-compact-rt>
+                  <fut-kline v-else :code="row.code" :period="tf.key" :count="klineCount" :indicator="indicator" kind="futures" @indicators="onIndicators" data-page-node-id="Hk9Su9bzbx96YAEltGomoU"></fut-kline>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </el-tab-pane>
+  </el-tabs>
+</div>
+
+<script src="https://unpkg.com/vue@2.7.16/dist/vue.min.js"></script>
+<script src="https://unpkg.com/element-ui/lib/index.js"></script>
+<script src="https://unpkg.com/echarts@5.5.0/dist/echarts.min.js"></script>
+<script src="/static/js/popup-launcher.js"></script>
+<script>
+// ===== 行情请求调度器：并发上限 + 请求去重 + 超时（与期权/可转债看板一致） =====
+(function(){
+  const MAX = 6;
+  const TIMEOUT = 12000;
+  const _inflight = new Set();
+  const _pending = [];
+  const _inFlightP = new Map();
+  function _pump(){
+    while(_inflight.size < MAX && _pending.length){
+      const job = _pending.shift();
+      _inflight.add(job.key);
+      let ctrl = null;
+      if(typeof AbortController !== 'undefined'){ try{ ctrl = new AbortController(); }catch(e){ ctrl = null; } }
+      const opts = Object.assign({}, job.opts || {});
+      if(ctrl) opts.signal = ctrl.signal;
+      const timer = setTimeout(() => { if(ctrl){ try{ ctrl.abort(); }catch(e){} } }, TIMEOUT);
+      fetch(job.url, opts).then(async (res) => {
+        let body;
+        try{ body = await res.json(); }
+        catch(e1){ try{ const t = await res.text(); body = t ? { _text: t } : null; }catch(e2){ body = null; } }
+        if(!res.ok) throw new Error('HTTP ' + res.status);
+        return body;
+      }).then((body) => {
+        clearTimeout(timer);
+        _inFlightP.delete(job.key);
+        _inflight.delete(job.key);
+        job.resolve(body);
+        _pump();
+      }).catch((err) => {
+        clearTimeout(timer);
+        _inFlightP.delete(job.key);
+        _inflight.delete(job.key);
+        job.reject(err);
+        _pump();
+      });
+    }
+  }
+  window.reqJSON = function(url, opts){
+    if(_inFlightP.has(url)) return _inFlightP.get(url);
+    const p = new Promise((resolve, reject) => {
+      _pending.push({ key: url, url: url, opts: opts, resolve: resolve, reject: reject });
+      _pump();
+    });
+    _inFlightP.set(url, p);
+    return p;
+  };
+})();
+
+function num(v){ if(v===null||v===undefined||v==='') return NaN; const n=parseFloat(v); return isNaN(n)?NaN:n; }
+function fmtNum(v,d=2){ const n=num(v); return isNaN(n)?'--':(n.toFixed(d)); }
+// 通用 tooltip 数值格式化：数组(如K线OHLC)逐项处理，数字保留2位小数并去除尾部0
+function fmtTip(v){
+  if(v == null) return '--';
+  if(Array.isArray(v)) return v.map(fmtTip).join('  ');
+  const n = Number(v);
+  if(!isFinite(n)) return String(v);
+  return parseFloat(n.toFixed(2)).toString();
+}
+function fmtPct(v,d=2,signed=false){ const n=num(v); if(isNaN(n)) return '--'; const s=n.toFixed(d)+'%'; return signed&&n>0?('+'+s):s; }
+function fmtWan(v,d=0){ const n=num(v); if(isNaN(n)) return '--'; if(Math.abs(n)>=1e8) return (n/1e8).toFixed(2)+'亿'; if(Math.abs(n)>=1e4) return (n/1e4).toFixed(d)+'万'; return n.toFixed(d); }
+function fmtAvgVol(v){ const n=num(v); if(isNaN(n)) return '--'; if(Math.abs(n)>=1e4) return fmtWan(n); if(n>=10) return Math.round(n).toString(); return n.toFixed(1); }
+function rtOpenMinutes(t){ if(!t || typeof t !== 'string') return 0; const p = t.split(':'); if(p.length < 2) return 0; const h = parseInt(p[0], 10), m = parseInt(p[1], 10); if(isNaN(h) || isNaN(m)) return 0; if(h < 9 || (h === 9 && m < 30)) return 1; if(h < 11 || (h === 11 && m <= 30)) return Math.max(1, (h - 9) * 60 + (m - 30)); if(h < 13) return 120; return Math.max(1, 120 + (h - 13) * 60 + m); }
+
+function rtSessionAxis(){
+  const session = [];
+  const pushRange = function(h0, m0, h1, m1){
+    for(let h = h0; h <= h1; h++){
+      for(let m = 0; m < 60; m++){
+        if((h === h0 && m < m0) || (h === h1 && m > m1)) continue;
+        session.push(('0' + h).slice(-2) + ':' + ('0' + m).slice(-2));
+      }
+    }
+  };
+  pushRange(9, 30, 11, 30);
+  pushRange(13, 0, 15, 0);
+  return session;
+}
+function rtMapToSession(session, data){
+  const idxOf = {};
+  session.forEach(function(t, i){ idxOf[t] = i; });
+  const prices = new Array(session.length).fill(null);
+  const avgs = new Array(session.length).fill(null);
+  const vols = new Array(session.length).fill(null);
+  const atr5s = new Array(session.length).fill(null);
+  const devAtrs = new Array(session.length).fill(null);
+  const devZs = new Array(session.length).fill(null);
+  (data || []).forEach(function(d){
+    const i = idxOf[d.time];
+    if(i === undefined) return;
+    prices[i] = Number(d.price);
+    avgs[i] = Number(d.avg_price);
+    vols[i] = Number(d.vol);
+    if(d.atr5 != null) atr5s[i] = Number(d.atr5);
+    if(d.dev_atr != null) devAtrs[i] = Number(d.dev_atr);
+    if(d.dev_z != null) devZs[i] = Number(d.dev_z);
+  });
+  return { prices: prices, avgs: avgs, vols: vols, atr5s: atr5s, devAtrs: devAtrs, devZs: devZs };
+}
+function buildRtOption(data, prevClose, kind, avgVolPerMin, delta, showBands, vwapParams){
+  const session = rtSessionAxis();
+  const mapped = rtMapToSession(session, data);
+  const prices = mapped.prices, avgs = mapped.avgs, vols = mapped.vols;
+  const atr5s = mapped.atr5s, devAtrs = mapped.devAtrs, devZs = mapped.devZs;
+  let lastAtr5 = null, lastDevAtr = null, lastDevZ = null;
+  for(let i = devZs.length - 1; i >= 0; i--){
+    if(atr5s[i] != null && lastAtr5 == null) lastAtr5 = atr5s[i];
+    if(devAtrs[i] != null && lastDevAtr == null) lastDevAtr = devAtrs[i];
+    if(devZs[i] != null && lastDevZ == null) lastDevZ = devZs[i];
+    if(lastAtr5 != null && lastDevAtr != null && lastDevZ != null) break;
+  }
+  // ---- dev_z 轴范围与阈值：与 VWAP 图对齐（k_long/k_short + 数据极值 + 留边）----
+  // 用 isFinite 判空，避免阈值取 0（合法值）被 || 吞成默认值
+  const nv = function(v, d){ const n = Number(v); return isFinite(n) ? n : d; };
+  const kLong = nv(vwapParams && vwapParams.k_long, 1.0);
+  const kShort = nv(vwapParams && vwapParams.k_short, -1.5);
+  let zmax = Math.max(Math.abs(kLong), Math.abs(kShort)) + 0.6;
+  devZs.forEach(function(z){ if(z != null && isFinite(z)){ const a = Math.abs(z); if(a > zmax) zmax = a; } });
+  zmax = zmax * 1.08;
+  let last = 0;
+  for(let i = prices.length - 1; i >= 0; i--){ if(prices[i] != null && isFinite(prices[i])){ last = prices[i]; break; } }
+  // VWAP 偏离度：累计加权均价偏离 = (价 - VWAP) / VWAP * 100%
+  const vwapDev = new Array(prices.length).fill(null);
+  let _cv = 0, _cvp = 0;
+  for(let i = 0; i < prices.length; i++){
+    const p = prices[i], v = vols[i];
+    if(p != null && isFinite(p) && v != null && isFinite(v) && v > 0){
+      _cv += p * v; _cvp += v;
+      if(_cvp > 0){ const vw = _cv / _cvp; vwapDev[i] = (p - vw) / vw * 100; }
+    }
+  }
+  let lastDev = null;
+  for(let i = vwapDev.length - 1; i >= 0; i--){ if(vwapDev[i] != null && isFinite(vwapDev[i])){ lastDev = vwapDev[i]; break; } }
+  // 标准差通道：以 VWAP(均线 avgs) 为中轴，±1σ / ±2σ 通道带
+  let _sigma = 0;
+  {
+    let _s = 0, _n = 0;
+    for(let i = 0; i < prices.length; i++){
+      const p = prices[i], a = avgs[i];
+      if(p != null && isFinite(p) && a != null && isFinite(a)){ const d = p - a; _s += d * d; _n++; }
+    }
+    _sigma = _n > 0 ? Math.sqrt(_s / _n) : 0;
+  }
+  const up1 = [], dn1 = [], up2 = [], dn2 = [], band1 = [], band2 = [];
+  for(let i = 0; i < prices.length; i++){
+    const a = avgs[i];
+    if(a != null && isFinite(a)){
+      up1.push(a + _sigma); dn1.push(a - _sigma);
+      up2.push(a + 2 * _sigma); dn2.push(a - 2 * _sigma);
+      band1.push(2 * _sigma); band2.push(4 * _sigma);
+    } else {
+      up1.push(null); dn1.push(null); up2.push(null); dn2.push(null); band1.push(null); band2.push(null);
+    }
+  }
+  const up = prevClose > 0 ? (last >= prevClose) : true;
+  const upColor = '#e74c3c', downColor = '#27ae60';
+  const color = kind === 'stock' ? '#409EFF' : (up ? upColor : downColor);
+  const hasPrev = prevClose && isFinite(prevClose) && prevClose > 0;
+  let ext = 0;
+  if(hasPrev){
+    let dmax = 0;
+    prices.forEach(function(p){ if(p != null && isFinite(p)){ const dev = Math.abs(p - prevClose) / prevClose; if(dev > dmax) dmax = dev; } });
+    if(dmax < 0.005) dmax = 0.005;
+    ext = dmax * 1.08;
+  }
+  const leftMin = hasPrev ? prevClose * (1 - ext) : undefined;
+  const leftMax = hasPrev ? prevClose * (1 + ext) : undefined;
+  let _devMax = ext * 100;
+  vwapDev.forEach(function(d){ if(d != null && isFinite(d)){ const a = Math.abs(d); if(a > _devMax) _devMax = a; } });
+  if(_devMax < 0.01) _devMax = 0.01;
+  const vwapMin = hasPrev ? -_devMax * 1.08 : undefined;
+  const vwapMax = hasPrev ? _devMax * 1.08 : undefined;
+  const ampMin = hasPrev ? -ext * 100 : undefined;
+  const ampMax = hasPrev ? ext * 100 : undefined;
+  const volColors = prices.map(function(p, i){
+    const base = i === 0 ? prevClose : (prices[i - 1] != null ? prices[i - 1] : prevClose);
+    return (p >= base) ? upColor : downColor;
+  });
+  return {
+    backgroundColor: '#fff',
+    animation: false,
+    title: { show: (lastDev != null && isFinite(lastDev)) || (lastDevZ != null && isFinite(lastDevZ)) || (isFinite(num(delta)) && num(delta) !== 0), text: (isFinite(num(delta)) && num(delta) !== 0 ? '　Δ ' + fmtNum(num(delta), 2) : '') + (lastDev != null && isFinite(lastDev) ? '　VWAP偏离 ' + fmtPct(num(lastDev), 2, true) : '') + (lastAtr5 != null && isFinite(lastAtr5) ? '　ATR5 ' + fmtNum(lastAtr5, 2) : '') + (lastDevAtr != null && isFinite(lastDevAtr) ? '　dev_atr ' + fmtNum(lastDevAtr, 3) : '') + (lastDevZ != null && isFinite(lastDevZ) ? '　dev_z ' + fmtNum(lastDevZ, 2) : ''), left: 4, top: 3, textStyle: { fontSize: 11, color: '#909399', fontWeight: 'normal' } },
+    grid: [
+      { left: 46, right: 46, top: '7%', height: '46%' },
+      { left: 46, right: 46, top: '54%', height: '26%' },
+      { left: 46, right: 46, top: '82%', height: '14%' }
+    ],
+    tooltip: { trigger: 'axis', triggerOn: 'mousemove', axisPointer: { type: 'cross', label: { backgroundColor: 'transparent', borderColor: 'transparent', color: '#000' } }, backgroundColor: 'transparent', borderColor: 'transparent', padding: 4, textStyle: { color: '#333' }, formatter: function(params){
+        if(!params || !params.length) return '';
+        const idx = params[0].dataIndex;
+        const t = session[idx];
+        const p = prices[idx], a = avgs[idx], v = vols[idx];
+        let cum = 0; for(let k = 0; k <= idx; k++){ if(vols[k] != null) cum += vols[k]; }
+        const avg = rtOpenMinutes(t) > 0 ? (cum / rtOpenMinutes(t)) : null;
+        let s = '<div style="font-size:11px;margin-bottom:2px;">' + (t || '') + '</div>';
+        s += '价 ' + (p != null ? fmtNum(p, 2) : '--') + '　均 ' + (a != null ? fmtNum(a, 2) : '--') + '<br/>';
+        s += 'VWAP偏离 ' + (vwapDev[idx] != null ? fmtPct(vwapDev[idx], 2, true) : '--') + '<br/>';
+        s += 'ATR5 ' + (atr5s[idx] != null ? fmtNum(atr5s[idx], 2) : '--') + '　dev_atr ' + (devAtrs[idx] != null ? fmtNum(devAtrs[idx], 3) : '--') + '　dev_z ' + (devZs[idx] != null ? fmtNum(devZs[idx], 2) : '--') + '<br/>';
+        s += '量(累计) ' + (v != null ? fmtWan(v) : '--') + '　均量/分 ' + (avg != null ? fmtAvgVol(avg) : '--');
+        return s;
+      } },
+    axisPointer: { link: [{ xAxisIndex: 'all' }] },
+    xAxis: [
+      { type: 'category', data: session, boundaryGap: false, axisLabel: { show: false }, axisLine: { lineStyle: { color: '#dcdfe6' } }, axisPointer: { label: { backgroundColor: 'transparent', borderColor: 'transparent', color: '#000' } } },
+      { type: 'category', gridIndex: 1, data: session, boundaryGap: false, axisLabel: { show: false }, axisPointer: { label: { show: false } } },
+      { type: 'category', gridIndex: 2, data: session, boundaryGap: false, axisLabel: { show: false }, axisPointer: { label: { backgroundColor: 'transparent', borderColor: 'transparent', color: '#000' } } }
+    ],
+    yAxis: [
+      { type: 'value', min: leftMin, max: leftMax, scale: true, splitLine: { lineStyle: { color: '#f2f2f2' } }, axisLabel: { color: '#909399', fontSize: 9 } },
+      { gridIndex: 1, type: 'value', scale: true, splitLine: { show: false }, axisLabel: { show: false } },
+      { gridIndex: 0, position: 'right', type: 'value', min: ampMin, max: ampMax, scale: true, splitLine: { show: false }, name: '幅度%', nameLocation: 'end', nameGap: 2, nameTextStyle: { fontSize: 9, color: '#909399' },
+        axisLabel: { color: function(v){ return v > 0 ? '#e74c3c' : (v < 0 ? '#27ae60' : '#909399'); }, fontSize: 9, formatter: function(v){ return fmtPct(v, 2, true); } } },
+      { gridIndex: 0, type: 'value', min: vwapMin, max: vwapMax, scale: true, show: false, axisLabel: { show: false }, splitLine: { show: false }, axisPointer: { show: false } },
+      { gridIndex: 2, type: 'value', min: -zmax, max: zmax, scale: true, splitLine: { lineStyle: { color: '#f2f2f2' } }, axisLabel: { color: '#909399', fontSize: 9 }, name: 'dev_z', nameLocation: 'end', nameGap: 2, nameTextStyle: { fontSize: 9, color: '#909399' } }
+    ],
+    series: [
+      ...(showBands ? [
+      // 标准差通道带（以 VWAP/均线 为中轴）：±2σ 外侧视为极端偏离，回归概率增大
+      { name: 'σ带2下', type: 'line', xAxisIndex: 0, yAxisIndex: 0, data: dn2, showSymbol: false, smooth: false, connectNulls: true, stack: 'b2', lineStyle: { opacity: 0 }, areaStyle: { opacity: 0 }, silent: true, z: 1 },
+      { name: 'σ带2', type: 'line', xAxisIndex: 0, yAxisIndex: 0, data: band2, showSymbol: false, smooth: false, connectNulls: true, stack: 'b2', lineStyle: { opacity: 0 }, areaStyle: { color: 'rgba(230,162,60,0.07)' }, silent: true, z: 1 },
+      { name: 'σ带1下', type: 'line', xAxisIndex: 0, yAxisIndex: 0, data: dn1, showSymbol: false, smooth: false, connectNulls: true, stack: 'b1', lineStyle: { opacity: 0 }, areaStyle: { opacity: 0 }, silent: true, z: 1 },
+      { name: 'σ带1', type: 'line', xAxisIndex: 0, yAxisIndex: 0, data: band1, showSymbol: false, smooth: false, connectNulls: true, stack: 'b1', lineStyle: { opacity: 0 }, areaStyle: { color: 'rgba(64,158,255,0.10)' }, silent: true, z: 1 },
+      { name: '±2σ', type: 'line', xAxisIndex: 0, yAxisIndex: 0, data: up2, showSymbol: false, smooth: false, connectNulls: true, lineStyle: { color: 'rgba(230,162,60,0.6)', width: 1, type: 'dashed' }, silent: true, z: 2 },
+      { name: '∓2σ', type: 'line', xAxisIndex: 0, yAxisIndex: 0, data: dn2, showSymbol: false, smooth: false, connectNulls: true, lineStyle: { color: 'rgba(230,162,60,0.6)', width: 1, type: 'dashed' }, silent: true, z: 2 },
+      { name: '±1σ', type: 'line', xAxisIndex: 0, yAxisIndex: 0, data: up1, showSymbol: false, smooth: false, connectNulls: true, lineStyle: { color: 'rgba(64,158,255,0.5)', width: 1 }, silent: true, z: 2 },
+      { name: '∓1σ', type: 'line', xAxisIndex: 0, yAxisIndex: 0, data: dn1, showSymbol: false, smooth: false, connectNulls: true, lineStyle: { color: 'rgba(64,158,255,0.5)', width: 1 }, silent: true, z: 2 }
+      ] : []),
+      { name: '价', type: 'line', data: prices, showSymbol: false, smooth: false, connectNulls: true, z: 5,
+        lineStyle: { width: 1.2, color: color },
+        areaStyle: { color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+          { offset: 0, color: up ? 'rgba(231,76,60,0.25)' : 'rgba(39,174,96,0.25)' },
+          { offset: 1, color: 'rgba(255,255,255,0)' } ]) },
+        markLine: { silent: true, symbol: 'none', lineStyle: { color: '#c0c4cc', type: 'dashed', width: 1 },
+          data: [{ yAxis: prevClose }], label: { formatter: hasPrev ? ('昨收 ' + fmtNum(prevClose, 2)) : '', fontSize: 9, color: '#909399' } } },
+      { name: '均', type: 'line', data: avgs, showSymbol: false, smooth: false, connectNulls: true, z: 4, lineStyle: { width: 1, color: '#f5a623' } },
+      { name: 'dev_z', type: 'line', xAxisIndex: 2, yAxisIndex: 4, data: devZs, showSymbol: false, smooth: false, connectNulls: true, z: 3,
+        lineStyle: { width: 1, color: '#409EFF', opacity: 0.9 },
+        markLine: { silent: true, symbol: 'none', data: [
+          { yAxis: kLong, lineStyle: { color: '#e74c3c', type: 'dashed', width: 1 },
+            label: { show: true, position: 'insideEndTop', formatter: '做多 +' + fmtNum(kLong, 2), fontSize: 9, color: '#e74c3c' } },
+          { yAxis: kShort, lineStyle: { color: '#27ae60', type: 'dashed', width: 1 },
+            label: { show: true, position: 'insideEndBottom', formatter: '做空 −' + fmtNum(Math.abs(kShort), 2), fontSize: 9, color: '#27ae60' } },
+          { yAxis: 0, lineStyle: { color: '#c0c4cc', width: 1 }, label: { show: false } }
+        ] } },
+      { name: 'VWAP偏离', type: 'bar', xAxisIndex: 0, yAxisIndex: 3, data: vwapDev, connectNulls: true, barWidth: '50%', z: 3,
+        itemStyle: { color: function(p){ const v = p.data; return (v > 0) ? 'rgba(231,76,60,0.35)' : (v < 0 ? 'rgba(39,174,96,0.35)' : 'rgba(192,196,204,0.3)'); } } },
+      { name: '量', type: 'bar', xAxisIndex: 1, yAxisIndex: 1, data: vols,
+        itemStyle: { color: function(p){ return volColors[p.dataIndex] || upColor; } } }
+    ]
+  };
+}
+
+// ======================= VWAP 偏离度策略模式（突破口径） =======================
+// 主图：价格 + VWAP + 开仓时段底纹 + 信号标注 + 止损/止盈线
+// 副图1：dev_z 曲线 + 做多/做空阈值线    副图2：成交量
+function buildVwapOption(payload, prevClose, kind){
+  // 双腿同屏：走合并渲染（主图同时叠加两腿信号 + ret1545/dev_z 两个子图）
+  if(payload && payload.leg === 'both'){
+    return buildVwapOptionBoth(payload, prevClose, kind);
+  }
+  const series = (payload && payload.series) || [];
+  const P = (payload && payload.params) || {};
+  const signals = (payload && payload.signals) || [];
+  const last = (payload && payload.last) || {};
+  const leg = (payload && payload.leg) || 'pm';        // am=上午开盘驱动 / pm=下午 VWAP 动量
+  const subKey = leg === 'am' ? 'r' : 'z';             // 子图指标：上午 ret_open(%) / 下午 dev_z
+  const upColor = '#e74c3c', downColor = '#27ae60', vwapColor = '#f5a623';
+
+  // X 轴：与分时图（rtSessionAxis）完全一致，缺失分钟留空对齐刻度
+  const session = rtSessionAxis();
+  const idxOf = {};
+  session.forEach(function(t, i){ idxOf[t] = i; });
+  const prices = new Array(session.length).fill(null);
+  const vwaps = new Array(session.length).fill(null);
+  const devs = new Array(session.length).fill(null);
+  const zs = new Array(session.length).fill(null);
+  const vols = new Array(session.length).fill(null);
+  series.forEach(function(s){
+    const i = idxOf[s.t];
+    if(i === undefined) return;
+    prices[i] = s.p;
+    vwaps[i] = (s.vw == null ? null : s.vw);
+    devs[i] = (s.d == null ? null : s.d);
+    zs[i] = (s[subKey] == null ? null : s[subKey]);
+    vols[i] = s.v;
+  });
+  const seriesByIndex = new Array(session.length);
+  series.forEach(function(s){
+    const i = idxOf[s.t];
+    if(i !== undefined) seriesByIndex[i] = s;
+  });
+
+  let lastP = 0;
+  for(let i = prices.length - 1; i >= 0; i--){ if(prices[i] != null && isFinite(prices[i])){ lastP = prices[i]; break; } }
+  let lastZ = null;
+  for(let i = zs.length - 1; i >= 0; i--){ if(zs[i] != null && isFinite(zs[i])){ lastZ = zs[i]; break; } }
+  const up = prevClose > 0 ? (lastP >= prevClose) : true;
+  const color = kind === 'stock' ? '#409EFF' : (up ? upColor : downColor);
+  const hasPrev = prevClose && isFinite(prevClose) && prevClose > 0;
+
+  // ---- Y 轴范围：以昨收为中心对称展开（与分时图一致）----
+  let ext = 0;
+  if(hasPrev){
+    let dmax = 0;
+    prices.forEach(function(p){ if(p != null && isFinite(p)){ const d = Math.abs(p - prevClose) / prevClose; if(d > dmax) dmax = d; } });
+    if(dmax < 0.005) dmax = 0.005;
+    ext = dmax * 1.10;
+  }
+  const leftMin = hasPrev ? prevClose * (1 - ext) : undefined;
+  const leftMax = hasPrev ? prevClose * (1 + ext) : undefined;
+  const ampMin = hasPrev ? -ext * 100 : undefined;
+  const ampMax = hasPrev ? ext * 100 : undefined;
+
+  // ---- 子图轴范围：覆盖全部阈值并留边 ----
+  const thrHi = leg === 'am' ? Math.abs(Number(P.k_pct) || 0.40) : Math.abs(Number(P.k_long) || 1.0);
+  const thrLo = leg === 'am' ? Math.abs(Number(P.k_pct) || 0.40) : Math.abs(Number(P.k_short) || 1.5);
+  let zmax = Math.max(thrHi, thrLo) + 0.6;
+  zs.forEach(function(z){ if(z != null && isFinite(z)){ const a = Math.abs(z); if(a > zmax) zmax = a; } });
+  zmax = zmax * 1.08;
+
+  // ---- 开仓时段底纹：上午 09:46–11:30 / 下午 13:00–14:55 ----
+  let sessFrom = null, sessTo = null;
+  if(leg === 'am'){
+    sessFrom = '09:46'; sessTo = '11:30';
+  } else {
+    for(let i = 0; i < series.length; i++){ if(series[i].pos >= 120){ sessFrom = series[i].t; break; } }
+    sessTo = '14:55';
+  }
+
+  // ---- 信号点 ----
+  const entryPts = [], exitPts = [];
+  const slLines = [];   // 止损/止盈水平线
+  const whyText = { stop: '止损', target: '止盈', time: '时间止损', eod: '尾盘强平', hold: '持有中' };
+  signals.forEach(function(s){
+    const isLong = s.side === 'long';
+    const c = isLong ? upColor : downColor;
+    if(s.price != null){
+      entryPts.push({
+        value: [s.t, s.price],
+        symbol: isLong ? 'triangle' : 'triangle',
+        symbolRotate: isLong ? 0 : 180,
+        symbolSize: 10,
+        itemStyle: { color: c, borderColor: '#fff', borderWidth: 1 },
+        label: { show: true, position: isLong ? 'bottom' : 'top', formatter: (isLong ? '多 ' : '空 ') + fmtNum(s.price, 1),
+                 fontSize: 9, color: c, fontWeight: '600' },
+        _sig: s,
+      });
+    }
+    if(s.exit_t && s.exit_price != null){
+      const win = (s.pnl_r != null && Number(s.pnl_r) > 0);
+      exitPts.push({
+        value: [s.exit_t, s.exit_price],
+        symbol: 'triangle', symbolRotate: 180, symbolSize: 10,
+        itemStyle: { color: '#e74c3c', borderColor: '#fff', borderWidth: 1 },
+        label: { show: true, position: 'bottom', formatter: '(' + (whyText[s.exit_why] || s.exit_why || '') + ' ' + fmtPct(num(s.pnl_r), 1, true) + 'R)',
+                 fontSize: 8.5, color: win ? upColor : downColor },
+        _sig: s,
+      });
+    }
+    if(s.stop != null){
+      slLines.push({ yAxis: s.stop, lineStyle: { color: c, type: 'dashed', width: 1, opacity: 0.5 },
+        label: { show: false } });
+    }
+    if(s.target != null){
+      slLines.push({ yAxis: s.target, lineStyle: { color: c, type: 'dotted', width: 1, opacity: 0.5 },
+        label: { show: false } });
+    }
+  });
+  // 当前持仓：止损/止盈线加粗并标注
+  if(last.state && last.state !== 'flat' && last.entry != null){
+    const c = last.state === 'long' ? upColor : downColor;
+    const live = [];
+    if(last.stop != null) live.push({ yAxis: last.stop, lineStyle: { color: c, type: 'dashed', width: 1.6 },
+      label: { show: true, position: 'insideEndTop', formatter: '现仓止损 ' + fmtNum(last.stop, 1), fontSize: 9, color: c, fontWeight: '600' } });
+    if(last.target != null) live.push({ yAxis: last.target, lineStyle: { color: c, type: 'dotted', width: 1.6 },
+      label: { show: true, position: 'insideEndBottom', formatter: '现仓止盈 ' + fmtNum(last.target, 1), fontSize: 9, color: c, fontWeight: '600' } });
+    slLines.unshift.apply(slLines, live);
+  }
+
+  // ---- 成交量配色：较前一根涨跌 ----
+  const volColors = prices.map(function(p, i){
+    const base = i === 0 ? prevClose : (prices[i - 1] != null ? prices[i - 1] : prevClose);
+    return (p >= base) ? upColor : downColor;
+  });
+
+  // ---- 标题：策略关键状态（按腿展示子图指标 / ATR 口径）----
+  const subLabel = leg === 'am' ? 'ret1545' : 'dev_z';
+  const subVal = leg === 'am'
+    ? (payload.ret1545 == null ? '--' : fmtNum(num(payload.ret1545), 2) + '%')
+    : (lastZ == null ? '--' : fmtNum(lastZ, 2));
+  const atrLabel = 'ATR5';
+  const atrVal = fmtNum(num(payload && payload.atr5), 2);
+  const stText = last.state === 'long' ? '持多' : (last.state === 'short' ? '持空' : '空仓');
+  const stColor = last.state === 'long' ? upColor : (last.state === 'short' ? downColor : '#909399');
+  const nWin = signals.filter(function(s){ return s.exit_why === 'target'; }).length;
+  const sumR = signals.reduce(function(a, s){ return a + (Number(s.pnl_r) || 0); }, 0);
+  const titleParts = [
+    (payload && payload.date) ? payload.date : '',
+    '基线 ' + (((payload && payload.baseline) || {}).days || '-') + '日',
+    atrLabel + ' ' + atrVal,
+    subLabel + ' ' + subVal,
+    '信号 ' + signals.length + '（止盈 ' + nWin + '）',
+    '合计 ' + fmtPct(sumR, 2, true) + 'R',
+  ];
+
+  // 子图阈值线：上午 ±k_pct（ret1545 对称）/ 下午 k_long / k_short（dev_z）
+  const subMarkLines = leg === 'am'
+    ? [
+        { yAxis: Number(P.k_pct) || 0.40, lineStyle: { color: upColor, type: 'dashed', width: 1 },
+          label: { show: true, position: 'insideEndTop', formatter: '做多 +' + fmtNum(num(P.k_pct), 2) + '%', fontSize: 9, color: upColor } },
+        { yAxis: -(Number(P.k_pct) || 0.40), lineStyle: { color: downColor, type: 'dashed', width: 1 },
+          label: { show: true, position: 'insideEndBottom', formatter: '做空 −' + fmtNum(num(P.k_pct), 2) + '%', fontSize: 9, color: downColor } },
+        { yAxis: 0, lineStyle: { color: '#c0c4cc', width: 1 }, label: { show: false } },
+      ]
+    : [
+        { yAxis: Number(P.k_long) || 1.0, lineStyle: { color: upColor, type: 'dashed', width: 1 },
+          label: { show: true, position: 'insideEndTop', formatter: '做多 +' + fmtNum(num(P.k_long), 2), fontSize: 9, color: upColor } },
+        { yAxis: Number(P.k_short) || -1.5, lineStyle: { color: downColor, type: 'dashed', width: 1 },
+          label: { show: true, position: 'insideEndBottom', formatter: '做空 −' + fmtNum(Math.abs(num(P.k_short)), 2), fontSize: 9, color: downColor } },
+        { yAxis: 0, lineStyle: { color: '#c0c4cc', width: 1 }, label: { show: false } },
+      ];
+
+  return {
+    backgroundColor: '#fff',
+    animation: false,
+    title: { show: true, left: 4, top: 2,
+      text: titleParts.join('　') + '　',
+      subtext: stText,
+      subtextStyle: { fontSize: 11, color: stColor, fontWeight: '700' },
+      textStyle: { fontSize: 10.5, color: '#909399', fontWeight: 'normal' },
+      itemGap: 2,
+      subtextVerticalAlign: 'middle',
+    },
+    grid: [
+      { left: 46, right: 46, top: '11%', height: '50%' },
+      { left: 46, right: 46, top: '65%', height: '16%' },
+      { left: 46, right: 46, top: '83%', height: '14%' }
+    ],
+    tooltip: { trigger: 'axis', triggerOn: 'mousemove', axisPointer: { type: 'cross', label: { backgroundColor: 'transparent', borderColor: 'transparent', color: '#000' } }, backgroundColor: 'transparent', borderColor: 'transparent', padding: 4, textStyle: { color: '#333' }, formatter: function(params){
+        if(!params || !params.length) return '';
+        const idx = params[0].dataIndex;
+        const s = seriesByIndex[idx];
+        if(!s) return '';
+        let h = '<div style="font-size:11px;margin-bottom:2px;">' + (s.t || '') + '</div>';
+        h += '价 ' + fmtNum(s.p, 2) + '　VWAP ' + (s.vw == null ? '--' : fmtNum(s.vw, 2)) + '<br/>';
+        h += '偏离 ' + (s.d == null ? '--' : fmtNum(s.d, 2)) + ' 点';
+        const sv = (s[subKey] == null ? '--' : fmtNum(s[subKey], leg === 'am' ? 2 : 3) + (leg === 'am' ? '%' : ''));
+        h += '　<b style="color:' + ((s[subKey] == null || s[subKey] >= 0) ? upColor : downColor) + '">' + subLabel + ' ' + sv + '</b><br/>';
+        h += 'ATR5 ' + (s.a == null ? '--' : fmtNum(s.a, 2)) + '　量 ' + fmtWan(s.v);
+        for(let k = 0; k < signals.length; k++){
+          const g = signals[k];
+          if(g.t === s.t){
+            h += '<div style="margin-top:3px;padding-top:3px;border-top:1px solid #eee;color:' + (g.side === 'long' ? upColor : downColor) + '">'
+               + '开' + (g.side === 'long' ? '多' : '空') + ' ' + fmtNum(g.price, 2)
+               + '　损 ' + fmtNum(g.stop, 2) + '　盈 ' + fmtNum(g.target, 2) + '</div>';
+          }
+          if(g.exit_t === s.t){
+            h += '<div style="margin-top:3px;padding-top:3px;border-top:1px solid #eee;">'
+               + '平仓 ' + fmtNum(g.exit_price, 2) + '（' + (whyText[g.exit_why] || g.exit_why || '') + '）'
+               + '　<b style="color:' + ((g.pnl_r > 0) ? upColor : downColor) + '">' + fmtPct(num(g.pnl_r), 2, true) + 'R</b></div>';
+          }
+        }
+        return h;
+      } },
+    axisPointer: { link: [{ xAxisIndex: 'all' }] },
+    xAxis: [
+      { type: 'category', data: session, boundaryGap: false, axisLabel: { show: false }, axisLine: { lineStyle: { color: '#dcdfe6' } }, axisPointer: { label: { backgroundColor: 'transparent', borderColor: 'transparent', color: '#000' } } },
+      { type: 'category', gridIndex: 1, data: session, boundaryGap: false, axisLabel: { show: false }, axisPointer: { label: { show: false } } },
+      { type: 'category', gridIndex: 2, data: session, boundaryGap: false, axisLabel: { show: false }, axisPointer: { label: { backgroundColor: 'transparent', borderColor: 'transparent', color: '#000' } } }
+    ],
+    yAxis: [
+      { type: 'value', min: leftMin, max: leftMax, scale: true, splitLine: { lineStyle: { color: '#f2f2f2' } }, axisLabel: { color: '#909399', fontSize: 9 } },
+      { gridIndex: 0, position: 'right', type: 'value', min: ampMin, max: ampMax, scale: true, splitLine: { show: false }, name: '幅度%', nameLocation: 'end', nameGap: 2, nameTextStyle: { fontSize: 9, color: '#909399' },
+        axisLabel: { color: function(v){ return v > 0 ? upColor : (v < 0 ? downColor : '#909399'); }, fontSize: 9, formatter: function(v){ return fmtPct(v, 2, true); } } },
+      { gridIndex: 1, type: 'value', min: -zmax, max: zmax, splitLine: { lineStyle: { color: '#f2f2f2' } }, axisLabel: { color: '#909399', fontSize: 9 },
+        name: leg === 'am' ? 'ret1545%' : 'dev_z', nameLocation: 'end', nameGap: 2, nameTextStyle: { fontSize: 9, color: '#909399' } },
+      { gridIndex: 2, type: 'value', scale: true, splitLine: { show: false }, axisLabel: { show: false } }
+    ],
+    series: [
+      { name: '价', type: 'line', data: prices, showSymbol: false, smooth: false, connectNulls: true, z: 6,
+        lineStyle: { width: 1.2, color: color },
+        areaStyle: { color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+          { offset: 0, color: up ? 'rgba(231,76,60,0.22)' : 'rgba(39,174,96,0.22)' },
+          { offset: 1, color: 'rgba(255,255,255,0)' } ]) },
+        markLine: { silent: true, symbol: 'none', lineStyle: { color: '#c0c4cc', type: 'dashed', width: 1 },
+          data: [{ yAxis: prevClose }], label: { formatter: hasPrev ? ('昨收 ' + fmtNum(prevClose, 2)) : '', fontSize: 9, color: '#909399' } },
+        markArea: (sessFrom ? { silent: true, itemStyle: { color: 'rgba(245,166,35,0.07)' },
+          label: { show: true, position: 'insideTop', formatter: leg === 'am' ? '上午开仓 09:46–11:30' : '开仓时段', fontSize: 9, color: '#c8901f' },
+          data: [[{ xAxis: sessFrom }, { xAxis: sessTo }]] } : undefined) },
+      { name: 'VWAP', type: 'line', data: vwaps, showSymbol: false, smooth: false, connectNulls: true, z: 5,
+        lineStyle: { width: 1.3, color: vwapColor } },
+      { name: '开仓', type: 'scatter', data: entryPts, z: 12, zlevel: 1,
+        markLine: { silent: true, symbol: 'none', data: slLines } },
+      { name: '平仓', type: 'scatter', data: exitPts, z: 11, zlevel: 1 },
+      { name: subLabel, type: 'line', xAxisIndex: 1, yAxisIndex: 2, data: zs, showSymbol: false, connectNulls: true,
+        lineStyle: { width: 1.1, color: '#409EFF' }, z: 4,
+        markLine: { silent: true, symbol: 'none', data: subMarkLines } },
+      { name: '量', type: 'bar', xAxisIndex: 2, yAxisIndex: 3, data: vols,
+        itemStyle: { color: function(p){ return volColors[p.dataIndex] || upColor; } } }
+    ]
+  };
+}
+
+// 双腿同屏（leg='both'）：一张图同时呈现
+//   · 主图  ：价格 + VWAP + 两腿开平仓信号（上午腿紫色 / 下午腿红绿）+ 两段开仓时段底纹
+//   · 子图1 ：ret1545%（上午开盘驱动）±k_pct 阈值
+//   · 子图2 ：dev_z（下午 VWAP 动量）k_long / k_short 阈值
+//   · 子图3 ：成交量
+function buildVwapOptionBoth(payload, prevClose, kind){
+  const series = (payload && payload.series) || [];
+  const P = (payload && payload.params) || {};
+  const signals = (payload && payload.signals) || [];
+  const lastAm = (payload && payload.last_am) || {};
+  const lastPm = (payload && payload.last_pm) || {};
+  const upColor = '#e74c3c', downColor = '#27ae60', vwapColor = '#f5a623';
+  const amColor = '#8e44ad';    // 上午腿（紫）：信号点与 ret1545 子图
+  const pmLine  = '#409EFF';    // 下午腿 dev_z 子图线
+
+  const session = rtSessionAxis();
+  const idxOf = {};
+  session.forEach(function(t, i){ idxOf[t] = i; });
+  const prices = new Array(session.length).fill(null);
+  const vwaps  = new Array(session.length).fill(null);
+  // 注：上午腿只保留主图上的信号点，不再画 ret1545% 子图（原 rs 序列已移除）
+  const zs     = new Array(session.length).fill(null);   // dev_z（下午腿子图）
+  const vols   = new Array(session.length).fill(null);
+  series.forEach(function(s){
+    const i = idxOf[s.t];
+    if(i === undefined) return;
+    prices[i] = s.p;
+    vwaps[i]  = (s.vw == null ? null : s.vw);
+    zs[i]     = (s.z == null ? null : s.z);
+    vols[i]   = s.v;
+  });
+  const seriesByIndex = new Array(session.length);
+  series.forEach(function(s){ const i = idxOf[s.t]; if(i !== undefined) seriesByIndex[i] = s; });
+
+  let lastP = 0;
+  for(let i = prices.length - 1; i >= 0; i--){ if(prices[i] != null && isFinite(prices[i])){ lastP = prices[i]; break; } }
+  const up = prevClose > 0 ? (lastP >= prevClose) : true;
+  const color = kind === 'stock' ? '#409EFF' : (up ? upColor : downColor);
+  const hasPrev = prevClose && isFinite(prevClose) && prevClose > 0;
+
+  let ext = 0;
+  if(hasPrev){
+    let dmax = 0;
+    prices.forEach(function(p){ if(p != null && isFinite(p)){ const d = Math.abs(p - prevClose) / prevClose; if(d > dmax) dmax = d; } });
+    if(dmax < 0.005) dmax = 0.005;
+    ext = dmax * 1.10;
+  }
+  const leftMin = hasPrev ? prevClose * (1 - ext) : undefined;
+  const leftMax = hasPrev ? prevClose * (1 + ext) : undefined;
+  const ampMin = hasPrev ? -ext * 100 : undefined;
+  const ampMax = hasPrev ? ext * 100 : undefined;
+
+  // dev_z 子图的轴范围：max(|k_long|,|k_short|) 与实测值取大
+  // （原 ret1545 子图已按需求移除，故不再需要 ±k_pct 轴；kPct 仅留给标题标注上午门槛）
+  const kPct = Math.abs(num(P.k_pct != null ? P.k_pct : 0.40));
+  const kLong = num(P.k_long != null ? P.k_long : 1.0);
+  const kShort = num(P.k_short != null ? P.k_short : -1.5);
+  let zmax = Math.max(Math.abs(kLong), Math.abs(kShort)) + 0.5;
+  zs.forEach(function(v){ if(v != null && isFinite(v)){ const a = Math.abs(v); if(a > zmax) zmax = a; } });
+  zmax = zmax * 1.06;
+
+  // 两条腿各自的开仓时段底纹
+  const amFrom = '09:46', amTo = '11:30';
+  let pmFrom = null;
+  for(let i = 0; i < series.length; i++){ if(series[i].pos >= 120){ pmFrom = series[i].t; break; } }
+  const pmTo = '14:55';
+
+  // 信号：按 leg 分流着色。上午腿统一紫；下午腿按多空红绿。
+  const amEntry = [], amExit = [], pmEntry = [], pmExit = [];
+  const slLines = [];
+  const whyText = { stop: '止损', target: '止盈', time: '时间止损', eod: '尾盘强平', hold: '持有中' };
+  function pushEntry(arr, s, c){
+    if(s.price == null) return;
+    const isLong = s.side === 'long';
+    arr.push({ value: [s.t, s.price], symbol: 'triangle', symbolRotate: isLong ? 0 : 180, symbolSize: 9,
+      itemStyle: { color: c, borderColor: '#fff', borderWidth: 1 },
+      label: { show: true, position: isLong ? 'bottom' : 'top',
+               formatter: (s.leg === 'am' ? '上' : '下') + (isLong ? '多' : '空'),
+               fontSize: 8, color: c, fontWeight: '600' }, _sig: s });
+  }
+  function pushExit(arr, s){
+    if(s.exit_t == null || s.exit_price == null) return;
+    const win = (s.pnl_r != null && Number(s.pnl_r) > 0);
+    arr.push({ value: [s.exit_t, s.exit_price], symbol: 'circle', symbolSize: 6,
+      itemStyle: { color: '#909399', borderColor: '#fff', borderWidth: 1 },
+      label: { show: true, position: 'bottom',
+               formatter: '(' + (whyText[s.exit_why] || s.exit_why || '') + ' ' + fmtPct(num(s.pnl_r), 1, true) + 'R)',
+               fontSize: 8, color: win ? upColor : downColor }, _sig: s });
+  }
+  signals.forEach(function(s){
+    const isAm = s.leg === 'am';
+    const isLong = s.side === 'long';
+    const c = isAm ? amColor : (isLong ? upColor : downColor);
+    if(isAm){ pushEntry(amEntry, s, c); pushExit(amExit, s); }
+    else    { pushEntry(pmEntry, s, c); pushExit(pmExit, s); }
+    if(s.stop != null) slLines.push({ yAxis: s.stop, lineStyle: { color: c, type: 'dashed', width: 1, opacity: 0.45 }, label: { show: false } });
+    if(s.target != null) slLines.push({ yAxis: s.target, lineStyle: { color: c, type: 'dotted', width: 1, opacity: 0.45 }, label: { show: false } });
+  });
+  // 两腿的现仓止损/止盈线（加粗 + 标注）
+  [['am', lastAm, amColor], ['pm', lastPm, null]].forEach(function(pair){
+    const tag = pair[0], st = pair[1] || {}, fixedC = pair[2];
+    if(!st.state || st.state === 'flat' || st.entry == null) return;
+    const c = fixedC || (st.state === 'long' ? upColor : downColor);
+    if(st.stop != null) slLines.unshift({ yAxis: st.stop, lineStyle: { color: c, type: 'dashed', width: 1.6 },
+      label: { show: true, position: 'insideEndTop', formatter: (tag === 'am' ? '上午' : '下午') + '损 ' + fmtNum(st.stop, 1), fontSize: 8.5, color: c, fontWeight: '600' } });
+    if(st.target != null) slLines.unshift({ yAxis: st.target, lineStyle: { color: c, type: 'dotted', width: 1.6 },
+      label: { show: true, position: 'insideEndBottom', formatter: (tag === 'am' ? '上午' : '下午') + '盈 ' + fmtNum(st.target, 1), fontSize: 8.5, color: c, fontWeight: '600' } });
+  });
+
+  const volColors = prices.map(function(p, i){
+    const base = i === 0 ? prevClose : (prices[i - 1] != null ? prices[i - 1] : prevClose);
+    return (p >= base) ? upColor : downColor;
+  });
+
+  function stText(st){ return (st && st.state === 'long') ? '多' : ((st && st.state === 'short') ? '空' : '空仓'); }
+  let pnlAm = 0, pnlPm = 0, nAm = 0, nPm = 0;
+  signals.forEach(function(s){
+    const r = Number(s.pnl_r) || 0;
+    if(s.leg === 'am'){ pnlAm += r; nAm++; } else { pnlPm += r; nPm++; }
+  });
+  const ret1545 = num(payload && payload.ret1545);
+  let lastZ = null;
+  for(let i = zs.length - 1; i >= 0; i--){ if(zs[i] != null && isFinite(zs[i])){ lastZ = zs[i]; break; } }
+  const titleParts = [
+    (payload && payload.date) ? payload.date : '',
+    'ATR5 ' + fmtNum(num(payload && payload.atr5), 2),
+    '上午 ret1545 ' + (isFinite(ret1545) ? fmtNum(ret1545, 2) + '%' : '--') + '(±' + fmtNum(kPct, 2) + '%) ' + stText(lastAm),
+    '下午 dev_z ' + (lastZ == null ? '--' : fmtNum(lastZ, 2)) + ' ' + stText(lastPm),
+    // 回显「服务端实际使用的」下午腿阈值与基线窗口（取自响应 params）：
+    // 图上画的是哪套阈值必须可核对——历史上出现过前端旧阈值盖掉服务端阈值导致信号跳变。
+    '下午阈值 空≤' + fmtNum(kShort, 2) + ' 多≥+' + fmtNum(kLong, 2) + ' 基线 ' + ((payload && payload.baseline && payload.baseline.days != null) ? payload.baseline.days : '--') + ' 日',
+    '信号 ' + nAm + '/' + nPm,
+    '合计 ' + fmtPct(pnlAm + pnlPm, 2, true) + 'R',
+  ];
+
+  const pmMark = [
+    { yAxis: kLong, lineStyle: { color: upColor, type: 'dashed', width: 1 }, label: { show: true, position: 'insideEndTop', formatter: '多 +' + fmtNum(kLong, 2), fontSize: 8, color: upColor } },
+    { yAxis: kShort, lineStyle: { color: downColor, type: 'dashed', width: 1 }, label: { show: true, position: 'insideEndBottom', formatter: '空 ' + fmtNum(kShort, 2), fontSize: 8, color: downColor } },
+    { yAxis: 0, lineStyle: { color: '#dcdfe6', width: 1 }, label: { show: false } },
+  ];
+
+  const priceMarkData = [{ yAxis: prevClose, lineStyle: { color: '#c0c4cc', type: 'dashed', width: 1 },
+    label: { formatter: hasPrev ? ('昨收 ' + fmtNum(prevClose, 2)) : '', fontSize: 9, color: '#909399' } }].concat(slLines);
+
+  return {
+    backgroundColor: '#fff',
+    animation: false,
+    title: { show: true, left: 4, top: 1,
+      text: titleParts.join('　') + '　',
+      textStyle: { fontSize: 10, color: '#909399', fontWeight: 'normal' } },
+    grid: [
+      { left: 46, right: 48, top: '9%', height: '50%' },
+      { left: 46, right: 48, top: '63%', height: '15%' },
+      { left: 46, right: 48, top: '82%', height: '13%' }
+    ],
+    tooltip: { trigger: 'axis', triggerOn: 'mousemove', axisPointer: { type: 'cross', label: { backgroundColor: 'transparent', borderColor: 'transparent', color: '#000' } }, backgroundColor: 'transparent', borderColor: 'transparent', padding: 4, textStyle: { color: '#333' }, formatter: function(params){
+        if(!params || !params.length) return '';
+        const idx = params[0].dataIndex;
+        const s = seriesByIndex[idx];
+        if(!s) return '';
+        let h = '<div style="font-size:11px;margin-bottom:2px;">' + (s.t || '') + '</div>';
+        h += '价 ' + fmtNum(s.p, 2) + '　VWAP ' + (s.vw == null ? '--' : fmtNum(s.vw, 2)) + '<br/>';
+        h += '偏离 ' + (s.d == null ? '--' : fmtNum(s.d, 2)) + ' 点　ATR5 ' + (s.a == null ? '--' : fmtNum(s.a, 2)) + '<br/>';
+        h += '<b style="color:' + ((s.r == null || s.r >= 0) ? upColor : downColor) + '">ret1545 ' + (s.r == null ? '--' : fmtNum(s.r, 2) + '%') + '</b>　';
+        h += '<b style="color:' + ((s.z == null || s.z >= 0) ? upColor : downColor) + '">dev_z ' + (s.z == null ? '--' : fmtNum(s.z, 3)) + '</b><br/>';
+        h += '量 ' + fmtWan(s.v);
+        for(let k = 0; k < signals.length; k++){
+          const g = signals[k];
+          if(g.t === s.t){
+            const gc = (g.leg === 'am') ? amColor : (g.side === 'long' ? upColor : downColor);
+            h += '<div style="margin-top:3px;padding-top:3px;border-top:1px solid #eee;color:' + gc + '">'
+               + (g.leg === 'am' ? '上午' : '下午') + '开' + (g.side === 'long' ? '多' : '空') + ' ' + fmtNum(g.price, 2)
+               + '　损 ' + fmtNum(g.stop, 2) + '　盈 ' + fmtNum(g.target, 2) + '</div>';
+          }
+          if(g.exit_t === s.t){
+            h += '<div style="margin-top:3px;padding-top:3px;border-top:1px solid #eee;">'
+               + (g.leg === 'am' ? '上午' : '下午') + '平仓 ' + fmtNum(g.exit_price, 2) + '（' + (whyText[g.exit_why] || g.exit_why || '') + '）'
+               + '　<b style="color:' + ((g.pnl_r > 0) ? upColor : downColor) + '">' + fmtPct(num(g.pnl_r), 2, true) + 'R</b></div>';
+          }
+        }
+        return h;
+      } },
+    axisPointer: { link: [{ xAxisIndex: 'all' }] },
+    xAxis: [
+      { type: 'category', data: session, boundaryGap: false, axisLabel: { show: false }, axisLine: { lineStyle: { color: '#dcdfe6' } }, axisPointer: { label: { backgroundColor: 'transparent', borderColor: 'transparent', color: '#000' } } },
+      { type: 'category', gridIndex: 1, data: session, boundaryGap: false, axisLabel: { show: false }, axisPointer: { label: { show: false } } },
+      { type: 'category', gridIndex: 2, data: session, boundaryGap: false, axisLabel: { show: false }, axisPointer: { label: { show: false } } }
+    ],
+    yAxis: [
+      { type: 'value', min: leftMin, max: leftMax, scale: true, splitLine: { lineStyle: { color: '#f2f2f2' } }, axisLabel: { color: '#909399', fontSize: 9 } },
+      { gridIndex: 0, position: 'right', type: 'value', min: ampMin, max: ampMax, scale: true, splitLine: { show: false }, name: '幅度%', nameLocation: 'end', nameGap: 2, nameTextStyle: { fontSize: 9, color: '#909399' },
+        axisLabel: { color: '#909399', fontSize: 9, formatter: function(v){ return fmtPct(v, 2, true); } } },
+      { gridIndex: 1, type: 'value', min: -zmax, max: zmax, splitLine: { lineStyle: { color: '#f2f2f2' } }, axisLabel: { color: '#909399', fontSize: 9 },
+        name: 'dev_z', nameLocation: 'end', nameGap: 2, nameTextStyle: { fontSize: 9, color: pmLine } },
+      { gridIndex: 2, type: 'value', scale: true, splitLine: { show: false }, axisLabel: { show: false } }
+    ],
+    series: [
+      { name: '价', type: 'line', data: prices, showSymbol: false, smooth: false, connectNulls: true, z: 6,
+        lineStyle: { width: 1.2, color: color },
+        areaStyle: { color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+          { offset: 0, color: up ? 'rgba(231,76,60,0.22)' : 'rgba(39,174,96,0.22)' },
+          { offset: 1, color: 'rgba(255,255,255,0)' } ]) },
+        markLine: { silent: true, symbol: 'none', data: priceMarkData },
+        markArea: { silent: true, label: { show: true, position: 'insideTop', fontSize: 8.5 },
+          data: [
+            [{ xAxis: amFrom, itemStyle: { color: 'rgba(142,68,173,0.07)' }, label: { formatter: '上午腿 09:46–11:30', color: amColor } }, { xAxis: amTo }],
+            (pmFrom ? [{ xAxis: pmFrom, itemStyle: { color: 'rgba(64,158,255,0.07)' }, label: { formatter: '下午腿 13:00–14:55', color: pmLine } }, { xAxis: pmTo }] : null)
+          ].filter(Boolean) } },
+      { name: 'VWAP', type: 'line', data: vwaps, showSymbol: false, smooth: false, connectNulls: true, z: 5,
+        lineStyle: { width: 1.3, color: vwapColor } },
+      { name: '上午开仓', type: 'scatter', data: amEntry, z: 12, zlevel: 1 },
+      { name: '上午平仓', type: 'scatter', data: amExit, z: 11, zlevel: 1 },
+      { name: '下午开仓', type: 'scatter', data: pmEntry, z: 12, zlevel: 1 },
+      { name: '下午平仓', type: 'scatter', data: pmExit, z: 11, zlevel: 1 },
+      { name: 'dev_z', type: 'line', xAxisIndex: 1, yAxisIndex: 2, data: zs, showSymbol: false, connectNulls: true,
+        lineStyle: { width: 1.1, color: pmLine }, z: 4,
+        markLine: { silent: true, symbol: 'none', data: pmMark } },
+      { name: '量', type: 'bar', xAxisIndex: 2, yAxisIndex: 3, data: vols,
+        itemStyle: { color: function(p){ return volColors[p.dataIndex] || upColor; } } }
+    ]
+  };
+}
+
+// 通用 K线 option（蜡烛 + BOLL 主图 + 成交量 + 第三栏指标），与 index.html 看盘面板同视觉
+// indicator: 'mfi' | 'adx' | 'atr'，默认 mfi
+function buildMiniKlineOption(data, full, indicator){
+  indicator = indicator || 'mfi';
+  const dates = data.map(d => d.date);
+  const ohlc = data.map(d => [Number(d.open), Number(d.close), Number(d.low), Number(d.high)]);
+  const vols = data.map(d => Number(d.vol));
+  const fullData = (full && full.length ? full : data);
+  // BOLL 叠加在 K 线主图（基于完整历史，对齐可见区间）
+  const fullCloses = fullData.map(d => Number(d.close));
+  const boll = _calcBoll(fullCloses, 20, 2);
+  const mid = boll.mid.slice(-data.length);
+  const upper = boll.upper.slice(-data.length);
+  const lower = boll.lower.slice(-data.length);
+  // 第三栏指标（基于完整历史，对齐可见区间）。ADX 同时绘制 +DI / -DI。
+  let indSeries = [], indLegend = [], indAxisConf, indMarkLine;
+  if(indicator === 'adx'){
+    const ad = _calcADX(fullData, 14);
+    indLegend = ['ADX', '+DI', '-DI'];
+    indAxisConf = { scale: true };
+    indMarkLine = { silent: true, symbol: 'none', lineStyle: { color: '#c0c4cc', type: 'dashed', width: 1 }, label: { show: true, position: 'insideEndTop', formatter: '25 趋势阈值', color: '#909399', fontSize: 9 }, data: [{ yAxis: 25 }] };
+    indSeries = [
+      { name: 'ADX', type: 'line', xAxisIndex: 2, yAxisIndex: 2, data: ad.adx.slice(-data.length), showSymbol: false, lineStyle: { width: 1, color: '#000000' } },
+      { name: '+DI', type: 'line', xAxisIndex: 2, yAxisIndex: 2, data: ad.pdi.slice(-data.length), showSymbol: false, lineStyle: { width: 1, color: '#e74c3c' } },
+      { name: '-DI', type: 'line', xAxisIndex: 2, yAxisIndex: 2, data: ad.mdi.slice(-data.length), showSymbol: false, lineStyle: { width: 1, color: '#27ae60' } }
+    ];
+    indSeries[0].markLine = indMarkLine;
+  } else if(indicator === 'atr'){
+    indLegend = ['ATR'];
+    indAxisConf = { scale: true };
+    indMarkLine = null;
+    indSeries = [
+      { name: 'ATR', type: 'line', xAxisIndex: 2, yAxisIndex: 2, data: _calcATR(fullData, 14).slice(-data.length), showSymbol: false, lineStyle: { width: 1, color: '#16a085' } }
+    ];
+  } else {
+    indLegend = ['MFI'];
+    indAxisConf = { scale: false, min: 0, max: 100 };
+    indMarkLine = { silent: true, symbol: 'none', lineStyle: { color: '#c0c4cc', type: 'dashed', width: 1 }, label: { show: false }, data: [{ yAxis: 80 }, { yAxis: 20 }] };
+    indSeries = [
+      { name: 'MFI', type: 'line', xAxisIndex: 2, yAxisIndex: 2, data: _calcMFI(fullData, 14).slice(-data.length), showSymbol: false, lineStyle: { width: 1, color: '#8e44ad' }, markLine: indMarkLine }
+    ];
+  }
+  return {
+    backgroundColor: '#fff',
+    animation: false,
+    legend: { data: ['K','VOL'].concat(indLegend).concat(['BOLL']), top: 0, right: 6, itemWidth: 12, itemHeight: 8, textStyle: { fontSize: 9, color: '#909399' } },
+    grid: [
+      { left: 44, right: 8, top: 16, height: '52%' },
+      { left: 44, right: 8, top: '69%', height: '11%' },
+      { left: 44, right: 8, top: '81%', height: '17%' }
+    ],
+    tooltip: { trigger: 'axis', triggerOn: 'mousemove', axisPointer: { type: 'cross', label: { backgroundColor: 'transparent', borderColor: 'transparent', color: '#000' } }, valueFormatter: fmtTip, backgroundColor: 'transparent', borderColor: 'transparent', padding: 4, textStyle: { color: '#333' } },
+    axisPointer: { link: [{ xAxisIndex: 'all' }] },
+    xAxis: [
+      { type: 'category', data: dates, boundaryGap: true, axisLabel: { show: false }, axisLine: { lineStyle: { color: '#dcdfe6' } }, axisPointer: { label: { show: false } } },
+      { type: 'category', gridIndex: 1, data: dates, axisLabel: { show: false } },
+      { type: 'category', gridIndex: 2, data: dates, axisLabel: { color: '#909399', fontSize: 9, hideOverlap: true } }
+    ],
+    yAxis: [
+      { scale: true, splitLine: { lineStyle: { color: '#f2f2f2' } }, axisLabel: { color: '#909399', fontSize: 9 } },
+      { gridIndex: 1, scale: true, splitLine: { show: false }, axisLabel: { show: false } },
+      Object.assign({ gridIndex: 2, splitLine: { show: false }, axisLabel: { color: '#909399', fontSize: 9 } }, indAxisConf)
+    ],
+    series: [
+      { name: 'K', type: 'candlestick', data: ohlc, itemStyle: { color: '#e74c3c', color0: '#27ae60', borderColor: '#e74c3c', borderColor0: '#27ae60' } },
+      { name: 'BOLL', type: 'line', data: mid, xAxisIndex: 0, yAxisIndex: 0, showSymbol: false, lineStyle: { width: 1, color: '#f5a623' }, z: 3 },
+      { name: 'UB', type: 'line', data: upper, xAxisIndex: 0, yAxisIndex: 0, showSymbol: false, lineStyle: { width: 1, color: '#9aa0a6' }, z: 3 },
+      { name: 'LB', type: 'line', data: lower, xAxisIndex: 0, yAxisIndex: 0, showSymbol: false, lineStyle: { width: 1, color: '#9aa0a6' }, z: 3 },
+      { name: 'VOL', type: 'bar', xAxisIndex: 1, yAxisIndex: 1, data: vols, itemStyle: { color: '#bcd4ef' } }
+    ].concat(indSeries)
+  };
+}
+// 资金流量指标 MFI（周期默认 14）：典型价 TP=(H+L+C)/3，原始资金流=TP*成交量；
+// 按 TP 较前一刻涨跌归类正负资金流，MoneyRatio=正流/负流，MFI=100-100/(1+Ratio)。
+function _calcMFI(data, period){
+  const n = data.length;
+  const mfi = new Array(n).fill(null);
+  if(n < period + 1) return mfi;
+  const tp = data.map(d => (Number(d.high) + Number(d.low) + Number(d.close)) / 3);
+  const mf = data.map((d, i) => tp[i] * Number(d.vol));
+  for(let i = period; i < n; i++){
+    let pos = 0, neg = 0;
+    for(let j = i - period + 1; j <= i; j++){
+      if(tp[j] > tp[j-1]) pos += mf[j];
+      else if(tp[j] < tp[j-1]) neg += mf[j];
+    }
+    if(neg === 0) mfi[i] = 100;
+    else if(pos === 0) mfi[i] = 0;
+    else { const ratio = pos / neg; mfi[i] = +(100 - 100 / (1 + ratio)).toFixed(2); }
+  }
+  return mfi;
+}
+// 布林带 BOLL(20,2)：中轨=20 日收盘均值，上下轨=中轨 ±2 倍标准差。
+function _calcBoll(closes, period, mult){
+  const n = closes.length;
+  const mid = [], upper = [], lower = [];
+  for(let i = 0; i < n; i++){
+    if(i < period - 1){ mid.push(null); upper.push(null); lower.push(null); continue; }
+    let sum = 0;
+    for(let j = i - period + 1; j <= i; j++){ sum += closes[j]; }
+    const m = sum / period;
+    let variance = 0;
+    for(let j = i - period + 1; j <= i; j++){ const d = closes[j] - m; variance += d * d; }
+    const sd = Math.sqrt(variance / period);
+    mid.push(+m.toFixed(3));
+    upper.push(+(m + mult * sd).toFixed(3));
+    lower.push(+(m - mult * sd).toFixed(3));
+  }
+  return { mid: mid, upper: upper, lower: lower };
+}
+// 真实波幅 ATR（周期默认 14，Wilder 平滑）：TR=max(H-L,|H-前收|,|L-前收|)，ATR=TR 的 Wilder 移动平均。
+function _calcATR(data, period){
+  const n = data.length;
+  const atr = new Array(n).fill(null);
+  if(n < period + 1) return atr;
+  const tr = new Array(n).fill(0);
+  for(let i = 1; i < n; i++){
+    const h = Number(data[i].high), l = Number(data[i].low), pc = Number(data[i - 1].close);
+    tr[i] = Math.max(h - l, Math.abs(h - pc), Math.abs(l - pc));
+  }
+  let sum = 0;
+  for(let i = 1; i <= period; i++){ sum += tr[i]; }
+  atr[period] = sum / period;
+  for(let i = period + 1; i < n; i++){
+    atr[i] = (atr[i - 1] * (period - 1) + tr[i]) / period;
+  }
+  for(let i = period; i < n; i++){ atr[i] = +atr[i].toFixed(3); }
+  return atr;
+}
+// 趋向指标 ADX（周期默认 14，Wilder 平滑）：+DM/-DM → +DI/-DI → DX → ADX 平滑；同时返回 +DI / -DI 供同图显示。
+function _calcADX(data, period){
+  const n = data.length;
+  const adx = new Array(n).fill(null), pdi = new Array(n).fill(null), mdi = new Array(n).fill(null);
+  if(n < 2 * period) return { adx: adx, pdi: pdi, mdi: mdi };
+  const tr = new Array(n).fill(0), pdm = new Array(n).fill(0), mdm = new Array(n).fill(0);
+  for(let i = 1; i < n; i++){
+    const h = Number(data[i].high), l = Number(data[i].low);
+    const ph = Number(data[i - 1].high), pl = Number(data[i - 1].low);
+    const up = h - ph, dn = pl - l;
+    const pc = Number(data[i - 1].close);
+    tr[i] = Math.max(h - l, Math.abs(h - pc), Math.abs(l - pc));
+    pdm[i] = (up > dn && up > 0) ? up : 0;
+    mdm[i] = (dn > up && dn > 0) ? dn : 0;
+  }
+  let atr = 0, spdm = 0, smdm = 0;
+  for(let i = 1; i <= period; i++){ atr += tr[i]; spdm += pdm[i]; smdm += mdm[i]; }
+  atr /= period; spdm /= period; smdm /= period;
+  const dx = new Array(n).fill(null);
+  for(let i = period; i < n; i++){
+    if(i > period){
+      atr = (atr * (period - 1) + tr[i]) / period;
+      spdm = (spdm * (period - 1) + pdm[i]) / period;
+      smdm = (smdm * (period - 1) + mdm[i]) / period;
+    }
+    const pp = 100 * spdm / atr;
+    const mm = 100 * smdm / atr;
+    pdi[i] = +pp.toFixed(2);
+    mdi[i] = +mm.toFixed(2);
+    dx[i] = 100 * Math.abs(pp - mm) / (pp + mm);
+  }
+  let v = 0;
+  for(let i = period; i < 2 * period; i++){ v += dx[i]; }
+  v /= period;
+  adx[2 * period - 1] = +v.toFixed(2);
+  for(let i = 2 * period; i < n; i++){
+    v = (v * (period - 1) + dx[i]) / period;
+    adx[i] = +v.toFixed(2);
+  }
+  return { adx: adx, pdi: pdi, mdi: mdi };
+}
+
+// 综合看盘·分时（不带盘口）：仅拉取分时，复用 buildRtOption；prevClose 由快照传入，避免请求盘口
+Vue.component('fut-compact-rt', {
+  props: {
+      code: { type: String, default: '' },
+      prevClose: { type: Number, default: 0 },
+      price: { type: Number, default: 0 },
+      chgPct: { type: Number, default: 0 },
+      kind: { type: String, default: 'futures' },
+      showBands: { type: Boolean, default: true },
+    },
+  data(){ return { src: '', _rt: [], avgVolPerMin: 0, vwapParams: null, _chart: null, _timer: null, _visible: false, _io: null, _ro: null }; },
+  watch: {
+    showBands(){ this._redraw(); }
+  },
+  mounted(){
+    this._setupIO();
+    if(typeof ResizeObserver !== 'undefined'){
+      const el = this.$refs.chart;
+      if(el){
+        this._ro = new ResizeObserver(() => { if(this._chart){ try{ this._chart.resize(); }catch(e){} } });
+        this._ro.observe(el);
+      }
+    }
+  },
+  beforeDestroy(){
+    if(this._io){ try{ this._io.disconnect(); }catch(e){} this._io = null; }
+    if(this._timer){ clearInterval(this._timer); this._timer = null; }
+    if(this._ro){ try{ this._ro.disconnect(); }catch(e){} this._ro = null; }
+    if(this._chart){ try{ this._chart.dispose(); }catch(e){} this._chart = null; }
+  },
+  methods: {
+    _setupIO(){
+      const start = () => { if(!this._timer){ this._timer = setInterval(() => this._drawChart(), 3000); this._drawChart(); } };
+      const stop = () => { if(this._timer){ clearInterval(this._timer); this._timer = null; } };
+      if(typeof IntersectionObserver === 'undefined'){ start(); return; }
+      this._io = new IntersectionObserver((entries) => {
+        const e = entries[0];
+        if(e.isIntersecting){
+          if(!this._visible){ this._visible = true; start(); }
+        } else { this._visible = false; stop(); }
+      }, { root: null, threshold: 0.01 });
+      this._io.observe(this.$el);
+    },
+    _resizeChart(){
+      if(!this._chart) return;
+      const doR = () => { try{ this._chart.resize(); }catch(e){} };
+      this.$nextTick(doR);
+      if(typeof requestAnimationFrame !== 'undefined'){ requestAnimationFrame(() => this.$nextTick(doR)); }
+    },
+    _fmtP(v){ return fmtNum(num(v), 2); },
+    _fmtVol(v){ return fmtWan(v, 0); },
+    _calcPrevClose(){
+      let pc = Number(this.prevClose) || 0;
+      if(!pc){ const p = num(this.price), c = num(this.chgPct); if(isFinite(p) && p > 0 && isFinite(c)) pc = p / (1 + c / 100); }
+      return pc;
+    },
+    async _drawChart(){
+      if(!this.code) return;
+      try{
+        const js = await reqJSON('/futures/exquote/minute/' + encodeURIComponent(this.code) + '?ttl=3&_=' + Date.now(), { cache: 'no-store' });
+        const data = (js && js.data) || [];
+        this.src = (js && js.src) || (js && js.ok ? 'ok' : '');
+        if(!data.length){ if(this._chart){ try{ this._chart.clear(); }catch(_){} } return; }
+        this._rt = data;
+        this.vwapParams = (js && js.vwap_params) || null;
+        let total = 0;
+        data.forEach(function(d){ const v = Number(d.vol); if(isFinite(v)) total += v; });
+        let mins = 0;
+        const bars = data.filter(function(d){ const v = Number(d.vol); return isFinite(v) && v > 0; });
+        if(bars.length) mins = rtOpenMinutes(bars[bars.length - 1].time);
+        this.avgVolPerMin = mins > 0 ? total / mins : 0;
+        if(!this._chart){
+          const el = this.$refs.chart;
+          if(!el) return;
+          try{ this._chart = echarts.init(el); }catch(e){ return; }
+          try{ this._chart.resize(); }catch(e){}
+        }
+        const pc = this._calcPrevClose();
+        this._chart.setOption(buildRtOption(this._rt, pc, this.kind, this.avgVolPerMin, 0, this.showBands, this.vwapParams), true);
+        this._chart.resize();
+      }catch(e){ this.src = 'err'; }
+    },
+    _redraw(){
+      if(!this._chart || !this._rt || !this._rt.length) return;
+      const pc = this._calcPrevClose();
+      this._chart.setOption(buildRtOption(this._rt, pc, this.kind, this.avgVolPerMin, 0, this.showBands, this.vwapParams), true);
+      this._chart.resize();
+    },
+    async copyCode(){
+      const code = this.code;
+      if(!code) return;
+      const clip = async () => { if(navigator.clipboard && navigator.clipboard.writeText){ await navigator.clipboard.writeText(code); return true; } return false; };
+      const legacy = () => {
+        try{
+          const ta = document.createElement('textarea');
+          ta.value = code; ta.setAttribute('readonly', '');
+          ta.style.position = 'fixed'; ta.style.top = '-1000px'; ta.style.opacity = '0';
+          document.body.appendChild(ta); ta.select(); ta.setSelectionRange(0, ta.value.length);
+          const ok = document.execCommand('copy'); document.body.removeChild(ta); return ok;
+        }catch(e){ return false; }
+      };
+      let ok = false;
+      try{ ok = await clip(); }catch(e){ ok = false; }
+      if(!ok) ok = legacy();
+      if(ok){ if(this.$message && this.$message.success) this.$message.success('已复制期指代码：' + code); }
+      else { if(this.$message && this.$message.warning) this.$message.warning('复制失败，期指代码：' + code); }
+    }
+  },
+  template: '<div class="comp-rt" ref="chart" title="点击复制期指代码" @click="copyCode"></div>'
+});
+
+// 综合看盘·K线（1分钟/5分钟/30分钟）：拉取 /futures/exquote/kline，复用 buildMiniKlineOption
+Vue.component('fut-kline', {
+  props: {
+      code: { type: String, default: '' },
+      period: { type: String, default: '1min' },
+      count: { type: Number, default: 240 },
+      indicator: { type: String, default: 'mfi' },
+      kind: { type: String, default: 'futures' },
+    },
+  data(){ return { src: '', _chart: null, _timer: null, _visible: false, _io: null, _ro: null, _lastData: null, _lastFull: null }; },
+  mounted(){
+    this._setupIO();
+    if(typeof ResizeObserver !== 'undefined'){
+      const el = this.$refs.chart;
+      if(el){
+        this._ro = new ResizeObserver(() => { if(this._chart){ try{ this._chart.resize(); }catch(e){} } });
+        this._ro.observe(el);
+      }
+    }
+  },
+  watch: { period(){ if(this._visible) this._draw(); }, count(){ if(this._visible) this._draw(); }, indicator(){ this._redraw(); } },
+  beforeDestroy(){
+    if(this._io){ try{ this._io.disconnect(); }catch(e){} this._io = null; }
+    if(this._timer){ clearInterval(this._timer); this._timer = null; }
+    if(this._ro){ try{ this._ro.disconnect(); }catch(e){} this._ro = null; }
+    if(this._chart){ try{ this._chart.dispose(); }catch(e){} this._chart = null; }
+  },
+  methods: {
+    _setupIO(){
+      const start = () => { if(!this._timer){ this._timer = setInterval(() => this._draw(), 3000); this._draw(); } };
+      const stop = () => { if(this._timer){ clearInterval(this._timer); this._timer = null; } };
+      if(typeof IntersectionObserver === 'undefined'){ start(); return; }
+      this._io = new IntersectionObserver((entries) => {
+        const e = entries[0];
+        if(e.isIntersecting){
+          if(!this._visible){ this._visible = true; start(); }
+        } else { this._visible = false; stop(); }
+      }, { root: null, threshold: 0.01 });
+      this._io.observe(this.$el);
+    },
+    _ensureChart(){
+      if(this._chart) return this._chart;
+      let chart;
+      try{ chart = echarts.init(this.$refs.chart); }catch(e){ return null; }
+      this._chart = chart;
+      return chart;
+    },
+    async _draw(){
+      if(!this.code) return;
+      const chart = this._ensureChart();
+      if(!chart) return;
+      try{
+        // 拉取全量历史（接口上限 700 根）用于指标计算，仅显示最近 this.count 根，保证指标无预热缺口（全量显示）
+        const js = await reqJSON('/futures/exquote/kline/' + encodeURIComponent(this.code) + '?period=' + encodeURIComponent(this.period) + '&count=700&ttl=15&_=' + Date.now(), { cache: 'no-store' });
+        const full = (js && js.data) || [];
+        const show = this.count && this.count > 0 ? Math.min(this.count, full.length) : full.length;
+        const data = full.slice(-show);
+        this.src = (js && js.src) || (js && js.ok ? 'ok' : '');
+        if(!data.length){ chart.clear(); return; }
+        this._lastData = data; this._lastFull = full;
+        chart.setOption(buildMiniKlineOption(data, full, this.indicator), true);
+        chart.resize();
+        try {
+          const atrArr = _calcATR(full, 14);
+          const adxObj = _calcADX(full, 14);
+          const mfiArr = _calcMFI(full, 14);
+          const lastValid = (arr) => { for (let i = arr.length - 1; i >= 0; i--) { if (arr[i] !== null) return arr[i]; } return null; };
+          this.$emit('indicators', {
+            code: this.code,
+            period: this.period,
+            atr: lastValid(atrArr),
+            adx: lastValid(adxObj.adx),
+            pdi: lastValid(adxObj.pdi),
+            mdi: lastValid(adxObj.mdi),
+            mfi: lastValid(mfiArr),
+          });
+        } catch (e) {}
+      }catch(e){ this.src = 'err'; }
+    },
+    _redraw(){
+      const chart = this._ensureChart();
+      if(!chart) return;
+      if(!this._lastData){ this._draw(); return; }
+      chart.setOption(buildMiniKlineOption(this._lastData, this._lastFull, this.indicator), true);
+      chart.resize();
+    },
+    async copyCode(){
+      const code = this.code;
+      if(!code) return;
+      const clip = async () => { if(navigator.clipboard && navigator.clipboard.writeText){ await navigator.clipboard.writeText(code); return true; } return false; };
+      const legacy = () => {
+        try{
+          const ta = document.createElement('textarea');
+          ta.value = code; ta.setAttribute('readonly', '');
+          ta.style.position = 'fixed'; ta.style.top = '-1000px'; ta.style.opacity = '0';
+          document.body.appendChild(ta); ta.select(); ta.setSelectionRange(0, ta.value.length);
+          const ok = document.execCommand('copy'); document.body.removeChild(ta); return ok;
+        }catch(e){ return false; }
+      };
+      let ok = false;
+      try{ ok = await clip(); }catch(e){ ok = false; }
+      if(!ok) ok = legacy();
+      if(ok){ if(this.$message && this.$message.success) this.$message.success('已复制期指代码：' + code); }
+      else { if(this.$message && this.$message.warning) this.$message.warning('复制失败，期指代码：' + code); }
+    }
+  },
+  template: '<div class="comp-kline-wrap">' +
+      '<div class="comp-kline" ref="chart" title="点击复制期指代码" @click="copyCode"></div>' +
+    '</div>'
+});
+
+Vue.component('fut-board-rt', {
+  delimiters: ['${', '}'],
+  props: {
+      code: { type: String, default: '' },
+      prevClose: { type: Number, default: 0 },
+      price: { type: Number, default: 0 },
+      chgPct: { type: Number, default: 0 },
+      kind: { type: String, default: '' },
+      showBook: { type: Boolean, default: true },
+      showTicks: { type: Boolean, default: true },
+      showBands: { type: Boolean, default: true },
+      // 'rt' = 普通分时；'vwap' = VWAP 偏离度策略视图
+      mode: { type: String, default: 'rt' },
+      // 逐品种策略参数对象 {k_long, k_short, rr, days}（父组件按品种下发，优先于下面的标量 prop）
+      params: { type: Object, default: null },
+      // 两腿：'am'=上午开盘驱动(ret1545) / 'pm'=下午 VWAP 动量(dev_z)
+      leg: { type: String, default: 'pm' },
+      kLong: { type: Number, default: 1.0 },
+      kShort: { type: Number, default: -1.5 },
+      rr: { type: Number, default: 1.5 },
+      days: { type: Number, default: 30 },
+    },
+  data(){ return { src: '', quote: {}, ticks: [], avgVolPerMin: 0, vwapParams: null, _timer: null, _rt: null, _visible: false, _io: null, _vw: null, _vwTs: 0, vwErr: '' }; },
+  computed: {
+    isVwap(){ return this.mode === 'vwap'; },
+    // 生效策略参数：优先取父组件下发的 params 对象，回退到标量 prop，再回退到默认值。
+    // 缺了这一层时 _effKLong/_effKShort 为 undefined，请求里会带 k_long=undefined，
+    // 后端解析失败后回落到默认 1.0 / -1.5，界面上改「多 z / 空 z」就看不到任何变化。
+    _pParams(){
+      const p = this.params || {};
+      const num = function(v, d){ const n = Number(v); return isFinite(n) ? n : d; };
+      return {
+        k_long:  num(p.k_long  != null ? p.k_long  : this.kLong,  1.0),
+        k_short: num(p.k_short != null ? p.k_short : this.kShort, -1.5),
+        rr:      num(p.rr      != null ? p.rr      : this.rr,     1.5),
+        days:    Math.round(num(p.days != null ? p.days : this.days, 30)),
+      };
+    },
+    _effKLong(){ return this._pParams.k_long; },
+    _effKShort(){ return this._pParams.k_short; },
+    _effRR(){ return this._pParams.rr; },
+    _effDays(){ return this._pParams.days; },
+    // 腿标识：'am'=只上午 / 'pm'=只下午 / 'both'=双腿同屏（默认）
+    _effLeg(){ return (this.leg === 'am') ? 'am' : ((this.leg === 'pm') ? 'pm' : 'both'); },
+    // 上午腿 ret1545 门槛 + 盈亏比（来自 params.am_k / am_rr）
+    _effKPct(){ const p = this.params || {}; const n = Number(p.am_k); return isFinite(n) ? n : 0.40; },
+    _effAmRR(){ const p = this.params || {}; const n = Number(p.am_rr); return isFinite(n) ? n : 2.0; },
+    // 分时图 dev_z 副图的做多/做空阈值线：与 VWAP 模式共用同一份参数
+    // （优先父组件下发的 params，回退后端响应里的 vwap_params，再回退默认）。
+    _rtThresholds(){
+      const num = function(v, d){ const n = Number(v); return isFinite(n) ? n : d; };
+      const p = this._pParams || {};
+      const old = this.vwapParams || {};
+      return {
+        k_long:  num(p.k_long  != null ? p.k_long  : old.k_long,  1.0),
+        k_short: num(p.k_short != null ? p.k_short : old.k_short, -1.5),
+      };
+    },
+    asksRev(){
+      const a = (this.quote && this.quote.asks) || [];
+      return a.slice().reverse();
+    },
+    ticksView(){
+      return (this.ticks || []).slice().reverse().slice(0, 13);
+    },
+    showSide(){
+      return (this.showBook || this.showTicks) && this.quote && this.quote.bids && this.quote.bids.length;
+    }
+  },
+  watch: {
+    showBook(){ this._resizeChart(); },
+    showTicks(){ this._resizeChart(); },
+    showSide(){ this._resizeChart(); },
+    showBands(){ this._redraw(); },
+    mode(){ this._resetChart(); },
+    _effKLong(){ this._resetChart(); },
+    _effKShort(){ this._resetChart(); },
+    _effRR(){ this._resetChart(); },
+    _effDays(){ this._resetChart(); },
+    _effLeg(){ this._resetChart(); },
+    _effKPct(){ this._resetChart(); },
+    _effAmRR(){ this._resetChart(); },
+    // 监听 per-symbol params 变化，向父组件上报（供父组件存 localStorage）
+    _pParams: {
+      handler(v, ov){
+        if(!v || !this.isVwap) return;
+        // 上午腿的参数由父组件工具栏独占（am_k/am_rr），子组件不回写，
+        // 避免把下午腿默认 k_long/k_short 写回、污染 per-code 参数。
+        if(this._effLeg === 'am') return;
+        // 只在「数值真的变了」时回写父组件。父组件每次渲染都会 new 一个 params 对象，
+        // 若按引用比较会形成 父重渲染 -> 子 watch -> 回写 -> 父重渲染 的死循环。
+        const prev = this._lastPEmitted;
+        if(prev && prev.k_long === v.k_long && prev.k_short === v.k_short
+                && prev.rr === v.rr && prev.days === v.days){
+          return;
+        }
+        // 跳过首次挂载时的 silent 初始化
+        if(this._pSilent === true){
+          this._lastPEmitted = { k_long: v.k_long, k_short: v.k_short, rr: v.rr, days: v.days };
+          this.$nextTick(() => { this._pSilent = false; });
+          return;
+        }
+        this._pSilent = false;
+        this._lastPEmitted = { k_long: v.k_long, k_short: v.k_short, rr: v.rr, days: v.days };
+        this.$emit('params-change', { code: this.code, k_long: v.k_long, k_short: v.k_short, rr: v.rr, days: v.days });
+      },
+      deep: true,
+    },
+  },
+  created(){
+    // 首次挂载时 _pParams 的初始值不必回写父组件（避免无谓的清空指标 + 落盘）
+    this._pSilent = true;
+    this._lastPEmitted = null;
+  },
+  mounted(){
+    this._setupIO();
+    if(typeof ResizeObserver !== 'undefined'){
+      const el = this.$refs.chart;
+      if(el){
+        this._ro = new ResizeObserver(() => {
+          if(this._chart){ try{ this._chart.resize(); }catch(e){} }
+        });
+        this._ro.observe(el);
+      }
+    }
+    // 阈值落盘广播（window 事件，父组件在 POST 成功后派发）：
+    // 图表已改为只认服务端阈值，改完阈值必须主动重绘一次，否则要等下一个 3s 轮询才生效。
+    this._onVwapParamsSaved = (ev) => {
+      const c = ev && ev.detail && ev.detail.code;
+      if(!c || c === this.code) this._resetChart();
+    };
+    window.addEventListener('vwap-params-saved', this._onVwapParamsSaved);
+  },
+  beforeDestroy(){
+    if(this._onVwapParamsSaved){ try{ window.removeEventListener('vwap-params-saved', this._onVwapParamsSaved); }catch(e){} this._onVwapParamsSaved = null; }
+    if(this._io){ try{ this._io.disconnect(); }catch(e){} this._io = null; }
+    if(this._timer){ clearInterval(this._timer); this._timer = null; }
+    if(this._ro){ try{ this._ro.disconnect(); }catch(e){} this._ro = null; }
+    if(this._chart){ try{ this._chart.dispose(); }catch(e){} this._chart = null; }
+  },
+  methods: {
+    _setupIO(){
+      const start = () => { if(!this._timer){ this._timer = setInterval(() => this._refresh(), 3000); this._refresh(); } };
+      const stop = () => { if(this._timer){ clearInterval(this._timer); this._timer = null; } };
+      if(typeof IntersectionObserver === 'undefined'){ start(); return; }
+      this._io = new IntersectionObserver((entries) => {
+        const e = entries[0];
+        if(e.isIntersecting){
+          if(!this._visible){ this._visible = true; start(); }
+        } else {
+          this._visible = false;
+          stop();
+        }
+      }, { root: null, threshold: 0.01 });
+      this._io.observe(this.$el);
+    },
+    _resizeChart(){
+      if(!this._chart) return;
+      const doR = () => { try{ this._chart.resize(); }catch(e){} };
+      this.$nextTick(doR);
+      if(typeof requestAnimationFrame !== 'undefined'){
+        requestAnimationFrame(() => this.$nextTick(doR));
+      }
+    },
+    _fmtP(v){ return fmtNum(num(v), 2); },
+    _fmtVol(v){ return fmtWan(v, 0); },
+    _updown(price, base){ const n = num(price), b = num(base); if(isNaN(n) || isNaN(b)) return ''; return n > b ? 'up' : (n < b ? 'down' : 'flat'); },
+    _tickCls(t){ return t === 0 ? 'buy' : (t === 1 ? 'sell' : 'neutral'); },
+    _refresh(){
+      if(!this.code) return;
+      // VWAP 模式后端有 TTL 缓存且计算较重，图表侧按 15s 节流（与分时模式对齐，盘口/逐笔仍实时）
+      if(this.isVwap){
+        const now = Date.now();
+        // Vue2 不代理 data 中 _ 前缀属性，_vwTs 初始取不到（undefined），这里兜底为 0 使首次必然放行
+        const vwTs = Number(this._vwTs) || 0;
+        if(now - vwTs >= 3000){ this._vwTs = now; this._drawChart(); }
+      } else {
+        this._drawChart();
+      }
+      this._refreshLive();
+    },
+    _refreshLive(){
+      if(!this.code) return;
+      this._loadQuote();
+      this._loadTicks();
+    },
+    // 模式/参数切换：丢弃旧数据与旧实例，立即按新口径重拉
+    _resetChart(){
+      this._rt = null; this._vw = null; this._vwTs = 0;
+      if(this._chart){ try{ this._chart.clear(); }catch(e){} }
+      // dispose 后再 init，避免旧 grid/series 残留导致坐标轴错乱
+      if(this._chart){ try{ this._chart.dispose(); }catch(e){} this._chart = null; }
+      this.$nextTick(() => { this._drawChart(); });
+    },
+    async _drawChart(){
+      if(this.isVwap) return this._drawVwapChart();
+      try{
+        const js = await reqJSON('/futures/exquote/minute/' + encodeURIComponent(this.code) + '?ttl=3&_=' + Date.now(), { cache: 'no-store' });
+        const data = (js && js.data) || [];
+        this.src = (js && js.src) || (js && js.ok ? 'ok' : '');
+        if(!data.length){ if(this._chart){ try{ this._chart.clear(); }catch(_){} } return; }
+        this._rt = data;
+        this.vwapParams = (js && js.vwap_params) || null;
+        let avg = 0;
+        let total = 0;
+        data.forEach(function(d){ const v = Number(d.vol); if(isFinite(v)) total += v; });
+        let mins = rtOpenMinutes((this.quote && this.quote.servertime) || '');
+        if(!mins){
+          const bars = data.filter(function(d){ const v = Number(d.vol); return isFinite(v) && v > 0; });
+          if(bars.length) mins = rtOpenMinutes(bars[bars.length - 1].time);
+        }
+        if(mins > 0) avg = total / mins;
+        this.avgVolPerMin = avg;
+        if(!this._chart){
+          const el = this.$refs.chart;
+          if(!el) return;
+          try{ this._chart = echarts.init(el); }catch(e){ return; }
+          try{ this._chart.resize(); }catch(e){}
+        }
+        this._redraw();
+      }catch(e){
+        this.src = 'err';
+      }
+    },
+    _calcPrevClose(){
+      let pc = Number(this.prevClose) || 0;
+      if(!pc){
+        const p = num(this.price), c = num(this.chgPct);
+        if(isFinite(p) && p > 0 && isFinite(c)) pc = p / (1 + c / 100);
+      }
+      if(!pc){ const lc = Number(this.quote && this.quote.last_close) || 0; pc = lc; }
+      return pc;
+    },
+    _redraw(){
+      if(this.isVwap) return this._redrawVwap();
+      if(!this._chart || !this._rt) return;
+      const pc = this._calcPrevClose();
+      this._chart.setOption(buildRtOption(this._rt, pc, this.kind, this.avgVolPerMin, 0, this.showBands, this._rtThresholds), true);
+      this._chart.resize();
+    },
+    // ===== VWAP 偏离度策略视图 =====
+    async _drawVwapChart(){
+      try{
+        if(!this.code) return;
+        const leg = this._effLeg;
+        // 【口径铁律】阈值只以服务端 data/vwap_params.json 为准，前端不再用 URL 传阈值。
+        // 原因：URL 参数优先级高于服务端保存值(_vwap_eff_params)，而前端这份阈值可能来自
+        // localStorage 的旧值——一旦启动时 /futures/vwap/params 同步失败（静默 catch），
+        // 旧阈值就会盖掉服务端阈值。阈值一变，dev_z 的穿越点就变，表现为同一品种的下午腿
+        // 信号在「13:41」与「13:02」之间跳变（−0.75 不触发 13:01，−0.8~−1.0 则触发）。
+        // 面板改阈值 → setVwapParam → POST /futures/vwap/params 落盘 → 广播立即重绘。
+        const q = '?leg=' + encodeURIComponent(leg) + '&_=' + Date.now();
+        const js = await reqJSON('/futures/vwap/' + encodeURIComponent(this.code) + q, { cache: 'no-store' });
+        if(!js || !js.ok || !js.series || !js.series.length){
+          this.vwErr = (js && js.error) ? ('后端:' + js.error) : '后端返回空数据';
+          this.src = (js && js.error) ? 'err' : '';
+          // 关键：不要清空已画好的图。扩展行情瞬时不可用（ok:false）时若 clear()，
+          // 已经画出的开平仓信号点会整片消失，直到下一次轮询成功——表现为「信号先显示后消失」。
+          // 这里保留上一次的 _vw 与图形，仅叠加错误浮层；下次成功轮询会自动覆盖回正常态。
+          if(!this._vw && this._chart){ try{ this._chart.clear(); }catch(_){} }
+          return;
+        }
+        this.src = 'ok';
+        this.vwErr = '';
+        this._vw = js;
+        // 包在 nextTick 里，确保 ref 与布局就绪（避免 init 时容器尺寸为 0 的竞态）
+        this.$nextTick(() => { this._initAndDrawVwap(); });
+        this._emitVwap(js);
+      }catch(e){
+        this.vwErr = '请求/解析失败: ' + (e && e.message ? e.message : String(e));
+        this.src = 'err';
+        if(window.console) console.error('[fut-board-rt vwap]', e);
+      }
+    },
+    _initAndDrawVwap(){
+      if(!this._vw) return;
+      if(!this._chart){
+        const el = this.$refs.chart;
+        if(!el){ this.vwErr = '图表容器未就绪'; return; }
+        try{ this._chart = echarts.init(el); }
+        catch(e){ this.vwErr = 'echarts.init 失败: ' + (e && e.message ? e.message : String(e)); return; }
+        try{ this._chart.resize(); }catch(_){}
+      }
+      try{
+        this._redrawVwap();
+      }catch(e){
+        this.vwErr = '绘图失败: ' + (e && e.message ? e.message : String(e));
+        if(window.console) console.error('[fut-board-rt vwap redraw]', e);
+      }
+    },
+    _redrawVwap(){
+      if(!this._chart || !this._vw) return;
+      const pc = this._calcPrevClose();
+      this._chart.setOption(buildVwapOption(this._vw, pc, this.kind), true);
+      this._chart.resize();
+    },
+    // 向父组件上报策略状态（用于行头指标条）
+    _emitVwap(js){
+      const s = (js.series || []);
+      let devZ = null;
+      for(let i = s.length - 1; i >= 0; i--){ if(s[i].z != null){ devZ = s[i].z; break; } }
+      const sigs = (js.signals || []);
+      let sumR = 0, nWin = 0, sumAm = 0, sumPm = 0, nAm = 0, nPm = 0;
+      sigs.forEach(function(g){
+        const r = Number(g.pnl_r) || 0;
+        sumR += r;
+        if(g.exit_why === 'target') nWin++;
+        if(g.leg === 'am'){ sumAm += r; nAm++; } else { sumPm += r; nPm++; }
+      });
+      const la = js.last_am || {};
+      const lp = js.last_pm || {};
+      this.$emit('vwap', {
+        code: this.code,
+        atr5: js.atr5,
+        dev_z: devZ,
+        ret1545: js.ret1545,
+        leg: js.leg,
+        state: (js.last && js.last.state) || 'flat',
+        state_am: la.state || 'flat',
+        state_pm: lp.state || 'flat',
+        entry: (js.last && js.last.entry) != null ? js.last.entry : null,
+        stop: (js.last && js.last.stop) != null ? js.last.stop : null,
+        target: (js.last && js.last.target) != null ? js.last.target : null,
+        pnl_r: Math.round(sumR * 1000) / 1000,
+        pnl_am: Math.round(sumAm * 1000) / 1000,
+        pnl_pm: Math.round(sumPm * 1000) / 1000,
+        n_sig: sigs.length,
+        n_win: nWin,
+        n_am: nAm,
+        n_pm: nPm,
+        date: js.date,
+      });
+    },
+    async _loadQuote(){
+      try{
+        const dj = await reqJSON('/futures/exquote/quote/' + encodeURIComponent(this.code) + '?ttl=3&_=' + Date.now(), { cache: 'no-store' });
+        this.quote = (dj && dj.data) || {};
+        if(this._chart){
+          this.$nextTick(() => { try{ this._chart.resize(); }catch(e){} });
+        }
+        if(!Number(this.prevClose)){
+          this._redraw();
+        }
+      }catch(e){}
+    },
+    async _loadTicks(){
+      try{
+        const tj = await reqJSON('/futures/exquote/tick/' + encodeURIComponent(this.code) + '?count=40&ttl=3&_=' + Date.now(), { cache: 'no-store' });
+        this.ticks = (tj && tj.data) || [];
+      }catch(e){}
+    },
+    async copyCode(){
+      const code = this.code;
+      if(!code) return;
+      const clip = async () => {
+        if(navigator.clipboard && navigator.clipboard.writeText){
+          await navigator.clipboard.writeText(code);
+          return true;
+        }
+        return false;
+      };
+      const legacy = () => {
+        try{
+          const ta = document.createElement('textarea');
+          ta.value = code;
+          ta.setAttribute('readonly', '');
+          ta.style.position = 'fixed';
+          ta.style.top = '-1000px';
+          ta.style.opacity = '0';
+          document.body.appendChild(ta);
+          ta.select();
+          ta.setSelectionRange(0, ta.value.length);
+          const ok = document.execCommand('copy');
+          document.body.removeChild(ta);
+          return ok;
+        }catch(e){ return false; }
+      };
+      let ok = false;
+      try{ ok = await clip(); }catch(e){ ok = false; }
+      if(!ok) ok = legacy();
+      if(ok){
+        if(this.$message && this.$message.success) this.$message.success('已复制期指代码：' + code);
+      } else {
+        if(this.$message && this.$message.warning) this.$message.warning('复制失败，期指代码：' + code);
+      }
+    }
+  },
+  template:
+    '<div class="board-rt">' +
+      '<div class="board-rt-chart" ref="chart" title="点击复制期指代码" @click="copyCode"></div>' +
+      '<div v-if="vwErr" class="vw-err-overlay">' +
+        '<div class="vw-err-icon">⚠️</div>' +
+        '<div class="vw-err-title">VWAP 图表加载失败</div>' +
+        '<div class="vw-err-detail">${vwErr}</div>' +
+      '</div>' +
+      '<div class="board-rt-side" v-show="showSide">' +
+        '<div class="board-rt-book" v-show="showBook">' +
+          '<div class="book-head">五档买卖盘</div>' +
+          '<div class="book-row ask" v-for="(a,i) in asksRev" :key="\'a\'+i">' +
+            '<span class="book-tag" v-text="\'卖\'+(5-i)"></span>' +
+            '<span class="book-price" v-text="_fmtP(a[0])"></span>' +
+            '<span class="book-vol" v-text="_fmtVol(a[1])"></span>' +
+          '</div>' +
+          '<div class="book-mid">' +
+            '<span class="book-last" :class="_updown(quote.price, quote.last_close)" v-text="_fmtP(quote.price)"></span>' +
+            '<span class="book-time" v-text="quote.servertime"></span>' +
+          '</div>' +
+          '<div class="book-row bid" v-for="(b,i) in quote.bids" :key="\'b\'+i">' +
+            '<span class="book-tag" v-text="\'买\'+(i+1)"></span>' +
+            '<span class="book-price" v-text="_fmtP(b[0])"></span>' +
+            '<span class="book-vol" v-text="_fmtVol(b[1])"></span>' +
+          '</div>' +
+        '</div>' +
+        '<div class="board-rt-ticks" v-show="showTicks">' +
+          '<div class="tick-head">详细成交</div>' +
+          '<div class="tick-row" v-for="(t,i) in ticksView" :key="i">' +
+            '<span class="tick-time" v-text="t.time"></span>' +
+            '<span class="tick-price" :class="_tickCls(t.buyorsell)" v-text="_fmtP(t.price)"></span>' +
+            '<span class="tick-vol" v-text="_fmtVol(t.vol)"></span>' +
+          '</div>' +
+        '</div>' +
+      '</div>' +
+    '</div>'
+});
+
+new Vue({
+  el: '#app',
+  delimiters: ['${', '}'],
+  data() {
+    return {
+      loading: false,
+      firstLoaded: false,
+      statusMsg: '',
+      rows: [],
+      updatedAt: '',
+      refreshInterval: 5000,
+      timer: null,
+      showBook: true,
+      showTicks: true,
+      showBands: true,
+      // 分时看盘三态：rt=分时 / vwap=VWAP 偏离度策略(双腿同屏) / kline=K线
+      rtMode: 'rt',
+      // VWAP 策略参数：各品种独立存储，key 为 code
+      vwapParams: {},
+      vwapActiveCode: '',
+      vwapInfo: {},
+      // 权威参数标记：服务端下发过 或 用户手改过的品种（只有这些才允许回推服务端，
+      // 避免把 ensureVwapParams 的通用兜底值当成用户意图覆盖掉服务端调好的阈值）
+      _vwAuthoritative: {},
+      // 服务端阈值同步失败提示（非空则工具栏红字提示）——绝不静默退回本地旧阈值
+      vwapSyncErr: '',
+      klinePeriod: 'day',
+      activeTab: 'rt',
+      indicator: 'mfi',
+      indicatorVals: {},
+      klineCount: 240,
+      popupLaunching: false,
+      integratedLaunching: false,
+      compTimeframes: [
+        { key: 'rt', label: '分时行情（不带盘口）' },
+        { key: '1min', label: '1 分钟 K线' },
+        { key: '5min', label: '5 分钟 K线' },
+        { key: '30min', label: '30 分钟 K线' },
+      ],
+    };
+  },
+  computed: {
+    // 兼容旧引用：K线模式等价于 rtMode === 'kline'
+    showKline() { return this.rtMode === 'kline'; },
+  },
+  watch: {
+    // 策略参数变更：只丢弃「值真的被改动的那几个品种」的旧指标，等子组件按新口径重新上报。
+    // 绝不能整份清空 vwapInfo —— 行头指标条挂在 v-if="vw(row.code)" 上，
+    // 整份清空会让所有品种的「上午/下午仓、信号数、dev_z」一起闪现再消失。
+    vwapParams: { handler(v) { this._dropVwapInfo(this._diffVwapParams(v)); }, deep: true },
+    // 切到 VWAP 模式时补齐各品种参数条目（数据可能刚加载完）
+    rtMode(v) { if (v === 'vwap') this.ensureVwapParams(); },
+  },
+  methods: {
+    _saveVwapParams() {
+      try { localStorage.setItem('fut_vwap_params', JSON.stringify(this.vwapParams || {})); } catch(e) {}
+    },
+    // 找出本次 vwapParams 变更中「值真的变了」的品种（与上一次快照逐字段比较）。
+    // 用于只失效受影响的品种，而不是把整表指标一起清掉。
+    _diffVwapParams(v) {
+      const cur = v || {};
+      const prev = this._vwParamSnap || {};
+      const codes = {};
+      Object.keys(cur).forEach(function(c){ codes[c] = 1; });
+      Object.keys(prev).forEach(function(c){ codes[c] = 1; });
+      const eq = function(a, b){
+        a = a || {}; b = b || {};
+        return a.k_long === b.k_long && a.k_short === b.k_short && a.rr === b.rr
+            && a.days === b.days && a.am_k === b.am_k && a.am_rr === b.am_rr;
+      };
+      const out = [];
+      Object.keys(codes).forEach(function(c){ if(!eq(cur[c], prev[c])) out.push(c); });
+      try { this._vwParamSnap = JSON.parse(JSON.stringify(cur)); } catch(e) { this._vwParamSnap = cur; }
+      return out;
+    },
+    // 只丢弃指定品种的行头指标，其余品种保持不变（避免全表指标条集体闪烁）
+    _dropVwapInfo(codes) {
+      const list = codes || [];
+      if(!list.length) return;
+      const src = this.vwapInfo || {};
+      const nv = {};
+      Object.keys(src).forEach(function(c){ if(list.indexOf(c) < 0) nv[c] = src[c]; });
+      if(Object.keys(nv).length !== Object.keys(src).length) this.vwapInfo = nv;
+    },
+    // 同步到服务端：独立弹窗 / 综合窗口的 iframe 未必与主页面共享 localStorage，
+    // 参数落到 data/vwap_params.json 后，任何窗口从后端取到的都是同一套阈值。
+    _pushVwapParams(code) {
+      if (!code) return;
+      try {
+        fetch('/futures/vwap/params', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(Object.assign({ code: code }, this.getVwapParams(code))),
+        }).then(function(){
+          // 阈值已落盘（服务端因此作废该品种内存缓存）-> 广播让该品种图表立刻按新阈值重绘
+          try{ window.dispatchEvent(new CustomEvent('vwap-params-saved', { detail: { code: code } })); }catch(e){}
+        }).catch(function(){});
+      } catch(e) {}
+    },
+    // 启动时把服务端已存的参数拉回来：服务端是跨窗口的唯一权威，
+    // 本地 localStorage 只作离线兜底（pywebview 独立窗口与主页面并不共享它）。
+    // 若改成「本地优先」，本地总有 ensureVwapParams 写下的默认值，服务端值将永远同步不回来。
+    _syncVwapParamsFromServer(attempt) {
+      const n = attempt || 0;
+      return fetch('/futures/vwap/params', { cache: 'no-store' })
+        .then(function(r){ return r.json(); })
+        .then((resp) => {
+          if (!resp || !resp.ok) throw new Error('bad resp');
+          const d = resp.data || {};
+          if (!this.vwapParams) this.vwapParams = {};
+          Object.keys(d).forEach((code) => {
+            const s = d[code] || {};
+            const num = function(v, def){ const n = Number(v); return isFinite(n) ? n : def; };
+            this.$set(this.vwapParams, code, {
+              k_long: num(s.k_long, 1.0), k_short: num(s.k_short, -1.5),
+              rr: num(s.rr, 1.5), days: num(s.days, 30),
+              am_k: num(s.am_k, 0.40), am_rr: num(s.am_rr, 2.0),
+            });
+            // 服务端下发过的品种视为权威（可安全回推），未下发的品种保留通用兜底、不回推
+            if (this._vwAuthoritative) this._vwAuthoritative[code] = 1;
+          });
+          // 同步成功即把服务端值写回 localStorage：否则本地会长期留着旧阈值，
+          // 一旦后续同步失败或经面板改写，旧值就会被 POST 回写服务端（阈值被串改 -> 信号跳变）。
+          this._saveVwapParams();
+          this.vwapSyncErr = '';
+        })
+        .catch(() => {
+          // 【铁律】同步失败绝不能静默吞掉：那会让前端悄悄退回 localStorage 旧阈值，
+          // 而旧阈值经 URL/POST 会盖掉服务端阈值，表现为信号「一会儿 13:41、一会儿 13:02」。
+          if (n < 2) {
+            return new Promise(function(res){ setTimeout(res, 800); })
+              .then(() => this._syncVwapParamsFromServer(n + 1));
+          }
+          this.vwapSyncErr = '服务端阈值同步失败，当前用本地缓存值';
+          if (window.console) console.warn('[vwap] 服务端阈值同步失败，已退回本地缓存值');
+        });
+    },
+    // 把已确认的品种参数推到服务端（弹窗只从服务端取，需要服务端那份齐全）。
+    // 只推「服务端下发过」或「用户手改过」的品种：前端 ensureVwapParams 写下的
+    // 通用兜底值(1.0/-1.5)不是用户意图，回推会把服务端按品种调好的阈值冲掉，
+    // 阈值一变信号就跟着变（表现为信号忽有忽无），故这里不再无差别回推。
+    _pushAllVwapParams() {
+      const codes = Object.keys(this.vwapParams || {});
+      const auth = this._vwAuthoritative || {};
+      for (let i = 0; i < codes.length; i++) {
+        if (!auth[codes[i]]) continue;
+        this._pushVwapParams(codes[i]);
+      }
+    },
+    _loadVwapParams() {
+      try {
+        const raw = localStorage.getItem('fut_vwap_params');
+        if (raw) { const p = JSON.parse(raw); if (p && typeof p === 'object') this.vwapParams = p; }
+      } catch(e) {}
+    },
+    // 参数面板切换「当前编辑品种」只是换编辑目标，与行情指标无关 —— 不要清 vwapInfo，
+    // 否则每次切换下拉都会把整表行头指标（上午/下午仓、信号数）闪掉再长回来。
+    onVwapActiveCodeChange() {},
+    // 按品种补齐默认参数条目：缺失 key 时模板读 vwapParams[code].k_long 会抛
+    // "Cannot read properties of undefined"，导致 Vue 渲染中断、下拉点了没反应。
+    ensureVwapParams(codes) {
+      const list = codes || (this.rows || []).map(function(r){ return r.code; });
+      if (!list || !list.length) return;
+      if (!this.vwapParams) this.vwapParams = {};
+      let added = false;
+      for (let i = 0; i < list.length; i++) {
+        const c = list[i];
+        if (!c || this.vwapParams[c]) continue;
+        this.$set(this.vwapParams, c, { k_long: 1.0, k_short: -1.5, rr: 1.5, days: 30, am_k: 0.40, am_rr: 2.0 });
+        added = true;
+      }
+      if (added) this._saveVwapParams();
+      // 默认选中第一个品种，避免用户进来时参数面板不展开
+      if (!this.vwapActiveCode || list.indexOf(this.vwapActiveCode) < 0) {
+        this.vwapActiveCode = list[0];
+      }
+    },
+    // 参数下拉：不用 v-model 直接写 vwapParams[code].xxx（key 可能不存在 -> 崩溃）
+    setVwapParam(key, val) {
+      const code = this.vwapActiveCode;
+      if (!code || !key) return;
+      const cp = Object.assign({ k_long: 1.0, k_short: -1.5, rr: 1.5, days: 30, am_k: 0.40, am_rr: 2.0 }, this.vwapParams[code] || {});
+      cp[key] = val;
+      this.$set(this.vwapParams, code, cp);
+      this._vwAuthoritative[code] = 1;   // 用户在面板上手改过 -> 权威，允许回推服务端
+      this._saveVwapParams();
+      this._pushVwapParams(code);
+    },
+    onParamsChange(e) {
+      if (!e || !e.code) return;
+      const cur = (this.vwapParams && this.vwapParams[e.code]) || {};
+      const kLong = e.k_long != null ? e.k_long : (cur.k_long != null ? cur.k_long : 1.0);
+      const kShort = e.k_short != null ? e.k_short : (cur.k_short != null ? cur.k_short : -1.5);
+      const rr = e.rr != null ? e.rr : (cur.rr != null ? cur.rr : 1.5);
+      const days = e.days != null ? e.days : (cur.days != null ? cur.days : 30);
+      // 数值未变则不写回：避免与子组件的 params 回写形成渲染死循环
+      if (cur.k_long === kLong && cur.k_short === kShort && cur.rr === rr && cur.days === days) return;
+      const cp = { k_long: kLong, k_short: kShort, rr: rr, days: days };
+      // 保留上午腿(ret1545)参数，不被下午腿的回写覆盖
+      if (cur.am_k != null) cp.am_k = cur.am_k;
+      if (cur.am_rr != null) cp.am_rr = cur.am_rr;
+      this.$set(this.vwapParams || (this.vwapParams = {}), e.code, cp);
+      this._vwAuthoritative[e.code] = 1;   // 子组件确认过的值视为权威，允许回推服务端
+      this._saveVwapParams();
+      this._pushVwapParams(e.code);
+      // 只失效这个品种的旧指标（参数变了，旧指标口径不对），其余品种保持显示
+      this._dropVwapInfo([e.code]);
+    },
+    // ---- VWAP 模式：子组件上报的策略状态 ----
+    onVwap(e) {
+      if (!e || !e.code) return;
+      // 用新对象替换，确保 Vue 2 能侦测到变化
+      this.vwapInfo = Object.assign({}, this.vwapInfo, { [e.code]: e });
+    },
+    vw(code) { return this.vwapInfo && this.vwapInfo[code] ? this.vwapInfo[code] : null; },
+    getVwapParams(code) {
+      const p = this.vwapParams && this.vwapParams[code];
+      const num = function(v, d){ const n = Number(v); return isFinite(n) ? n : d; };
+      const full = {
+        k_long: num(p && p.k_long, 1.0), k_short: num(p && p.k_short, -1.5),
+        rr: num(p && p.rr, 1.5), days: num(p && p.days, 30),
+        am_k: num(p && p.am_k, 0.40), am_rr: num(p && p.am_rr, 2.0),
+      };
+      return full;
+    },
+    // 按腿返回参数子集（工具栏 / 子组件下单用）。am=上午开盘驱动(ret1545 单阈值+2.0R)，pm=下午 VWAP 动量(dev_z 双阈值+1.5R)
+    getVwapLegParams(code, leg) {
+      const full = this.getVwapParams(code);
+      if (leg === 'am') return { am_k: full.am_k, am_rr: full.am_rr, days: full.days };
+      if (leg === 'pm') return { k_long: full.k_long, k_short: full.k_short, rr: full.rr, days: full.days };
+      return full;
+    },
+    // 「基线」标签：expanding 口径下 days 已不是窗口，改显「实际累积交易日数」
+    // （取自图数据 payload.baseline.days，含 mode）；未拿到图数据时回退固定窗口 days。
+    vwapBaseLabel(code) {
+      const info = this.vwapInfo && this.vwapInfo[code];
+      const b = info && info.baseline;
+      if (b && b.mode === 'expanding' && b.days) return b.days + ' 日(累积)';
+      const d = (this.getVwapLegParams(code, 'pm') || {}).days || 30;
+      return d + ' 日';
+    },
+    vwZcls(z, leg) {
+      const n = Number(z);
+      if (!isFinite(n)) return '';
+      if (leg === 'am') {
+        // ret1545 方向：≥ +0.40% 偏多 / ≤ −0.40% 偏空（默认门槛；仅作芯片配色）
+        return n >= 0.40 ? 'pdi' : (n <= -0.40 ? 'mdi' : 'adx');
+      }
+      // dev_z 越高（价格越高于 VWAP）越偏多 -> 红；越低 -> 绿
+      return n >= 1.0 ? 'pdi' : (n <= -1.5 ? 'mdi' : 'adx');
+    },
+    vwStateCls(s) { return s === 'long' ? 'pdi' : (s === 'short' ? 'mdi' : 'adx'); },
+    vwStateText(s) { return s === 'long' ? '多' : (s === 'short' ? '空' : '空仓'); },
+    vwPnlCls(r) {
+      const n = Number(r);
+      if (!isFinite(n) || n === 0) return 'adx';
+      return n > 0 ? 'pdi' : 'mdi';
+    },
+    fetchSnapshot(force) {
+      if (force) { this.loading = true; this.statusMsg = ''; }
+      return fetch('/futures/snapshot', {cache:'no-store'})
+        .then(r => r.json())
+        .then(resp => {
+          if (!resp.ok) throw new Error(resp.error || 'backend error');
+          this.rows = resp.data || [];
+          this.ensureVwapParams();
+          this.firstLoaded = true;
+          this.statusMsg = '';
+          this.updatedAt = new Date().toLocaleTimeString('zh-CN', {hour12:false});
+        })
+        .catch(err => {
+          this.statusMsg = '期指数据加载失败：' + err.message;
+          this.$message.error(this.statusMsg);
+        })
+        .finally(() => { this.loading = false; });
+    },
+    reload(force) { this.fetchSnapshot(!!force); },
+    applyRefreshInterval() {
+      if (this.timer) { clearInterval(this.timer); this.timer = null; }
+      if (this.refreshInterval && this.refreshInterval > 0) {
+        this.timer = setInterval(() => this.fetchSnapshot(false), this.refreshInterval);
+      }
+    },
+    onSideChange() {
+      // 仅切换可见性；各 fut-board-rt 组件会监听 showBook/showTicks 并重绘。
+    },
+    periodLabel(p) {
+      return { '1min': '1分钟', '5min': '5分钟', '30min': '30分钟', '60min': '60分钟', day: '日线', week: '周线', month: '月线' }[p] || p;
+    },
+    launchPopup() {
+      try {
+        if (typeof window.xtquantLaunchPopup !== 'function') {
+          this.$message.error('弹窗工具未加载，请按 Ctrl+F5 硬刷新页面');
+          try { window.alert('弹窗工具未加载，请按 Ctrl+F5 硬刷新页面'); } catch (e) {}
+          return;
+        }
+        window.xtquantLaunchPopup({
+          url: '/futures/popup/launch',
+          title: '期指综合看盘',
+          vm: this,
+          onStart: () => { this.popupLaunching = true; },
+          onEnd:   () => { this.popupLaunching = false; },
+        });
+      } catch (e) {
+        try { this.$message.error('启动失败：' + e.message); } catch (e2) {}
+        try { window.alert('启动失败：' + e.message); } catch (e2) {}
+      }
+    },
+    launchIntegratedPopup() {
+      try {
+        if (typeof window.xtquantLaunchPopup !== 'function') {
+          this.$message.error('弹窗工具未加载，请按 Ctrl+F5 硬刷新页面');
+          return;
+        }
+        window.xtquantLaunchPopup({
+          url: '/futures/popup/integrated/launch',
+          title: '市场概况 · 综合弹窗',
+          vm: this,
+          onStart: () => { this.integratedLaunching = true; },
+          onEnd:   () => { this.integratedLaunching = false; },
+        });
+      } catch (e) {
+        try { this.$message.error('启动失败：' + e.message); } catch (e2) {}
+      }
+    },
+    goBack() { window.location.href = '/cb/board'; },
+    updownCls(v) {
+      const n = num(v);
+      if (isNaN(n)) return '';
+      return n > 0 ? 'up' : (n < 0 ? 'down' : 'flat');
+    },
+    fmt2(v) {
+      if (v === null || v === undefined) return '--';
+      const n = Number(v);
+      return isNaN(n) ? '--' : n.toFixed(2);
+    },
+    ci(code, period) {
+      return this.indicatorVals[period + '|' + code] || null;
+    },
+    onIndicators(p) {
+      if (p && p.code && p.period) {
+        this.$set(this.indicatorVals, p.period + '|' + p.code, { atr: p.atr, adx: p.adx, pdi: p.pdi, mdi: p.mdi, mfi: p.mfi });
+      }
+    },
+  },
+  mounted() {
+    this._loadVwapParams();
+    // 先拉服务端持久化的阈值（独立窗口可能在那里改过），再补品种、拉行情
+    this._syncVwapParamsFromServer().then(() => {
+      this.ensureVwapParams();
+      // 把完整参数集回推服务端：确保服务端那份始终齐全，独立窗口只从服务端取
+      this._pushAllVwapParams();
+      return this.fetchSnapshot(true);
+    }).then(() => {
+      this.ensureVwapParams();
+      this.applyRefreshInterval();
+    });
+  },
+  beforeDestroy() { if (this.timer) clearInterval(this.timer); },
+});
+</script>
+</body>
+</html>
