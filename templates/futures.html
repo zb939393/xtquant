@@ -92,6 +92,18 @@
   @media (max-width: 1100px){
     .comp-row-cells{ grid-template-columns:repeat(2, minmax(0, 1fr)); }
   }
+  /* 已保存的参数 / 绩效快照面板 */
+  .saved-runs{ margin:6px 0 2px; }
+  .saved-runs .el-card__header{ padding:6px 12px; }
+  .saved-runs .el-card__body{ padding:8px 12px; }
+  .saved-run-item{ padding:6px 0; border-bottom:1px dashed #ebeef5; }
+  .saved-run-item:last-child{ border-bottom:none; }
+  .saved-run-head{ display:flex; align-items:center; flex-wrap:wrap; gap:8px; font-size:12px; }
+  .saved-run-head b{ color:#303133; }
+  .saved-note{ color:#409EFF; }
+  .saved-actions{ margin-left:auto; }
+  .saved-run-params{ margin-top:3px; display:flex; flex-wrap:wrap; gap:4px 14px; font-size:11px; }
+  .saved-param-chip{ font-variant-numeric:tabular-nums; }
 </style>
 </head>
 <body data-page-node-id="EIMWqgZDcqZ3KGQBHuI2s1">
@@ -179,6 +191,12 @@
                   <el-option label="3.0R" :value="3.0" data-page-node-id="Gb66Pb6oLGVwJZbI6gRfMF"></el-option>
                 </el-select>
                 <span class="muted" style="margin-left:6px;" data-page-node-id="d5KNs2Ol2sOvLAB8p6mNs4">基线 ${vwapBaseLabel(vwapActiveCode)}</span>
+              <!-- 保存参数 + 绩效成绩快照 -->
+              <span style="margin-left:14px;display:inline-flex;align-items:center;gap:4px;">
+                <el-input v-model="saveNote" size="mini" style="width:120px;" maxlength="40" placeholder="备注(可选)" data-page-node-id="vwSaveNote"></el-input>
+                <el-button type="warning" size="mini" icon="el-icon-document" :loading="savingRun" @click="saveRun" data-page-node-id="vwSaveBtn">保存</el-button>
+                <el-button size="mini" icon="el-icon-time" @click="toggleSavedPanel" data-page-node-id="vwSavedBtn">历史${savedRuns.length ? '(' + savedRuns.length + ')' : ''}</el-button>
+              </span>
               </template>
               <!-- 阈值同步失败必须可见：静默退回本地旧阈值会让信号莫名跳变（13:41 <-> 13:02） -->
               <span v-if="vwapSyncErr" style="margin-left:10px;color:#f56c6c;font-weight:600;" data-page-node-id="VwSyncErrHint">⚠ ${vwapSyncErr}</span>
@@ -216,6 +234,27 @@
             <span class="muted" style="margin-left:12px;" data-page-node-id="EpywSRD8T1zrcfaN9EFBqK">实时刷新：${refreshInterval ? (refreshInterval/1000) + ' 秒' : '手动'}</span>
           </span>
         </div>
+        <el-card v-if="rtMode==='vwap' && showSavedPanel" class="saved-runs" shadow="never" data-page-node-id="vwSavedCard">
+          <div slot="header" class="clearfix">
+            <span>已保存的参数 / 绩效快照（${savedRuns.length}）</span>
+            <el-button style="float:right;padding:3px 0" type="text" @click="showSavedPanel=false" data-page-node-id="vwSavedClose">收起</el-button>
+          </div>
+          <div v-if="!savedRuns.length" class="muted">暂无保存记录。调好参数后点上方「保存」即可记录当前各品种参数与实时绩效成绩。</div>
+          <div v-for="run in savedRunsReversed" :key="run.id" class="saved-run-item">
+            <div class="saved-run-head">
+              <b>${run.ts}</b>
+              <span v-if="run.note" class="saved-note">· ${run.note}</span>
+              <span class="muted">合计 ${fmtPct(run._tot_r, 2, true)}R · 信号 ${fmtNum(run._tot_sig, 0)}</span>
+              <span class="saved-actions">
+                <el-button size="mini" type="primary" plain @click="restoreRun(run.id)" data-page-node-id="vwRestoreBtn">载入参数</el-button>
+                <el-button size="mini" type="danger" plain @click="deleteRun(run.id)" data-page-node-id="vwDelBtn">删除</el-button>
+              </span>
+            </div>
+            <div class="saved-run-params muted">
+              <span v-for="(p, code) in run.params" :key="code" class="saved-param-chip">${code}: 多${fmtNum(p.k_long, 2)}/空${fmtNum(p.k_short, 2)} · ${fmtNum(p.rr, 1)}R · am±${fmtNum(p.am_k, 2)}/${fmtNum(p.am_rr, 1)}R</span>
+            </div>
+          </div>
+        </el-card>
         <div class="board-rows" ref="boardRows" data-page-node-id="BKC82oGNPwmvHkUrWiwLLn">
           <div class="board-row-chunk" data-page-node-id="fvqWu9eyUYEIWArP2QhjK0">
             <div v-for="row in rows" :key="row.code" class="board-cell" data-page-node-id="eHSMyDNEGtUiX2hhYmZsPB">
@@ -1890,6 +1929,11 @@ new Vue({
       _vwAuthoritative: {},
       // 服务端阈值同步失败提示（非空则工具栏红字提示）——绝不静默退回本地旧阈值
       vwapSyncErr: '',
+      // 参数 + 绩效快照保存
+      saveNote: '',
+      savingRun: false,
+      showSavedPanel: false,
+      savedRuns: [],
       klinePeriod: 'day',
       activeTab: 'rt',
       indicator: 'mfi',
@@ -1908,6 +1952,7 @@ new Vue({
   computed: {
     // 兼容旧引用：K线模式等价于 rtMode === 'kline'
     showKline() { return this.rtMode === 'kline'; },
+    savedRunsReversed() { return (this.savedRuns || []).slice().reverse(); },
   },
   watch: {
     // 策略参数变更：只丢弃「值真的被改动的那几个品种」的旧指标，等子组件按新口径重新上报。
@@ -2051,6 +2096,92 @@ new Vue({
       this._vwAuthoritative[code] = 1;   // 用户在面板上手改过 -> 权威，允许回推服务端
       this._saveVwapParams();
       this._pushVwapParams(code);
+    },
+    // ---- 参数 + 绩效成绩快照：保存 / 载入 / 删除 ----
+    saveRun() {
+      if (this.savingRun) return;
+      this.savingRun = true;
+      let params = {}; let perf = {};
+      try { params = JSON.parse(JSON.stringify(this.vwapParams || {})); } catch (e) { params = {}; }
+      try { perf = JSON.parse(JSON.stringify(this.vwapInfo || {})); } catch (e) { perf = {}; }
+      const note = (this.saveNote || '').trim();
+      const self = this;
+      fetch('/futures/vwap/save_run', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ note: note, params: params, perf: perf }),
+      })
+        .then(function (r) { return r.json(); })
+        .then(function (resp) {
+          if (!resp || !resp.ok) throw new Error((resp && resp.error) || '保存失败');
+          self.$message.success('已保存参数与绩效快照' + (resp.data && resp.data.id ? '（' + resp.data.id + '）' : ''));
+          self.saveNote = '';
+          self.showSavedPanel = true;
+          self.loadSavedRuns();
+        })
+        .catch(function (err) { try { self.$message.error('保存失败：' + (err && err.message ? err.message : err)); } catch (e2) {} })
+        .then(function () { self.savingRun = false; });
+    },
+    loadSavedRuns() {
+      const self = this;
+      fetch('/futures/vwap/saved_runs', { cache: 'no-store' })
+        .then(function (r) { return r.json(); })
+        .then(function (resp) {
+          const list = (resp && resp.ok && resp.data) ? resp.data : [];
+          list.forEach(function (run) {
+            let tr = 0, ts = 0;
+            const perf = run.perf || {};
+            Object.keys(perf).forEach(function (c) {
+              const p = perf[c] || {};
+              tr += (Number(p.pnl_r) || 0);
+              ts += (Number(p.n_am) || 0) + (Number(p.n_pm) || 0);
+            });
+            run._tot_r = tr; run._tot_sig = ts;
+          });
+          self.savedRuns = list;
+        })
+        .catch(function () { self.savedRuns = []; });
+    },
+    toggleSavedPanel() {
+      this.showSavedPanel = !this.showSavedPanel;
+      if (this.showSavedPanel) this.loadSavedRuns();
+    },
+    restoreRun(id) {
+      const run = (this.savedRuns || []).filter(function (r) { return r.id === id; })[0];
+      if (!run || !run.params) { this.$message.warning('该记录没有可载入的参数'); return; }
+      const params = run.params || {};
+      const codes = Object.keys(params);
+      if (!this.vwapParams) this.vwapParams = {};
+      const self = this;
+      codes.forEach(function (code) {
+        const p = params[code] || {};
+        const num = function (v, d) { const n = Number(v); return isFinite(n) ? n : d; };
+        const merged = {
+          k_long: num(p.k_long, 1.0), k_short: num(p.k_short, -1.5),
+          rr: num(p.rr, 1.5), days: num(p.days, 30),
+          am_k: num(p.am_k, 0.40), am_rr: num(p.am_rr, 2.0),
+        };
+        self.$set(self.vwapParams, code, merged);
+        if (self._vwAuthoritative) self._vwAuthoritative[code] = 1;
+        self._pushVwapParams(code);
+      });
+      this._saveVwapParams();
+      this.$message.success('已载入 ' + codes.length + ' 个品种的参数');
+    },
+    deleteRun(id) {
+      const self = this;
+      fetch('/futures/vwap/saved_runs/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: id }),
+      })
+        .then(function (r) { return r.json(); })
+        .then(function (resp) {
+          if (!resp || !resp.ok) throw new Error((resp && resp.error) || '删除失败');
+          self.$message.success('已删除该记录');
+          self.loadSavedRuns();
+        })
+        .catch(function (err) { try { self.$message.error('删除失败：' + (err && err.message ? err.message : err)); } catch (e2) {} });
     },
     onParamsChange(e) {
       if (!e || !e.code) return;
@@ -2211,6 +2342,7 @@ new Vue({
   },
   mounted() {
     this._loadVwapParams();
+    this.loadSavedRuns();
     // 先拉服务端持久化的阈值（独立窗口可能在那里改过），再补品种、拉行情
     this._syncVwapParamsFromServer().then(() => {
       this.ensureVwapParams();

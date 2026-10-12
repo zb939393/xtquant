@@ -23,6 +23,10 @@ try:
     from core import vwap_params_store as vstore
 except Exception:  # 参数存储不可用时退化为「仅用 URL 参数」
     vstore = None
+try:
+    from core import vwap_save_store as vrunstore
+except Exception:  # 快照存储不可用时「保存」按钮优雅降级
+    vrunstore = None
 
 from config import Config
 from .popup_helper import popup_launch
@@ -321,6 +325,53 @@ def futures_vwap_params():
         except Exception:
             pass
         return jsonify({"ok": True, "code": code, "data": saved})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)})
+
+
+@futures_bp.route("/vwap/save_run", methods=["POST"])
+def futures_vwap_save_run():
+    """保存一次「参数 + 绩效成绩」快照。body: {note, params, perf}。"""
+    try:
+        if vrunstore is None:
+            return jsonify({"ok": False, "error": "save store unavailable"})
+        body = request.get_json(silent=True) or {}
+        note = body.get("note")
+        params = body.get("params") or {}
+        perf = body.get("perf") or {}
+        if not isinstance(params, dict):
+            params = {}
+        if not isinstance(perf, dict):
+            perf = {}
+        rec = vrunstore.append_run(note, params, perf)
+        return jsonify({"ok": True, "data": rec})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)})
+
+
+@futures_bp.route("/vwap/saved_runs", methods=["GET"])
+def futures_vwap_saved_runs():
+    """列出全部已保存的「参数 + 绩效」快照（时间正序）。"""
+    try:
+        if vrunstore is None:
+            return jsonify({"ok": False, "error": "save store unavailable", "data": []})
+        return jsonify({"ok": True, "data": vrunstore.list_runs()})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e), "data": []})
+
+
+@futures_bp.route("/vwap/saved_runs/delete", methods=["POST"])
+def futures_vwap_delete_run():
+    """删除一条快照。body: {id}。"""
+    try:
+        if vrunstore is None:
+            return jsonify({"ok": False, "error": "save store unavailable"})
+        body = request.get_json(silent=True) or {}
+        rid = str(body.get("id") or "")
+        if not rid:
+            return jsonify({"ok": False, "error": "缺少 id"}), 400
+        ok = vrunstore.delete_run(rid)
+        return jsonify({"ok": bool(ok)})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)})
 
@@ -643,19 +694,24 @@ def futures_capital_fflow():
         "https://push2his.eastmoney.com",
     ]
     last_err = ""
+    # 优先直连（绕过系统/环境代理，避免代理劫持 urllib 返假 502，见项目铁律）；
+    # 直连失败再退回默认 opener（可能走代理），覆盖"必须走代理才能出网"的环境。
+    _no_proxy = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    _default = urllib.request.build_opener()
     for host in hosts:
         target = host + query
-        try:
-            req = urllib.request.Request(
-                target,
-                headers={"User-Agent": "Mozilla/5.0", "Referer": "https://quote.eastmoney.com/"},
-            )
-            resp = urllib.request.urlopen(req, timeout=10)
-            data = resp.read()
-            return Response(data, mimetype="application/json", headers={"Cache-Control": "no-store"})
-        except Exception as e:
-            last_err = "%s: %s" % (host, e)
-            continue
+        for _op, _tag in ((_no_proxy, "direct"), (_default, "proxy")):
+            try:
+                req = urllib.request.Request(
+                    target,
+                    headers={"User-Agent": "Mozilla/5.0", "Referer": "https://quote.eastmoney.com/"},
+                )
+                resp = _op.open(req, timeout=10)
+                data = resp.read()
+                return Response(data, mimetype="application/json", headers={"Cache-Control": "no-store"})
+            except Exception as e:
+                last_err = "%s[%s]: %s" % (host, _tag, e)
+                continue
     return jsonify({"ok": False, "error": "fflow upstream failed", "detail": last_err}), 502
 
 

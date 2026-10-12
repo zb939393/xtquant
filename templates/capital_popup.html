@@ -117,8 +117,8 @@ function toggleTop(){
 }
 
 // ===== 手动刷新（工具栏按钮）=====
-// 用途：窗口在隐藏/零尺寸状态下初始化时 ECharts 会画不出内容；或首屏新浪脚本未及时返回导致空白。
-// 点一下即重新拉取四个分时脚本并完整重绘两块图。
+// 用途：窗口在隐藏/零尺寸状态下初始化时 ECharts 会画不出内容；或首屏期指行情未及时返回导致空白。
+// 点一下即重新拉取四个合约分时并完整重绘两块图。
 function manualRefresh(){
   var btn = document.getElementById("refreshBtn");
   if (btn) { btn.disabled = true; btn.textContent = "刷新中…"; }
@@ -159,28 +159,35 @@ function checkAuditTime(beginTime, endTime) {
   return nowDate.getTime() - beginDate.getTime() >= 0 && nowDate.getTime() <= endDate.getTime();
 }
 
-// ===== 期指行情（新浪分时，经后端代理 /futures/capital/sina）=====
-// 新浪 JSONP 的响应体是 `var t1nf_<sym>=...`，靠动态插入 script 标签注入后挂到 window 上，渲染时直接读取。
-var _SINA_SYMS = ['ih0', 'if0', 'ic0', 'im0'];
-var _SINA_VARS = { ih0: 't1nf_ih0', if0: 't1nf_if0', ic0: 't1nf_ic0', im0: 't1nf_im0' };
-var _sinaSeq = 0;        // 渲染轮次序号：新一轮开始时，上一轮的回调直接作废
-var _sinaWaitTimer = null;
+// ===== 期指行情（与监控看盘「分时看盘」同源：扩展行情 pytdx /futures/exquote/minute）=====
+// 不再走新浪 JSONP：改用后端 /futures/exquote/minute/<code>（CFFEX 当月连续合约 IH/IF/IC/IM），
+// 与 futures.html 分时看盘完全一致的数据源；昨收由 /futures/snapshot 提供。
+// 4 个合约映射：图例顺序 ih/if/ic/im → 连续合约代码（与监控看板 FUTURES 一致）
+var _RT_CODES = { ih: 'IHL9', if: 'IFL9', ic: 'ICL9', im: 'IML9' };
+var _RT_LEGS = ['ih', 'if', 'ic', 'im'];   // 图例顺序
+var _rtSeq = 0;        // 渲染轮次序号：新一轮开始时，上一轮的回调直接作废
+var _rtTimer = null;
 
-function readdata1(nid){
-  // 带时间戳绕开浏览器缓存（后端本身也已下发 Cache-Control: no-store）
-  var url = "/futures/capital/sina?sym=" + encodeURIComponent(nid) + "&_=" + Date.now();
-  var s = document.createElement('script');
-  s.type = 'text/javascript';
-  s.async = true;
-  s.src = url;
-  // 加载完即摘掉标签：20s 轮询下 script 标签会不断累积；全局变量已生成，摘除不影响数据
-  var drop = function () { if (s.parentNode) s.parentNode.removeChild(s); };
-  s.onload = drop;
-  s.onerror = drop;
-  var x = document.getElementsByTagName('script')[0];
-  if (x && x.parentNode) { x.parentNode.insertBefore(s, x); }
-  else { document.body.appendChild(s); }
+// ===== 共享时间轴（以资金为准）=====
+// 与资金图完全一致：09:30–11:30 + 13:01–15:00（午休缺口已体现在刻度中，共 241 个分钟刻度）。
+// 期指行情图与资金图共用此轴，保证两图 x 轴刻度、分割线完全对齐。
+function _buildTimeAxis(){
+  var ax = [];
+  function pushRange(sH, sM, eH, eM){
+    var h = sH, m = sM;
+    while (h < eH || (h === eH && m <= eM)){
+      ax.push((h < 10 ? '0' + h : '' + h) + ':' + (m < 10 ? '0' + m : '' + m));
+      m++; if (m === 60){ m = 0; h++; }
+    }
+  }
+  pushRange(9, 30, 11, 30);
+  pushRange(13, 1, 15, 0);
+  return ax;
 }
+var _TIME_AXIS = _buildTimeAxis();
+var _ML_IX = [60, 120, 180, 240];   // 分割线索引：10:30 / 11:30 / 14:00 / 15:00（与资金图一致）
+
+// readdata1（新浪 JSONP 分时）已废弃：期指行情改走扩展行情 /futures/exquote/minute（见 chart_s）。
 
 // ===== 图表实例复用：避免反复 echarts.init 触发 "chart instance already initialized" 警告，
 // 也保证刷新时能拿到已存在的实例做增量重绘（容器零尺寸初始化后，resize() 即可正常画出）=====
@@ -193,13 +200,18 @@ function _chartFor(domId){
   return inst;
 }
 
-function realdata1(data){
+function realdata1(prices, prePrice){
+  // prices: 价格数组（可能含 null）；prePrice: 昨收。返回每根相对昨收的涨跌幅(%)
   var arr = [];
-  var prePrice = data[0][5];
-  for (var i = 0; i < data.length; i++){
-    var ss = (data[i][1] / prePrice - 1) * 100;
-    ss = ss.toFixed(3);
-    arr.push(ss);
+  if(!prePrice || prePrice <= 0){
+    // 昨收缺失时退化为首根有效价格作基准，避免整条线为 NaN
+    for (var z = 0; z < prices.length; z++){ if(prices[z] != null && isFinite(prices[z])){ prePrice = prices[z]; break; } }
+  }
+  for (var i = 0; i < prices.length; i++){
+    var p = prices[i];
+    if(p == null || !isFinite(p)){ arr.push(null); continue; }
+    var ss = (p / prePrice - 1) * 100;
+    arr.push(parseFloat(ss.toFixed(3)));
   }
   return arr;
 }
@@ -229,7 +241,7 @@ function makechart_s(data){
         name: "分割线", type: "line",
         markLine: {
           label: { show: false }, symbol: "none",
-          data: [{ xAxis: data.bb[1] }, { xAxis: data.bb[2] }, { xAxis: data.bb[3] }, { xAxis: data.bb[4] }]
+          data: [{ xAxis: data.bb[0] }, { xAxis: data.bb[1] }, { xAxis: data.bb[2] }, { xAxis: data.bb[3] }]
         }
       }
     ]
@@ -240,72 +252,113 @@ function makechart_s(data){
   return mychart;
 }
 
-// 等待四个新浪分时脚本就绪（代替原来的死等 1s）：数据到齐才渲染，慢网/失败时给出明确反馈。
-function _waitSina(seq, deadline, cb){
-  var missing = [];
-  for (var i = 0; i < _SINA_SYMS.length; i++){
-    var v = _SINA_VARS[_SINA_SYMS[i]];
-    if (!window[v] || !window[v].length) missing.push(_SINA_SYMS[i]);
-  }
-  if (!missing.length) return cb(true, []);
-  if (Date.now() > deadline) return cb(false, missing);
-  _sinaWaitTimer = setTimeout(function(){ _waitSina(seq, deadline, cb); }, 120);
+// ===== 期指行情数据层（与监控看盘「分时看盘」同源：扩展行情 pytdx）=====
+// 单合约当日分时：后端 /futures/exquote/minute/<code>（CFFEX 当月连续），返回 {ok,data:[{time,price,avg_price,vol}]}
+function fetchMinute(code){
+  var out = { ok: false, times: [], prices: [] };
+  try {
+    var url = "/futures/exquote/minute/" + encodeURIComponent(code) + "?ttl=3&_=" + Date.now();
+    $.ajax({
+      type: "get", async: false, timeout: 8000, url: url,
+      success: function (json) {
+        if (json && json.ok && json.data && json.data.length){
+          var t = [], p = [];
+          for (var i = 0; i < json.data.length; i++){
+            t.push(json.data[i].time);
+            p.push(Number(json.data[i].price));
+          }
+          out.times = t; out.prices = p; out.ok = true;
+        }
+      },
+      error: function () { out.ok = false; }
+    });
+  } catch (e) {}
+  return out;
+}
+
+// 4 合约昨收：后端 /futures/snapshot（与监控看板头部一致），返回 {code: prev_close}
+function fetchPrevClose(){
+  var m = {};
+  try {
+    $.ajax({
+      type: "get", async: false, timeout: 8000, url: "/futures/snapshot?_=" + Date.now(),
+      success: function (json) {
+        if (json && json.ok && json.data){
+          for (var i = 0; i < json.data.length; i++){
+            m[json.data[i].code] = Number(json.data[i].prev_close) || 0;
+          }
+        }
+      },
+      error: function () {}
+    });
+  } catch (e) {}
+  return m;
 }
 
 function chart_s(cb){
-  _sinaSeq++;
-  var seq = _sinaSeq;
-  if (_sinaWaitTimer) { clearTimeout(_sinaWaitTimer); _sinaWaitTimer = null; }
-  // 先清掉上一轮结果，确保「等到」的一定是本轮新数据（否则短路的旧值会被直接画出来）
-  for (var i = 0; i < _SINA_SYMS.length; i++) { window[_SINA_VARS[_SINA_SYMS[i]]] = undefined; }
-  for (var j = 0; j < _SINA_SYMS.length; j++) { readdata1(_SINA_SYMS[j]); }
+  _rtSeq++;
+  var seq = _rtSeq;
+  if (_rtTimer) { clearTimeout(_rtTimer); _rtTimer = null; }
 
-  _waitSina(seq, Date.now() + 8000, function (ok, missing) {
-    if (seq !== _sinaSeq) return;            // 已有更新的一轮在跑，本次作废
-    if (!ok) {
-      console.warn("期指分时数据未就绪，缺失:", missing);
-      // 新浪失败不影响资金图：仍独立重绘资金图
-      try { updatechart(); } catch (e) {}
-      var _el = document.getElementById("updated");
-      if (_el) _el.textContent = "行情未就绪，点「刷新」重试";
-      if (cb) cb(false, missing);
-      return;
+  // 昨收：由监控看板同源的 /futures/snapshot 提供
+  var prevMap = fetchPrevClose();
+
+  // 4 合约当日分时（扩展行情 /futures/exquote/minute，与分时看盘同源）
+  var fetched = {};
+  var anyOk = false;
+  for (var k = 0; k < _RT_LEGS.length; k++){
+    var leg = _RT_LEGS[k];
+    var r = fetchMinute(_RT_CODES[leg]);
+    fetched[leg] = r;
+    if (r.ok) anyOk = true;
+  }
+
+  // 主时间轴：以资金图为准（_TIME_AXIS = 09:30–11:30 + 13:01–15:00），两图 x 轴完全对齐
+  var refAxis = _TIME_AXIS;
+
+  if (!anyOk){
+    console.warn("期指分时数据未就绪");
+    // 扩展行情失败不影响资金图：仍独立重绘资金图
+    try { updatechart(); } catch (e) {}
+    var _el = document.getElementById("updated");
+    if (_el) _el.textContent = "行情未就绪，点「刷新」重试";
+    if (cb) cb(false, _RT_LEGS.slice());
+    return;
+  }
+
+  var data = {};
+  // 分割线：与资金图一致（10:30 / 11:30 / 14:00 / 15:00）
+  data.bb = _ML_IX.map(function (i) { return refAxis[i]; });
+  data.x = refAxis.slice();
+  data.y = {};
+  for (var k3 = 0; k3 < _RT_LEGS.length; k3++){
+    var leg3 = _RT_LEGS[k3];
+    var r3 = fetched[leg3];
+    var pre = prevMap[_RT_CODES[leg3]] || 0;
+    if (r3.ok && r3.times.length){
+      // 按时间对齐到资金图时间轴（个别分钟缺失时留 null，不位移）
+      var pm = {};
+      for (var i = 0; i < r3.times.length; i++){
+        var tk = String(r3.times[i]);
+        var mm = /(\d{1,2}:\d{2})/.exec(tk);   // 兼容 "HH:MM" 与 "YYYY-MM-DD HH:MM:SS"
+        if (mm) tk = mm[1];
+        pm[tk] = r3.prices[i];
+      }
+      var arr = [];
+      for (var j = 0; j < refAxis.length; j++){
+        arr.push(pm.hasOwnProperty(refAxis[j]) ? pm[refAxis[j]] : null);
+      }
+      data.y[leg3] = realdata1(arr, pre);
+    } else {
+      data.y[leg3] = new Array(refAxis.length).fill(null);
     }
-    var data = {};
-    data.bb = ['8:30', '10:30', '11:30', '14:00', '15:00'];
-    data.x = ['09:30', '09:31', '09:32', '09:33', '09:34', '09:35', '09:36', '09:37', '09:38', '09:39', '09:40', '09:41',
-      '09:42', '09:43', '09:44', '09:45', '09:46', '09:47', '09:48', '09:49', '09:50', '09:51', '09:52', '09:53',
-      '09:54', '09:55', '09:56', '09:57', '09:58', '09:59', '10:00', '10:01', '10:02', '10:03', '10:04', '10:05',
-      '10:06', '10:07', '10:08', '10:09', '10:10', '10:11', '10:12', '10:13', '10:14', '10:15', '10:16', '10:17',
-      '10:18', '10:19', '10:20', '10:21', '10:22', '10:23', '10:24', '10:25', '10:26', '10:27', '10:28', '10:29',
-      '10:30', '10:31', '10:32', '10:33', '10:34', '10:35', '10:36', '10:37', '10:38', '10:39', '10:40', '10:41',
-      '10:42', '10:43', '10:44', '10:45', '10:46', '10:47', '10:48', '10:49', '10:50', '10:51', '10:52', '10:53',
-      '10:54', '10:55', '10:56', '10:57', '10:58', '10:59', '11:00', '11:01', '11:02', '11:03', '11:04', '11:05',
-      '11:06', '11:07', '11:08', '11:09', '11:10', '11:11', '11:12', '11:13', '11:14', '11:15', '11:16', '11:17',
-      '11:18', '11:19', '11:20', '11:21', '11:22', '11:23', '11:24', '11:25', '11:26', '11:27', '11:28', '11:29',
-      '11:30', '13:01', '13:02', '13:03', '13:04', '13:05', '13:06', '13:07', '13:08', '13:09', '13:10', '13:11',
-      '13:12', '13:13', '13:14', '13:15', '13:16', '13:17', '13:18', '13:19', '13:20', '13:21', '13:22', '13:23',
-      '13:24', '13:25', '13:26', '13:27', '13:28', '13:29', '13:30', '13:31', '13:32', '13:33', '13:34', '13:35',
-      '13:36', '13:37', '13:38', '13:39', '13:40', '13:41', '13:42', '13:43', '13:44', '13:45', '13:46', '13:47',
-      '13:48', '13:49', '13:50', '13:51', '13:52', '13:53', '13:54', '13:55', '13:56', '13:57', '13:58', '13:59',
-      '14:00', '14:01', '14:02', '14:03', '14:04', '14:05', '14:06', '14:07', '14:08', '14:09', '14:10', '14:11',
-      '14:12', '14:13', '14:14', '14:15', '14:16', '14:17', '14:18', '14:19', '14:20', '14:21', '14:22', '14:23',
-      '14:24', '14:25', '14:26', '14:27', '14:28', '14:29', '14:30', '14:31', '14:32', '14:33', '14:34', '14:35',
-      '14:36', '14:37', '14:38', '14:39', '14:40', '14:41', '14:42', '14:43', '14:44', '14:45', '14:46', '14:47',
-      '14:48', '14:49', '14:50', '14:51', '14:52', '14:53', '14:54', '14:55', '14:56', '14:57', '14:58', '14:59',
-      '15:00'];
-    data.y = {};
-    data.y.ih = realdata1(t1nf_ih0);
-    data.y.if = realdata1(t1nf_if0);
-    data.y.ic = realdata1(t1nf_ic0);
-    data.y.im = realdata1(t1nf_im0);
-    var f2 = makechart_s(data);
-    var f1 = updatechart();
-    if (f1 && f2) echarts.connect([f1, f2]);
-    var el = document.getElementById("updated");
-    if (el) el.textContent = "更新 " + new Date().toLocaleTimeString('zh-CN', { hour12: false });
-    if (cb) cb(true, []);
-  });
+  }
+  var f2 = makechart_s(data);
+  var f1 = updatechart();
+  if (f1 && f2) echarts.connect([f1, f2]);
+  var el = document.getElementById("updated");
+  if (el) el.textContent = "更新 " + new Date().toLocaleTimeString('zh-CN', { hour12: false });
+  if (cb) cb(true, []);
 }
 
 // ===== 资金流（东方财富 fflow，经后端代理 /futures/capital/fflow）=====
@@ -375,9 +428,8 @@ function chartdata(dic){
       price.push([0]);              // 首次且无任何数据，避免异常
     }
   }
-  var todaydate = ['09:30', '09:31', '09:32', '09:33', '09:34', '09:35', '09:36', '09:37', '09:38', '09:39', '09:40', '09:41', '09:42', '09:43', '09:44', '09:45', '09:46', '09:47', '09:48', '09:49', '09:50', '09:51', '09:52', '09:53', '09:54', '09:55', '09:56', '09:57', '09:58', '09:59', '10:00', '10:01', '10:02', '10:03', '10:04', '10:05', '10:06', '10:07', '10:08', '10:09', '10:10', '10:11', '10:12', '10:13', '10:14', '10:15', '10:16', '10:17', '10:18', '10:19', '10:20', '10:21', '10:22', '10:23', '10:24', '10:25', '10:26', '10:27', '10:28', '10:29', '10:30', '10:31', '10:32', '10:33', '10:34', '10:35', '10:36', '10:37', '10:38', '10:39', '10:40', '10:41', '10:42', '10:43', '10:44', '10:45', '10:46', '10:47', '10:48', '10:49', '10:50', '10:51', '10:52', '10:53', '10:54', '10:55', '10:56', '10:57', '10:58', '10:59', '11:00', '11:01', '11:02', '11:03', '11:04', '11:05', '11:06', '11:07', '11:08', '11:09', '11:10', '11:11', '11:12', '11:13', '11:14', '11:15', '11:16', '11:17', '11:18', '11:19', '11:20', '11:21', '11:22', '11:23', '11:24', '11:25', '11:26', '11:27', '11:28', '11:29', '11:30', '13:01', '13:02', '13:03', '13:04', '13:05', '13:06', '13:07', '13:08', '13:09', '13:10', '13:11', '13:12', '13:13', '13:14', '13:15', '13:16', '13:17', '13:18', '13:19', '13:20', '13:21', '13:22', '13:23', '13:24', '13:25', '13:26', '13:27', '13:28', '13:29', '13:30', '13:31', '13:32', '13:33', '13:34', '13:35', '13:36', '13:37', '13:38', '13:39', '13:40', '13:41', '13:42', '13:43', '13:44', '13:45', '13:46', '13:47', '13:48', '13:49', '13:50', '13:51', '13:52', '13:53', '13:54', '13:55', '13:56', '13:57', '13:58', '13:59', '14:00', '14:01', '14:02', '14:03', '14:04', '14:05', '14:06', '14:07', '14:08', '14:09', '14:10', '14:11', '14:12', '14:13', '14:14', '14:15', '14:16', '14:17', '14:18', '14:19', '14:20', '14:21', '14:22', '14:23', '14:24', '14:25', '14:26', '14:27', '14:28', '14:29', '14:30', '14:31', '14:32', '14:33', '14:34', '14:35', '14:36', '14:37', '14:38', '14:39', '14:40', '14:41', '14:42', '14:43', '14:44', '14:45', '14:46', '14:47', '14:48', '14:49', '14:50', '14:51', '14:52', '14:53', '14:54', '14:55', '14:56', '14:57', '14:58', '14:59', '15:00'];
 
-  chartdata.date = todaydate;
+  chartdata.date = _TIME_AXIS;   // 资金图同样以共享时间轴为准，确保与期指行情 x 轴完全一致
   chartdata.stock1price = price[0];
   chartdata.stock2price = price[1];
   chartdata.stock3price = price[2];
@@ -461,10 +513,10 @@ function updatechart(){
 }
 
 // ===== 资金图独立绘制（修复「资金图表有时出现有时消失」）=====
-// 资金图数据源是东方财富 fflow，与期指行情（新浪 JSONP）完全无关。
-// 原先资金图只在「新浪分时加载成功」的回调里才绘制；一旦新浪脚本阻塞/超时，
+// 资金图数据源是东方财富 fflow，与期指行情（扩展行情 /futures/exquote/minute）完全无关。
+// 原先资金图只在「期指行情加载成功」的回调里才绘制；一旦期指行情请求阻塞/超时，
 // updatechart() 不会被调用 → 资金图永远空白。现在资金图独立绘制，
-// 不受新浪成败影响，启动/刷新/每个刷新周期都会重绘。
+// 不受期指行情成败影响，启动/刷新/每个刷新周期都会重绘。
 function drawCapital(){
   try {
     var f = updatechart();
@@ -479,7 +531,7 @@ function drawCapital(){
 
 // ===== 启动 & 定时刷新 =====
 (function(){ var sl = document.getElementById("zoomSlider"); if(sl) sl.value = zoom; var zl = document.getElementById("zoomVal"); if(zl) zl.textContent = zoom + "%"; document.documentElement.style.setProperty("--zoom", zoom / 100); })();
-// 资金图独立启动（不依赖新浪分时）：立即 + 下一帧各一次，确保首屏与布局稳定后都能画出来
+// 资金图独立启动（不依赖期指行情）：立即 + 下一帧各一次，确保首屏与布局稳定后都能画出来
 drawCapital();
 requestAnimationFrame(function(){ requestAnimationFrame(drawCapital); });
 
