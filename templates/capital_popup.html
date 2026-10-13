@@ -231,7 +231,10 @@ function makechart_s(data){
       axisPointer: { show: true },
       axisLabel: { interval: 29, fontSize: fz(9) }
     }],
-    yAxis: [{ type: 'value', min: "dataMin", max: "dataMax", axisLabel: { formatter: "{value}%", fontSize: fz(9) } }],
+    yAxis: [{ type: 'value',
+      min: function (v) { return Math.min(0, v.min); },
+      max: function (v) { return Math.max(0, v.max); },
+      axisLabel: { formatter: "{value}%", fontSize: fz(9) } }],
     series: [
       { name: "ih", type: "line", data: data.y.ih, showSymbol: false },
       { name: "if", type: "line", data: data.y.if, showSymbol: false },
@@ -241,7 +244,10 @@ function makechart_s(data){
         name: "分割线", type: "line",
         markLine: {
           label: { show: false }, symbol: "none",
-          data: [{ xAxis: data.bb[0] }, { xAxis: data.bb[1] }, { xAxis: data.bb[2] }, { xAxis: data.bb[3] }]
+          data: [
+            { xAxis: data.bb[0] }, { xAxis: data.bb[1] }, { xAxis: data.bb[2] }, { xAxis: data.bb[3] },
+            { yAxis: 0, label: { show: true, formatter: "0%", position: "end", fontSize: fz(9), color: "#666" }, lineStyle: { color: "#999", width: 1.2 } }
+          ]
         }
       }
     ]
